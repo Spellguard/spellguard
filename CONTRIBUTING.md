@@ -4,6 +4,12 @@ Thanks for your interest in contributing! This document covers how to set up
 a dev environment, what changes we accept, and how PRs flow back into the
 project.
 
+## Code of Conduct
+
+Participation in this project — issues, pull requests, discussions, and
+any other project channel — is governed by our
+[Code of Conduct](CODE_OF_CONDUCT.md). Please read it before contributing.
+
 ## Licensing
 
 Spellguard is released under the [Apache License 2.0](LICENSE). By
