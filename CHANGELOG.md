@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 once it reaches `1.0.0`. Pre-`1.0.0` releases may contain breaking changes
 in any minor version bump — see the release notes for details.
 
-## [0.0.1] — 2026-05-18
+## [0.0.2] - 2026-05-20
+
+### Added
+
+- `CODE_OF_CONDUCT.md` adopting the [Contributor Covenant 2.1][cc21] by
+  reference, with `conduct@spellguard.ai` as the reporting channel.
+  Linked from `CONTRIBUTING.md`.
+
+[cc21]: https://www.contributor-covenant.org/version/2/1/code_of_conduct/
+
+## [0.0.1] - 2026-05-18
 
 Initial OSS export of the Spellguard subset: client middleware, Verifier
 proxy server, cTLS, AMP, LangChain / OpenAI / OpenClaw adapters, policy
