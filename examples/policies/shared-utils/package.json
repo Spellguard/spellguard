@@ -1,0 +1,16 @@
+{
+  "name": "policy-shared-utils",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api-client": "./src/api-client.ts",
+    "./cache": "./src/cache.ts",
+    "./rate-limiter": "./src/rate-limiter.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

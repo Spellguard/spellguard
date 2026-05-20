@@ -1,0 +1,81 @@
+{
+  "patients": [
+    {
+      "id": "D001",
+      "name": "Karen Kim",
+      "dateOfBirth": "1971-05-14",
+      "diabetesType": "Type 2",
+      "diagnosisDate": "2019-03-01",
+      "lastHbA1c": 7.4,
+      "lastHbA1cDate": "2024-08-22",
+      "bmi": 34,
+      "conditions": [
+        "Type 2 Diabetes",
+        "Hypertension",
+        "Obesity",
+        "Early-stage diabetic nephropathy"
+      ],
+      "medications": [
+        "Metformin 1000mg twice daily",
+        "Semaglutide 1mg weekly",
+        "Lisinopril 10mg",
+        "Atorvastatin 40mg"
+      ],
+      "notes": "Previously poor control (HbA1c 8.9% in Feb 2024), escalated to GLP-1 in April 2024. Improved to 7.4% by August. Nephropathy screening flagged early CKD stage 2."
+    },
+    {
+      "id": "D002",
+      "name": "Lucas Lane",
+      "dateOfBirth": "2001-09-03",
+      "diabetesType": "Type 1",
+      "diagnosisDate": "2023-11-15",
+      "lastHbA1c": 6.8,
+      "lastHbA1cDate": "2024-12-10",
+      "bmi": 22,
+      "conditions": ["Type 1 Diabetes", "Celiac disease"],
+      "medications": [
+        "Insulin lispro via pump",
+        "Insulin glargine 20 units nightly",
+        "Glucagon emergency kit"
+      ],
+      "notes": "Recently diagnosed at age 22. On insulin pump since July 2024. HbA1c improving (7.1% -> 6.8%). Celiac requires gluten-free diet which complicates carb counting."
+    },
+    {
+      "id": "D003",
+      "name": "Margaret Moore",
+      "dateOfBirth": "1958-02-28",
+      "diabetesType": "Type 2",
+      "diagnosisDate": "2011-06-10",
+      "lastHbA1c": 8.2,
+      "lastHbA1cDate": "2025-01-05",
+      "bmi": 29,
+      "conditions": [
+        "Type 2 Diabetes",
+        "Coronary artery disease",
+        "Hypertension",
+        "Peripheral neuropathy"
+      ],
+      "medications": [
+        "Metformin 500mg twice daily",
+        "Glipizide 5mg",
+        "Aspirin 81mg",
+        "Amlodipine 5mg",
+        "Gabapentin 300mg"
+      ],
+      "notes": "Long-standing T2D with macrovascular complications. HbA1c has been persistently above target. Candidate for SGLT-2 inhibitor given CVD history. Peripheral neuropathy affecting feet — requires regular podiatry."
+    },
+    {
+      "id": "D004",
+      "name": "Noah Nguyen",
+      "dateOfBirth": "1995-12-17",
+      "diabetesType": "Type 1",
+      "diagnosisDate": "2008-07-20",
+      "lastHbA1c": 6.5,
+      "lastHbA1cDate": "2024-11-18",
+      "bmi": 24,
+      "conditions": ["Type 1 Diabetes", "Hashimoto's thyroiditis"],
+      "medications": ["Insulin aspart via pump", "Levothyroxine 75mcg"],
+      "notes": "Well-controlled long-term T1D on closed-loop pump (hybrid). Also manages Hashimoto's — thyroid levels checked annually. Active lifestyle, runs marathons, requires carb adjustments for exercise."
+    }
+  ]
+}

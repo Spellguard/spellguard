@@ -1,0 +1,49 @@
+{
+  "id": "spellguard",
+  "activation": {
+    "onStartup": true,
+    "onConfigPaths": ["spellguard"]
+  },
+  "contracts": {
+    "tools": ["spellguard_route", "spellguard_status", "spellguard_discover"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "verifierUrl": {
+        "type": "string",
+        "description": "URL of the Spellguard Verifier server"
+      },
+      "selfUrl": {
+        "type": "string",
+        "description": "URL where this plugin's webhook server listens"
+      },
+      "agentId": {
+        "type": "string",
+        "description": "This agent's unique identifier in the Spellguard network"
+      },
+      "codeHash": {
+        "type": "string",
+        "description": "SHA256 hash of the running code"
+      },
+      "expectedVerifierImageHash": {
+        "type": "string",
+        "description": "SHA384 hash of the expected Verifier image"
+      },
+      "agentSecret": {
+        "type": "string",
+        "description": "Spellguard agent secret for Verifier registration authentication"
+      },
+      "managementUrl": {
+        "type": "string",
+        "description": "URL of the Spellguard management server"
+      },
+      "gatewayPort": {
+        "type": "number",
+        "description": "Port for the local MCP Guard gateway HTTP listener"
+      }
+    },
+    "required": ["selfUrl", "agentId", "agentSecret"]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  // Contains (phrase matching) detection — uses BuiltinEngine with policyType: 'contains'.
+  // Config shape: phrases (string[]), caseSensitive (boolean), matchAll (boolean), label
+  "policies": [
+    {
+      "slug": "contains-confidential-markers",
+      "name": "Confidential Document Marker Detection",
+      "description": "Detects document classification markers such as [CONFIDENTIAL], DO NOT DISTRIBUTE, and INTERNAL USE ONLY",
+      "type": "contains",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "phrases": ["[CONFIDENTIAL]", "DO NOT DISTRIBUTE", "INTERNAL USE ONLY"],
+        "caseSensitive": false,
+        "matchAll": false,
+        "label": "confidential-marker"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 85
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-11",
+        "reference": "tests/adversarial/corpus.json:contains-block-*"
+      }
+    }
+  ]
+}

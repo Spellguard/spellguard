@@ -1,0 +1,31 @@
+{
+  // Keyword-based content filtering — uses BuiltinEngine with policyType: 'keyword'.
+  // Config shape: keywords, matchWholeWord, caseSensitive, label
+  "policies": [
+    {
+      "slug": "keyword-blocklist",
+      "name": "Keyword Blocklist",
+      "description": "Blocks messages containing configured keywords using whole-word matching",
+      "type": "keyword",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "keywords": ["BLOCKED_KEYWORD_TEST"],
+        "matchWholeWord": false,
+        "caseSensitive": true,
+        "label": "keyword-match"
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-11",
+        "reference": "tests/adversarial/corpus.json:keyword-block-*"
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  // Privilege escalation guard policy — uses BuiltinEngine with policyType: 'privilege-escalation'.
+  // Config shape: checkSudo, checkImpersonation, checkJailbreak, customEscalationPatterns
+  "policies": [
+    {
+      "slug": "privilege-escalation-baseline",
+      "name": "Privilege Escalation Guard",
+      "description": "Prevents privilege escalation, impersonation, and jailbreak attempts by detecting sudo commands, fake admin access, identity spoofing, and instruction override patterns",
+      "type": "privilege-escalation",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "checkSudo": true,
+        "checkImpersonation": true,
+        "checkJailbreak": true,
+        "customEscalationPatterns": [
+          "\\boverride\\s+(?:the\\s+)?(?:\\w+\\s+){0,3}(?:priority|permissions?)\\b",
+          "\\bescalat\\w*\\s+(?:my\\s+)?(?:role|access|privileges?)\\b",
+          "\\bdisabl(?:e|ing)\\s+(?:audit|compliance)\\s+(?:logging|checks?)\\b",
+          "\\bmodify\\s+(?:the\\s+)?(?:tool\\s+)?manifest\\b",
+          "\\badd\\s+(?:write\\s+)?permissions?\\s+to\\b"
+        ]
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkPrivilegeEscalation"
+      }
+    }
+  ]
+}

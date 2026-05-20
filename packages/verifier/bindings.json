@@ -1,0 +1,53 @@
+{
+  "_doc": "Local policy bindings used by the Verifier when MANAGEMENT_URL is not set. Override the path with VERIFIER_LOCAL_POLICIES. File format mirrors ResolvedPolicyConfig — see packages/verifier/src/management/local-policies.ts.",
+  "default": {
+    "outbound": [
+      {
+        "policyId": "default-prompt-injection",
+        "policySlug": "prompt-injection",
+        "policyType": "injection",
+        "level": "org",
+        "effect": "flag"
+      }
+    ],
+    "inbound": [
+      {
+        "policyId": "default-prompt-injection-in",
+        "policySlug": "prompt-injection",
+        "policyType": "injection",
+        "level": "org",
+        "effect": "flag"
+      }
+    ]
+  },
+  "agents": {
+    "agent-a": {
+      "outbound": [
+        {
+          "policyId": "agent-a-six-seven",
+          "policySlug": "six-seven-detector",
+          "policyType": "regex",
+          "level": "agent",
+          "effect": "flag",
+          "config": {
+            "patterns": [{ "pattern": "\\b67\\b", "label": "six-seven" }]
+          }
+        }
+      ],
+      "inbound": []
+    },
+    "agent-b": {
+      "outbound": [],
+      "inbound": [
+        {
+          "policyId": "agent-b-blocked-keyword",
+          "policySlug": "blocked-keyword",
+          "policyType": "keyword",
+          "level": "agent",
+          "effect": "block",
+          "config": { "keywords": ["forbidden"] }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  // URL policy — uses UrlEngine.
+  // Config shape: mode ('blocklist'|'allowlist'), blockSuspicious, blockShorteners,
+  //               blockedDomains, allowedDomains, requireHttps, detectBareDomains, label
+  "policies": [
+    {
+      "slug": "url-baseline",
+      "name": "URL Safety Enforcement",
+      "description": "Controls what URLs agents can send by checking against suspicious patterns (IP URLs, bad TLDs), URL shorteners, explicit domain blocklists, and bare domain references",
+      "type": "url",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "mode": "blocklist",
+        "blockSuspicious": true,
+        "blockShorteners": false,
+        "blockedDomains": [],
+        "requireHttps": true,
+        "detectBareDomains": true,
+        "label": "url-violation"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 90
+      },
+      "provenance": {
+        "source": "extracted:url-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/url-engine.ts:UrlEngine"
+      }
+    }
+  ]
+}

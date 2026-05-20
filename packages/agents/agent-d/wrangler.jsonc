@@ -1,0 +1,61 @@
+{
+  "account_id": "07dea04158ad2b59f2214751ce9c8d48",
+  "name": "spellguard-agent-d",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "dev": {
+    "port": 8790,
+    "inspector_port": 9233
+  },
+  "vars": {
+    // Agent Identity
+    "SELF_URL": "http://localhost:8790",
+    "AGENT_ID": "agent-d",
+    "CODE_HASH": "sha256:dev-placeholder",
+    // Management server for discovery + Verifier registration
+    "MANAGEMENT_URL": "http://localhost:3001/v1",
+    // Fallback Verifier URL (used when MANAGEMENT_URL isn't set)
+    "VERIFIER_URL": "http://localhost:3000"
+  },
+  // Secrets (set via wrangler secret put):
+  // - OPENROUTER_API_KEY
+  // - SPELLGUARD_AGENT_SECRET
+
+  "env": {
+    "staging": {
+      "name": "spellguard-agent-d-staging",
+      "routes": [
+        { "pattern": "agent-d.test.spellguard.ai", "custom_domain": true }
+      ],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.test.spellguard.ai/v1",
+        "SELF_URL": "https://agent-d.test.spellguard.ai",
+        "AGENT_ID": "agent-d",
+        "CODE_HASH": "sha256:dev-placeholder"
+      }
+    },
+    "demo": {
+      "name": "spellguard-agent-d-demo",
+      "routes": [
+        { "pattern": "agent-d.demo.spellguard.ai", "custom_domain": true }
+      ],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.demo.spellguard.ai/v1",
+        "SELF_URL": "https://agent-d.demo.spellguard.ai",
+        "AGENT_ID": "agent-d",
+        "CODE_HASH": "sha256:dev-placeholder"
+      }
+    },
+    "production": {
+      "name": "spellguard-agent-d-production",
+      "routes": [{ "pattern": "agent-d.spellguard.ai", "custom_domain": true }],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.spellguard.ai/v1",
+        "SELF_URL": "https://agent-d.spellguard.ai",
+        "AGENT_ID": "agent-d",
+        "CODE_HASH": "sha256:fill-after-reproducible-build"
+      }
+    }
+  }
+}

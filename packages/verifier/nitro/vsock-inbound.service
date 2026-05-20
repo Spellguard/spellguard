@@ -1,0 +1,14 @@
+[Unit]
+Description=Spellguard Verifier vsock inbound proxy (ALB → Enclave)
+After=nitro-enclaves-allocator.service
+Requires=nitro-enclaves-allocator.service
+
+[Service]
+Type=simple
+# Bridge TCP:3000 on the host to vsock CID:16 port 3000 inside the enclave
+ExecStart=/usr/bin/socat TCP-LISTEN:3000,fork,reuseaddr VSOCK-CONNECT:16:3000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

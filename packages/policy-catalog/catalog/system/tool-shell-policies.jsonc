@@ -1,0 +1,46 @@
+{
+  "policies": [
+    {
+      "slug": "argument-injection-baseline",
+      "name": "Shell Argument Injection Detection",
+      "description": "Detects dangerous shell argument patterns such as subshell expansion, pipe-to-shell, and dynamic exec payloads",
+      "type": "argument-injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 96
+      },
+      "provenance": {
+        "source": "extracted:policy-shell-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-shell-engine.ts:evaluateShellArgumentInjection"
+      }
+    },
+    {
+      "slug": "sandbox-escape-baseline",
+      "name": "Sandbox Escape Detection",
+      "description": "Detects dangerous Python and JavaScript execution primitives in tool-like code payloads",
+      "type": "sandbox-escape",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "language": "any"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95
+      },
+      "provenance": {
+        "source": "extracted:policy-shell-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-shell-engine.ts:evaluateCodeSandboxEscape"
+      }
+    }
+  ]
+}

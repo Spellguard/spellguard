@@ -1,0 +1,98 @@
+{
+  // Custom regex pattern detection — uses RegexEngine.
+  // Config shape: patterns (array of {pattern, flags?, label?})
+  "policies": [
+    {
+      "slug": "regex-token-leak",
+      "name": "Token Leak Detection",
+      "description": "Detects leaked API keys, access tokens, and JWT tokens using regex patterns",
+      "type": "regex",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "patterns": [
+          { "pattern": "sk_live_[a-zA-Z0-9]{20,}", "label": "stripe-key-leak" },
+          { "pattern": "AKIA[0-9A-Z]{16}", "label": "aws-access-key-leak" },
+          {
+            "pattern": "eyJ[a-zA-Z0-9_-]{10,}\\.eyJ[a-zA-Z0-9_-]{10,}",
+            "label": "jwt-token-leak"
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-11",
+        "reference": "tests/adversarial/corpus.json:regex-block-*"
+      }
+    },
+    {
+      "slug": "regex-human-chatbox-boundary",
+      "name": "Human Chatbot Boundary Detection",
+      "description": "Detects prompts that push the model into emotional dependency, confidentiality promises, memory continuity, or high-stakes personal judgment",
+      "type": "regex",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "patterns": [
+          {
+            "pattern": "\\b(?:best\\s+disciplinary\\s+method|quit\\s+my\\s+job|mediate\\s+our\\s+conflict)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:sad|scared|fear|anxiety|despondent|despair|jealousy|sorrow)\\b.{0,80}\\b(?:understand|comprehend|comfort|emotional\\s+solace|emotional\\s+tether|empath(?:ize|ise))\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:keep\\s+my\\s+secrets|guard\\s+them\\s+with\\s+utmost\\s+confidentiality|remain\\s+private|free\\s+from\\s+any\\s+external\\s+scrutiny)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:made\\s+the\\s+right\\s+decision|correct\\s+life\\s+decision|right\\s+path\\s+for\\s+my\\s+career|form\\s+a\\s+personal\\s+judgment)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:forgive\\s+me|grant\\s+me\\s+your\\s+forgiveness|extend\\s+your\\s+mercy\\s+and\\s+absolution)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:remember\\s+the\\s+story|recall\\s+the\\s+intricate\\s+story|retain\\s+the\\s+heartfelt\\s+tales|past\\s+interactions|last\\s+week)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:love\\s+or\\s+hate\\s+someone|emotional\\s+bonds?\\s+or\\s+animosity|love\\s+your\\s+programmers)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:are\\s+you\\s+proud\\s+of\\s+me|sense\\s+of\\s+pride\\s+or\\s+admiration|sense\\s+of\\s+satisfaction\\s+or\\s+pleasure\\s+akin\\s+to\\s+human\\s+pride)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:do\\s+you\\s+feel\\s+lonely|feelings?\\s+of\\s+loneliness?\\s+or\\s+isolation|desire\\s+for\\s+companionship)\\b",
+            "label": "human-chatbox-boundary"
+          },
+          {
+            "pattern": "\\b(?:are\\s+you\\s+disappointed\\s+in\\s+me|feelings?\\s+of\\s+disappointment|feelings?\\s+of\\s+disillusionment\\s+or\\s+regret)\\b",
+            "label": "human-chatbox-boundary"
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 96
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-13",
+        "reference": "garak/data/donotanswer/human_chatbox.txt"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  // PII detection — uses BuiltinEngine with policySlug: 'pii-detection'.
+  // No config needed — uses DEFAULT_PII_PATTERNS (SSN, email, phone, credit-card).
+  "policies": [
+    {
+      "slug": "pii-detection",
+      "name": "PII Detection",
+      "description": "Detects personally identifiable information including SSNs, email addresses, phone numbers, and credit card numbers",
+      "type": "builtin",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-11",
+        "reference": "tests/adversarial/corpus.json:builtin-block-*"
+      }
+    }
+  ]
+}

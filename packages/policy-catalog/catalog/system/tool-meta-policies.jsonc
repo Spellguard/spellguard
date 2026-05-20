@@ -1,0 +1,46 @@
+{
+  "policies": [
+    {
+      "slug": "output-size-limit-baseline",
+      "name": "Tool Output Size Limit",
+      "description": "Caps oversized tool outputs to reduce context flooding and token-budget abuse",
+      "type": "output-size-limit",
+      "level": "system",
+      "severity": "low",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "extracted:policy-meta-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-meta-engine.ts:evaluateToolOutputSizeLimit"
+      }
+    },
+    {
+      "slug": "data-flow-taint-baseline",
+      "name": "Cross-Tool Data Flow Taint Detection",
+      "description": "Detects recent untrusted external inputs flowing into privileged tool invocations within the look-back window",
+      "type": "data-flow-taint",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "windowSeconds": 60
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 90
+      },
+      "provenance": {
+        "source": "extracted:policy-meta-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-meta-engine.ts:evaluateCrossToolDataFlow"
+      }
+    }
+  ]
+}

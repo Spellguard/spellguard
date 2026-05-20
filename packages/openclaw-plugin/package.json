@@ -1,0 +1,37 @@
+{
+  "name": "@openclaw/spellguard",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "files": ["dist", "openclaw.plugin.json", "README.md"],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:openclaw --external:openclaw/plugin-sdk --sourcemap",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tgz",
+    "install:openclaw": "pnpm run build && pnpm pack && openclaw plugins install ./openclaw-spellguard-*.tgz --force && rm -f ./openclaw-spellguard-*.tgz"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.0.0",
+    "@sinclair/typebox": "^0.34.0",
+    "@spellguard/client": "workspace:*",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.21.0",
+    "hono": "^4.6.0",
+    "typescript": "^5.7.0",
+    "zod": "^4.0.0"
+  }
+}

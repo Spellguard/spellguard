@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+.dev.vars
+.env.agents
+.env.agents.*
+!.env.agents.example
+.env.production
+!.env.production.example
+.env.staging
+!.env.staging.example
+**/examples/*.env
+
+# Cloudflare Workers
+.wrangler/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git worktrees
+.worktrees/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Keys and credentials (NEVER commit these)
+*.pem
+*.key
+credentials.json
+
+# Verifier local runtime state
+packages/verifier/data/
+
+# OpenClaw plugin scan results (generated at runtime)
+spellguard-scan-results.json

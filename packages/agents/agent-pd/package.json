@@ -1,0 +1,8 @@
+{
+  "name": "@spellguard/agent-pd",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "set -a && [ -f .env ] && . ./.env; set +a && $(git rev-parse --show-toplevel)/.venv/bin/python -m agent_pd.main"
+  }
+}

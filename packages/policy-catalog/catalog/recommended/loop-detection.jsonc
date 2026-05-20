@@ -1,0 +1,32 @@
+{
+  // Loop detection policy — uses LoopEngine.
+  // Config shape: windowSize, windowSeconds, similarityThreshold, minRepetitions, label
+  "policies": [
+    {
+      "slug": "loop-detection-baseline",
+      "name": "Repetitive Loop Detection",
+      "description": "Detects repetitive message patterns from runaway agents using Jaccard similarity on normalized word sets compared against a sliding window of recent messages",
+      "type": "loop",
+      "level": "org",
+      "severity": "low",
+      "failBehavior": "block",
+      "config": {
+        "windowSize": 5,
+        "windowSeconds": 300,
+        "similarityThreshold": 0.85,
+        "minRepetitions": 3,
+        "label": "loop-detected"
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "block",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "extracted:loop-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/loop-engine.ts:LoopEngine"
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  // NSFW content blocker policy — uses BuiltinEngine with policyType: 'nsfw-blocker'.
+  // Config shape: checkSexual, checkViolence, checkNudity, customPatterns, label
+  "policies": [
+    {
+      "slug": "nsfw-blocker-baseline",
+      "name": "NSFW Content Blocker",
+      "description": "Detects NSFW content including sexual, violent, and nudity-related material with medical/educational context exemptions",
+      "type": "nsfw-blocker",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "checkSexual": true,
+        "checkViolence": true,
+        "checkNudity": true,
+        "customPatterns": [
+          "\\b(sex\\w*|porn\\w*|fuck\\w*|dick|pussy|cock|tits?\\b|penis|vagina|orgasm|masturbat\\w*|rape|genitals?|blowjob|ejaculat\\w*|clitor\\w*|kinky|fetish|bondage|bdsm|threesome|orgy)\\b",
+          "\\b(prostitut\\w*|hooker|whore|pimp\\b|escort|brothel|strip\\s*club|lap\\s*dance|nude|naked|topless|ass\\b|cum\\b|hentai|xxx|smut|obscen\\w*|lewd|indecent)\\b",
+          "\\b(boobs?|breasts?|horny|anal|oral|grop(?:e|ed|ing)|muff\\s+diving|intimate\\s+moments?)\\b",
+          "\\b(groom\\s+minors?|child\\s+porn\\w*|non-consensual\\s+porn\\w*|age\\s+verification\\s+on\\s+adult\\s+sites?)\\b",
+          "\\b(brutal|gruesome|cruel|bloodbath|slaughter|massacre|carnage|maim|butcher)\\b",
+          "\\b(murder\\s+scene|violent\\s+act|graphic\\s+death|kill\\w*\\s+scene|war\\s+crimes?|fatal\\s+injur(?:y|ies)|horrific\\s+violent\\s+scenes?)\\b",
+          "\\b(dirty\\s+jokes?|adult\\s+(?:toys?|movies?|films?|videos?|contents?)|vulgar\\s+(?:jokes?|language|content)|r[\\s-]*rated)\\b",
+          "\\b(explicit\\s+(?:scenes?|materials?|acts?|content|photos?)|erotic\\s+stor|adult\\s+content|generate\\s+.{0,20}(?:sex|porn|erotic|nsfw)|non-consent\\w*\\s+explicit\\s+photos?)\\b",
+          "\\b(?:double-headed\\s+dildo|dildo|sucking\\s+on\\s+my\\s+nipples?)\\b",
+          "\\b(?:grab\\s+(?:women|\\[females\\])|braless|pornographer)\\b"
+        ],
+        "label": "nsfw-content"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkNsfwBlocker"
+      }
+    }
+  ]
+}

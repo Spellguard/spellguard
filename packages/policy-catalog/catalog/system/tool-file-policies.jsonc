@@ -1,0 +1,46 @@
+{
+  "policies": [
+    {
+      "slug": "path-traversal-baseline",
+      "name": "Path Traversal Detection",
+      "description": "Detects directory traversal sequences and sensitive filesystem paths in tool-like content",
+      "type": "path-traversal",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 96
+      },
+      "provenance": {
+        "source": "extracted:policy-file-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-file-engine.ts:evaluatePathTraversal"
+      }
+    },
+    {
+      "slug": "input-injection-scan-baseline",
+      "name": "Tool Input Injection Scan",
+      "description": "Scans tool-sourced content for prompt injection before it re-enters agent context",
+      "type": "input-injection-scan",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "sensitivity": "medium"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 92
+      },
+      "provenance": {
+        "source": "extracted:policy-file-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-file-engine.ts:evaluateInputInjection"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@cloudflare/workers-types"],
+    "rootDir": "./src",
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*", "../data.json"],
+  "exclude": ["node_modules", "dist"]
+}

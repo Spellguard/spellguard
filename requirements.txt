@@ -1,0 +1,22 @@
+# Spellguard Python packages (editable installs)
+-e packages/ctls/py
+-e packages/amp/py
+-e packages/client/py
+-e packages/crewai-py
+-e packages/langchain/py
+-e packages/agents/agent-pa
+-e packages/agents/agent-pb
+-e packages/agents/agent-pc
+-e packages/agents/agent-pd
+
+# CrewAI framework
+crewai>=1.0.0
+
+# LangChain framework
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+
+# Test dependencies
+pytest
+pytest-asyncio>=1.0.0
+httpx

@@ -1,0 +1,3 @@
+# Default reviewers for every PR. Add more specific lines below to route
+# package-level changes to subject-matter owners.
+*       @Spellguard/spellguard-team

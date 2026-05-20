@@ -1,0 +1,32 @@
+{
+  // Time window policy — uses TimeWindowEngine.
+  // Config shape: allowedHours ({ start, end }), allowedDays (0=Sun..6=Sat),
+  //               timezone (IANA), label
+  "policies": [
+    {
+      "slug": "time-window-business-hours",
+      "name": "Business Hours Time Window",
+      "description": "Restricts agent messages to business hours (Mon-Fri, 9am-6pm) using configurable timezone-aware hour and day-of-week checks",
+      "type": "time-window",
+      "level": "org",
+      "severity": "low",
+      "failBehavior": "block",
+      "config": {
+        "allowedHours": { "start": 9, "end": 18 },
+        "allowedDays": [1, 2, 3, 4, 5],
+        "timezone": "UTC",
+        "label": "outside-time-window"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 60
+      },
+      "provenance": {
+        "source": "extracted:time-window-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/time-window-engine.ts:TimeWindowEngine"
+      }
+    }
+  ]
+}

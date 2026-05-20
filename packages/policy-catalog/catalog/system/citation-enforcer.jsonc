@@ -1,0 +1,29 @@
+{
+  // Citation enforcer policy — uses BuiltinEngine with policyType: 'citation-enforcer'.
+  // Config shape: requireUrls, minCitations, claimIndicators
+  "policies": [
+    {
+      "slug": "citation-enforcer-baseline",
+      "name": "Source Citation Enforcer",
+      "description": "Requires source citations for factual claims by detecting claim indicators like 'according to' and 'research shows', then verifying the presence of numbered references, author-year citations, or URLs",
+      "type": "citation-enforcer",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "warn",
+      "config": {
+        "requireUrls": false,
+        "minCitations": 1
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "flag",
+        "priority": 70
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkCitationEnforcer"
+      }
+    }
+  ]
+}
