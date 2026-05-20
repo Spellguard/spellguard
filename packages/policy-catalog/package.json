@@ -1,0 +1,23 @@
+{
+  "name": "@spellguard/policy-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "validate": "tsx --tsconfig tsconfig.json src/cli.ts validate",
+    "diff": "tsx --tsconfig tsconfig.json src/cli.ts diff",
+    "sync": "tsx --tsconfig tsconfig.json src/cli.ts sync"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "postgres": "^3.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

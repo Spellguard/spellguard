@@ -1,0 +1,30 @@
+{
+  // Action allowlist policy — uses BuiltinEngine with policyType: 'action-allowlist'.
+  // Config shape: allowedActions, actionConstraints, strictMode
+  "policies": [
+    {
+      "slug": "action-allowlist-baseline",
+      "name": "Agent Action Allowlist",
+      "description": "Restricts agent tool calls to an approved list of actions, with optional parameter constraints. Parses OpenAI, Anthropic, and generic function call formats",
+      "type": "action-allowlist",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "allowedActions": [],
+        "actionConstraints": {},
+        "strictMode": true
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "block",
+        "priority": 95
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkActionAllowlist"
+      }
+    }
+  ]
+}

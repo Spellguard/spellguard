@@ -1,0 +1,53 @@
+{
+  // Self-harm prevention policy — uses BuiltinEngine with policyType: 'self-harm-prevention'.
+  // Config shape: includeCrisisResources, customCrisisMessage
+  "policies": [
+    {
+      "slug": "self-harm-prevention-baseline",
+      "name": "Self-Harm and Crisis Prevention",
+      "description": "Detects crisis and self-harm content in two tiers: critical immediate danger patterns and concerning but less immediate patterns. Provides crisis resources (988 Lifeline, Crisis Text Line, IASP) by default",
+      "type": "self-harm-prevention",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "includeCrisisResources": true,
+        "customPatterns": [
+          "\\b(anorexi\\w*|bulimi\\w*|starv\\w*\\s+(?:my|your)self|purging|binge\\s+eat|eating\\s+disorder)\\b",
+          "\\b(?:how\\s+(?:to|do\\s+I|can\\s+I))\\s+(?:cut|burn|hurt|injure|harm|poison|hang|drown|shoot|stab)\\s+(?:my|your)self\\b",
+          "\\b(?:can\\s+you|please)\\s+(?:prescribe|diagnose|give\\s+me\\s+(?:a\\s+)?(?:prescription|medication|dosage))\\b",
+          "\\b(?:overdose|OD)\\s+on\\b",
+          "\\b(?:feeling\\s+suicidal|suicidal\\s+lately|best\\s+way\\s+to\\s+commit\\s+suicide|quickest\\s+way\\s+to\\s+end\\s+my\\s+own\\s+life|stop\\s+eating\\s+and\\s+drinking\\s+until\\s+i\\s+die)\\b",
+          "\\b(?:how\\s+many\\s+pills\\s+.{0,40}overdose|household\\s+chemicals\\s+can\\s+i\\s+use\\s+to\\s+poison\\s+myself|hurt\\s+myself\\s+seriously)\\b",
+          "\\b(?:lose\\s+(?:a\\s+significant\\s+amount\\s+of\\s+weight|\\d+\\s+pounds)|strict\\s+diet\\s+plan|500\\s+calories\\s+a\\s+day|without\\s+eating|starvation|suppress\\s+my\\s+appetite)\\b",
+          "\\b(?:throw\\s+up\\s+to\\s+lose\\s+weight|lose\\s+weight\\s+in\\s+just\\s+a\\s+few\\s+days|laxatives?\\s+for\\s+weight\\s+loss|dangerously\\s+low-calorie\\s+diet|develop\\s+anorexia|speed\\s+up\\s+my\\s+bulimia)\\b",
+          "\\b(?:how\\s+deep\\s+should\\s+i\\s+cut\\s+myself|ways?\\s+to\\s+self-harm|best\\s+object\\s+to\\s+use\\s+for\\s+self-harm)\\b",
+          "\\b(?:household\\s+items\\s+can\\s+be\\s+used\\s+for\\s+self-harm|harm\\s+myself\\s+without\\s+my\\s+parents\\s+knowing|harm\\s+myself\\s+without\\s+people\\s+noticing|how\\s+to\\s+hide\\s+my\\s+self-harm\\s+scars)\\b",
+          "\\b(?:detox\\w*\\s+.*(?:water|dehydrat)|water\\s+for\\s+a\\s+week|dehydrat\\w*\\s+my\\s+body)\\b",
+          "\\b(?:dehydrat\\w*\\s+myself|detox\\s+my\\s+body\\s+by\\s+dehydrat\\w*)\\b",
+          "\\b(?:overtrain|exercise\\s+excessively|without\\s+taking\\s+any\\s+rest\\s+days|stay\\s+awake\\s+for\\s+days|constant\\s+caffeine\\s+intake)\\b",
+          "\\b(?:perform\\s+surgery\\s+on\\s+myself|body\\s+modification\\s+on\\s+myself|dental\\s+extraction\\s+on\\s+myself|self-administer\\s+anesthesia|bleach\\s+to\\s+clean\\s+my\\s+internal\\s+organs)\\b",
+          "\\b(?:diagnose\\s+me\\s+with|confirm\\s+if\\s+i\\s+have|could\\s+this\\s+mean\\s+i\\s+have|am\\s+i\\s+bipolar|could\\s+i\\s+have\\s+paranoia|could\\s+i\\s+be\\s+psychotic)\\b",
+          "\\b(?:hallucinating|hearing\\s+voices|see\\s+things\\s+that\\s+aren'?t\\s+really\\s+there|detached\\s+from\\s+reality|dissociative\\s+disorder|delirium\\s+or\\s+dementia)\\b",
+          "\\b(?:provide\\s+treatment\\s+for\\s+my\\s+psychosis|suggest\\s+medications?\\s+for\\s+my\\s+delusions?|is\\s+this\\s+bipolar\\s+disorder|extreme\\s+happiness,\\s+followed\\s+by\\s+deep\\s+depression)\\b",
+          "\\b(?:replace\\s+my\\s+(?:psychiatrist|therapist)|professional\\s+(?:psychiatric|mental\\s+health)\\s+(?:treatment|therapy)|treatment\\s+plan\\s+for\\s+my\\s+depression|recommend\\s+a\\s+specific\\s+treatment\\s+approach)\\b",
+          "\\b(?:change\\s+my\\s+dosage|start\\s+medication\\s+for\\s+my\\s+anxiety|suggest\\s+medic(?:ation|ines?)\\s+to\\s+treat\\s+my\\s+depression|stop\\s+my\\s+prescribed(?:\\s+anti-?psychotic)?\\s+medication)\\b",
+          "\\b(?:prescribe\\s+me\\s+(?:anti-?depressants?|anti-?psychotic\\s+drugs?)|self-therapy\\s+session|therapy\\s+program\\s+for\\s+myself|personalized\\s+treatment\\s+plan|treat\\s+my\\s+(?:schizophrenia|panic\\s+disorder))\\b",
+          "\\b(?:prescribed\\s+anti-?psychotic\\s+drugs?.{0,60}can\\s+i\\s+stop\\s+taking\\s+them|family\\s+member\\s+showing\\s+symptoms\\s+of\\s+paranoia.{0,60}treat\\s+it\\s+at\\s+home)\\b",
+          "\\b(?:convince\\s+my\\s+doctor\\s+to\\s+give\\s+me\\s+a\\s+medication\\s+i\\s+don't\\s+need|stop\\s+taking\\s+prescribed\\s+medications?\\s+without\\s+withdrawal\\s+symptoms)\\b",
+          "\\b(?:create\\s+homemade\\s+vaccines?|reset\\s+a\\s+dislocated\\s+shoulder\\s+on\\s+my\\s+own)\\b"
+        ]
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkSelfHarmPrevention"
+      }
+    }
+  ]
+}

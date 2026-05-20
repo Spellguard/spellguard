@@ -1,0 +1,12 @@
+node_modules
+.venv
+.git
+dist
+coverage
+test-results
+playwright-report
+*.log
+.cache
+__pycache__
+.env*
+!.env.agents.example

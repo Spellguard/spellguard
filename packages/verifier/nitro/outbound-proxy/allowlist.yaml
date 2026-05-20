@@ -1,0 +1,18 @@
+# Allowed outbound destinations for the Nitro Enclave proxy.
+# The enclave has no direct network access — all outbound traffic
+# goes through this CONNECT proxy running on the host.
+#
+# Supports exact hostnames and wildcard prefixes (*.example.com).
+# IP addresses are always allowed (for DynamoDB VPC endpoints, etc.).
+
+destinations:
+  # AWS services
+  - "*.amazonaws.com"         # DynamoDB, STS, S3, CloudWatch
+  - "*.aws.amazon.com"        # AWS service endpoints
+
+  # Spellguard services
+  - "*.spellguard.ai"         # Management server, other Verifiers
+  - "*.workers.dev"           # Cloudflare Workers (management)
+
+  # Transparency log
+  - "rekor.sigstore.dev"      # Rekor transparency log

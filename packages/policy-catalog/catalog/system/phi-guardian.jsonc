@@ -1,0 +1,30 @@
+{
+  // HIPAA PHI guardian policy — uses BuiltinEngine with policyType: 'phi-guardian'.
+  // Config shape: minConfidence, checkStructured, checkKeywords
+  "policies": [
+    {
+      "slug": "phi-guardian-baseline",
+      "name": "HIPAA PHI Guardian",
+      "description": "Detects Protected Health Information (PHI) including MRNs, ICD-10 codes, CPT codes, NPI numbers, medical dates, identifiers, and prescription dosages with configurable confidence thresholds",
+      "type": "phi-guardian",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "minConfidence": 0.7,
+        "checkStructured": true,
+        "checkKeywords": true
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkPhiGuardian"
+      }
+    }
+  ]
+}

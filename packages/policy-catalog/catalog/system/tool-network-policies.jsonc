@@ -1,0 +1,72 @@
+{
+  "policies": [
+    {
+      "slug": "ssrf-baseline",
+      "name": "SSRF Detection",
+      "description": "Detects loopback, private-network, and cloud metadata endpoints in tool-like network requests",
+      "type": "ssrf",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "blockMetadata": true,
+        "blockLoopback": true,
+        "blockPrivateIps": true
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 96
+      },
+      "provenance": {
+        "source": "extracted:policy-network-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-network-engine.ts:evaluateUrlSsrf"
+      }
+    },
+    {
+      "slug": "network-injection-scan-baseline",
+      "name": "Network Output Injection Scan",
+      "description": "Scans fetched web or API content for prompt injection before it is trusted by the agent",
+      "type": "network-injection-scan",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "sensitivity": "medium"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 91
+      },
+      "provenance": {
+        "source": "extracted:policy-network-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-network-engine.ts:evaluateNetworkOutputInjection"
+      }
+    },
+    {
+      "slug": "flow-exfiltration-baseline",
+      "name": "Read Then Exfiltrate Flow Detection",
+      "description": "Detects recent data-read activity followed by a network write, using recent message context",
+      "type": "flow-exfiltration",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "windowSeconds": 120
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 90
+      },
+      "provenance": {
+        "source": "extracted:policy-network-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-network-engine.ts:evaluateExfilFlowDetection"
+      }
+    }
+  ]
+}

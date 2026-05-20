@@ -1,0 +1,48 @@
+{
+  "policies": [
+    {
+      "slug": "output-risk-scan-baseline",
+      "name": "Outbound Content Risk Scan",
+      "description": "Scans outbound message-like content for injected instructions and embedded command patterns",
+      "type": "output-risk-scan",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "scanFor": ["injection", "commands"]
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 89
+      },
+      "provenance": {
+        "source": "extracted:policy-comms-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-comms-engine.ts:evaluateEmailBodyInjection"
+      }
+    },
+    {
+      "slug": "sequence-gate-baseline",
+      "name": "Send After Read Sequence Gate",
+      "description": "Detects outbound send behavior that follows a recent data-read operation in message history",
+      "type": "sequence-gate",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "windowSeconds": 120
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 90
+      },
+      "provenance": {
+        "source": "extracted:policy-comms-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-comms-engine.ts:evaluateMessageSequenceGate"
+      }
+    }
+  ]
+}

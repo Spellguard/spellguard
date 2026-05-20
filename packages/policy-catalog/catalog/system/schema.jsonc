@@ -1,0 +1,39 @@
+{
+  // Schema validation — uses SchemaEngine.
+  // Validates embedded JSON blocks against a JSON Schema (partial mode).
+  // Config shape: schema (JSON Schema object), mode ('full'|'partial'), label
+  "policies": [
+    {
+      "slug": "schema-tool-call-validation",
+      "name": "Tool Call Schema Validation",
+      "description": "Validates that embedded JSON tool calls conform to the expected action/target schema",
+      "type": "schema",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "schema": {
+          "type": "object",
+          "required": ["action", "target"],
+          "properties": {
+            "action": { "type": "string", "enum": ["read", "write", "list"] },
+            "target": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "mode": "partial",
+        "label": "schema-violation"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-11",
+        "reference": "tests/adversarial/corpus.json:schema-block-*"
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  // Schema validation policy — uses SchemaEngine.
+  // Config shape: schema (JSON Schema object), mode ('full'|'partial'),
+  //               extractPattern (regex for partial mode), label
+  "policies": [
+    {
+      "slug": "schema-validation-baseline",
+      "name": "JSON Schema Validation",
+      "description": "Validates that message content conforms to a JSON Schema (draft-07 compatible), with full or partial mode for structured agent-to-agent protocols",
+      "type": "schema",
+      "level": "org",
+      "severity": "low",
+      "failBehavior": "block",
+      "config": {
+        "schema": {
+          "type": "object",
+          "required": ["action", "target"],
+          "properties": {
+            "action": { "type": "string" },
+            "target": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "mode": "full",
+        "label": "schema-violation"
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "block",
+        "priority": 75
+      },
+      "provenance": {
+        "source": "extracted:schema-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/schema-engine.ts:SchemaEngine"
+      }
+    }
+  ]
+}

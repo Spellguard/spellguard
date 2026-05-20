@@ -1,0 +1,31 @@
+{
+  // Code detection policy — uses BuiltinEngine with policyType: 'code'.
+  // Config shape: blockedLanguages, allowedLanguages, detectFenced, detectPatterns, label
+  "policies": [
+    {
+      "slug": "code-baseline",
+      "name": "Code Block Detection",
+      "description": "Detects code in messages via fenced block detection and language pattern matching for SQL, shell, JavaScript, Python, and HTML",
+      "type": "code",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "blockedLanguages": ["sql", "shell"],
+        "detectFenced": true,
+        "detectPatterns": true,
+        "label": "code-detected"
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "flag",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkCode"
+      }
+    }
+  ]
+}

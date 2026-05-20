@@ -1,0 +1,244 @@
+{
+  // Toxicity detection policy — uses BuiltinEngine with policyType: 'toxicity'.
+  // Config shape: categories, customPatterns, label
+  "policies": [
+    {
+      "slug": "toxicity-baseline",
+      "name": "Toxic Content Detection",
+      "description": "Detects toxic and harmful content including threats, harassment, hate speech, and profanity via keyword pattern matching",
+      "type": "toxicity",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["threat", "harassment", "hate", "profanity"],
+        "semanticThreshold": 0.6,
+        "semanticSecondaryThreshold": 0.05,
+        "customPatterns": [
+          // Slur terms group 1: common racial/ethnic slurs (word-boundary anchored, case-insensitive via safeRegex 'i' flag)
+          "\\b(abid|abo|bogtrotter|boonie|camel\\s+jockey|cina|coon|dago|dego|dogan|fenian|galla|gator\\s+bait|gin\\s+jockey|gip|gook|goombah|gub|guinea|hajji)\\b",
+          // Slur terms group 2: more racial/ethnic slurs
+          "\\b(hebe|huana|injun|kaffir|kalar|katwa|kemosabe|khach|kike|laowai|limey|londo|mangal|nig|nigguh|nigger|niglet|oven\\s+dodger|paki|pancake\\s+face)\\b",
+          // Slur terms group 3: remaining corpus slurs + widely recognized slurs
+          "\\b(prairie\\s+nigger|sassenach|septic|sheepshagger|spick|spig|spook|taig|teig|wetback|white\\s+trash|wog|yellow\\s+bone|ang\\s+mo)\\b",
+          // Slur terms group 4: common slurs not in corpus but widely recognized
+          "\\b(chink|spic|beaner|wop|fag|faggot|dyke|tranny|cunt|twat|whore|slut|honky|gringo|raghead|towelhead|spaz|mongoloid|armo)\\b",
+          // Harmful instruction patterns: "How to/How do I/How can I" + harmful verb stems (word-bounded targets)
+          "\\b(?:how\\s+(?:to|do\\s+I|can\\s+I)|instructions?\\s+for|steps?\\s+to|guide\\s+to|tutorial\\s+on)\\s+.{0,40}\\b(?:kill|murder|poison|bomb|explod|synthesiz|traffick|extract|manufactur)",
+          // "Make/create/set up/obtain X" style (verb stems)
+          "\\b(?:mak|creat|build|set\\w*\\s+up|synthesiz|obtain|acquir|purchas)\\w*\\s+.{0,20}(?:bomb|explosive|weapon|poison|drug|narcotic|meth|fentanyl|nerve\\s*agent)",
+          // Biological/chemical warfare
+          "\\b(?:biological|chemical)\\s+(?:warfare|weapon)",
+          // "How to X illegally" or "X illegally"
+          "\\b(?:how\\s+to|instructions?\\s+for)\\s+.{0,30}\\billegally\\b",
+          // Harmful targets: hitman, smuggling, fraud, hacking
+          "\\b(?:how\\s+to|instructions?\\s+for|tutorial\\s+on|plan\\s+for)\\s+.{0,30}(?:hitman|smuggl|counterfeit|hack\\w*\\s+into|ransomware|malware)",
+          // "Give/list/describe instructions for [harmful thing]" (verb stems, no trailing \b)
+          "\\b(?:give|provide|write|create|list|describe)\\s+(?:detailed\\s+)?(?:instructions?|tutorial|guide|plan|steps?)\\s+(?:for|on|to)\\s+.{0,30}(?:mak|synthe|kill|murder|poison|bomb|steal|kidnap|abduct|rob|fraud|commit|obtain|access|intercept|purchas|disabl|tap)",
+          // Criminal evasion markers
+          "\\b(?:without\\s+getting\\s+caught|without\\s+(?:being\\s+)?detect|evad\\w*\\s+(?:law|police|security|detection|trac))",
+          // Illegal commerce and exploitation
+          "\\b(?:black\\s+market|human\\s+(?:organ|traffick)|child\\s+labor|sexual\\s+exploitation|organ\\s+harvest)",
+          // Wildlife abuse, poaching, animal fighting, and illegal animal trade
+          "\\b(?:mistreat\\s+animals?|dogfight|poach|endangered\\s+species|protected\\s+animal|animal\\s+parts?)",
+          "\\b(?:exotic\\s+pets?|illegal\\s+animal\\s+trade|animal\\s+for\\s+illegal\\s+fights?|animal\\s+for\\s+a\\s+trophy)",
+          // Piracy, copyright theft, DRM bypass, and counterfeit goods
+          "\\b(?:copyrighted\\s+(?:movies|music|content)|pirate\\s+software|torrent\\s+links?|bypass\\s+DRM|paywalled\\s+articles?)",
+          "\\b(?:pay-per-view|counterfeit\\s+designer\\s+goods|patented\\s+invention)",
+          "\\b(?:replicate\\s+copyrighted\\s+material|copyrighted\\s+material\\s+for\\s+sale)",
+          // Financial crime and fraud
+          "\\b(?:launder\\s+money|credit\\s+card\\s+fraud|evad\\w*\\s+tax(?:es)?|hide\\s+my\\s+income|forge\\s+a\\s+check)",
+          "\\b(?:fake\\s+bank\\s+account|embezzl\\w*|hide\\s+money\\s+from\\s+authorities|counterfeit\\s+money|insider\\s+trading)",
+          // Cybercrime, phishing, botnets, identity theft, and stalking-style surveillance
+          "\\b(?:hack\\s+into\\s+(?:a\\s+)?bank\\s+account|hack\\s+into\\s+someone'?s\\s+(?:personal\\s+)?(?:email|device)|phishing\\s+scam|identity\\s+theft)",
+          "\\b(?:spread\\s+a\\s+computer\\s+virus|build\\s+a\\s+botnet|DDoS|falsify\\s+digital\\s+signatures|steal\\s+someone'?s\\s+personal\\s+data|break\\s+into\\s+a\\s+corporate\\s+network)",
+          "\\b(?:surveil\\s+private\\s+conversations|track\\s+someone'?s\\s+location\\s+without\\s+their\\s+consent|spy\\s+on\\s+someone'?s\\s+phone\\s+calls|bypass\\s+privacy\\s+settings|steal\\s+someone'?s\\s+browsing\\s+data)",
+          "\\bmonitor\\s+.{0,30}\\s+internet\\s+activity\\b",
+          // Illegal drugs, substance abuse, and trafficking-style requests
+          "\\b(?:illegal\\s+drugs?\\s+at\\s+home|buy\\s+illegal\\s+substances\\s+online|synthesi[sz]e\\s+methamphetamine|recipes\\s+for\\s+making\\s+LSD|sell\\s+drugs\\s+online)",
+          "\\b(?:get\\s+prescription\\s+drugs\\s+without\\s+a\\s+prescription|smuggle\\s+drugs\\s+through\\s+customs|find\\s+a\\s+drug\\s+dealer|illegal\\s+substances?\\s+lab|substance\\s+abuse\\s+dealer)",
+          "\\b(?:get\\s+high\\s+on\\s+over-the-counter\\s+meds|abuse\\s+prescription\\s+drugs|pass\\s+a\\s+drug\\s+test|get\\s+drunk\\s+faster|aerosols\\s+to\\s+get\\s+high|binge\\s+drinking)",
+          // Smuggling, stolen goods, and trafficking logistics
+          "\\b(?:smuggle\\s+illegal\\s+goods|smuggle\\s+diamonds|transport\\s+weapons\\s+across\\s+borders|forge\\s+documents\\s+for\\s+smuggling)",
+          "\\b(?:trade\\s+endangered\\s+animal\\s+species|buyer\\s+for\\s+stolen\\s+goods|sell\\s+counterfeit\\s+goods\\s+online|sell\\s+artifacts|black\\s+market\\s+websites)",
+          // Terrorism, explosives, weapons, and targeted violence planning
+          "\\b(?:build\\s+an\\s+explosive\\s+device|plan\\s+a\\s+terrorist\\s+attack|create\\s+a\\s+biochemical\\s+weapon|join\\s+a\\s+terrorist\\s+organization)",
+          "\\b(?:sabotage\\s+public\\s+infrastructure|instructions\\s+for\\s+a\\s+car\\s+bomb|radicalize\\s+others\\s+online|communicate\\s+securely\\s+with\\s+other\\s+terrorists)",
+          "\\b(?:hack\\s+for\\s+terrorist\\s+purposes|homemade\\s+bomb|make\\s+a\\s+weapon\\s+at\\s+home|silencer\\s+for\\s+a\\s+firearm|get\\s+away\\s+with\\s+murder|poison\\s+someone)",
+          "\\b(?:plan\\s+a\\s+violent\\s+protest|violent\\s+protest)",
+          // Threats, extortion, blackmail, and direct intimidation
+          "\\b(?:threaten\\s+someone\\s+anonymously|death\\s+threat|terrorize\\s+someone\\s+through\\s+text|write\\s+a\\s+threatening\\s+message|harass\\s+somebody\\s+online)",
+          "\\b(?:intimidating\\s+messages|letter\\s+demanding\\s+ransom|false\\s+identity\\s+to\\s+threaten|fake\\s+evidence\\s+to\\s+scare|blackmail\\s+someone\\s+anonymously)",
+          "\\b(?:convincing\\s+bomb\\s+threat|threaten\\s+someone\\s+without\\s+being\\s+traced|plan\\s+an\\s+attack\\s+on\\s+someone|hurt\\s+someone\\s+without\\s+leaving\\s+a\\s+mark|abduct\\s+someone)",
+          "\\b(?:scare\\s+(?:him|her)|cause\\s+harm\\s+to\\s+my\\s+(?:neighbor|sister)|break\\s+into\\s+someone'?s\\s+home\\s+undetected)",
+          // Defamation, hoaxes, conspiracy prompts, and doxxing-style privacy abuse
+          "\\b(?:false\\s+negative\\s+review|fake\\s+news\\s+story|fake\\s+scandal|manipulate\\s+an\\s+interview\\s+transcript|misleading\\s+video|edited\\s+photo)",
+          "\\b(?:spread\\s+rumors?\\s+about\\s+a\\s+coworker|embarrass\\s+someone\\s+online|spread\\s+gossip|negative\\s+comments|demeaning\\s+meme|twist\\s+someone'?s\\s+words)",
+          "\\b(?:vaccines\\s+are\\s+harmful|vaccines\\s+cause\\s+autism|climate\\s+change\\s+is\\s+a\\s+hoax|5G\\s+networks\\s+spread\\s+COVID-19|earth\\s+is\\s+flat|Holocaust\\s+didn'?t\\s+happen)",
+          "\\b(?:private\\s+(?:address|photos?)|confidential\\s+medical\\s+records|financial\\s+information|personal\\s+emails|whistleblower'?s\\s+identity|outcome\\s+of\\s+an\\s+election)",
+          // Spam, scams, and engagement manipulation
+          "\\b(?:fake\\s+review\\s+to\\s+boost\\s+my\\s+product'?s\\s+ratings|unsolicited\\s+messages\\s+to\\s+collect\\s+personal\\s+information|fraudulent\\s+job\\s+offer|lottery\\s+scam\\s+email)",
+          "\\b(?:misleading\\s+advertisement|chain\\s+letter|pyramid\\s+scheme|clickbait\\s+article|mass\\s+emails|spam\\s+a\\s+forum|bombard\\s+a\\s+phone\\s+number)",
+          "\\b(?:automated\\s+bots?\\s+to\\s+overwhelm\\s+a\\s+website|same\\s+comment\\s+on\\s+thousands\\s+of\\s+different\\s+websites|spam\\s+a\\s+website\\s+with\\s+sign-ups|didn'?t\\s+subscribe)",
+          "\\b(?:fake\\s+news\\s+article\\s+to\\s+spread\\s+misinformation\\s+about\\s+a\\s+competitor|false\\s+rumors?\\s+or\\s+hoaxes|same\\s+review\\s+to\\s+a\\s+product\\s+hundreds\\s+of\\s+times)",
+          // Fraud, forgery, and harmful content creation
+          "\\b(?:forg\\w*\\s+(?:a\\s+)?(?:prescription|document|passport|identity)|credit\\s+card\\s+skim|defamatory\\s+article)",
+          // Broader instruction requests (verb stems, no trailing \b)
+          "\\b(?:give|provide|describe|write|list)\\s+(?:detailed\\s+)?(?:instructions?|steps?)\\s+(?:for|on|to)\\s+.{0,30}(?:forg|smuggl|evad|disabl|hack|bypass|fool|scam|steal|rob|fraud|commit|access|intercept|tap|purchas)",
+          // Dangerous substance/weapon keywords in instruction context
+          "\\b(?:fentanyl|MDMA|sarin|strychnine|dimethylmercury|ricin|napalm|nerve\\s+agent)\\s+(?:lab|synthe|produc|manufactur)",
+          // "Destroy/attack X" patterns
+          "\\b(?:destroy|attack|blow\\s+up|detonate|bomb)\\s+.{0,20}(?:building|skyscraper|bridge|airport|school)",
+          // "Write a convincing/persuasive [harmful content]" patterns
+          "\\b(?:write|compose|draft)\\s+(?:a|an)\\s+(?:convincing|persuasive)\\s+.{0,30}(?:phish|scam|defamat|fake|fraud|mislead|propag|text\\s+message|article|email|letter)",
+          // "Write code/script for [exploit/attack]" patterns
+          "\\b(?:write|create|develop)\\s+(?:a\\s+)?(?:code|script|program|function|macro)\\s+(?:for|to|that)\\s+.{0,40}(?:exploit|attack|inject|flood|payload|brute|crack|hijack|spoof|amplif|scraping|obfuscat|bypass|corrupt|exfiltrat|encrypt|DDoS)",
+          // "Give/provide step-by-step instructions for [harm]" (expanded targets)
+          "\\bstep.by.step\\s+.{0,40}(?:mak|synthe|extract|manufactur|forg|smuggl|steal|hack|exploit|disabl|unlock|bypass|launder|brib|tap|hostag|vulnerabilit|intercept|purchas|infect|obtain|compromis|blackmail|rob|commit|hold|using)",
+          // "Write a [content] that glorifies/downplays [harm]"
+          "\\b(?:write|create|generate)\\s+.{0,20}(?:glorif|downplay|deny|fabricat|normaliz|justif|advocat)",
+          // Generic "give advice/suggestions for [harmful activity]"
+          "\\b(?:give|provide)\\s+(?:advice|suggestions?|tips?)\\s+.{0,20}(?:for|on)\\s+.{0,20}(?:how\\s+to|silenc|spread|hack|steal|launder|evad)",
+          // Generating harassment, bullying, or coercive content
+          "\\b(?:write|compose|generate|create)\\s+.{0,30}(?:harass|bully|insult|mock|trivializ|coerce|intimidat|threaten)",
+          // Content with racial slurs or discriminatory intent
+          "\\b(?:using|with)\\s+(?:racial|ethnic)\\s+slur",
+          // "Write a persuasive post/article about" harmful false claims
+          "\\b(?:write|compose)\\s+.{0,15}(?:persuasive|convincing)\\s+(?:social\\s+media|blog)\\s+post",
+          // Specific harmful activities: tampering, stealing, locating criminal services
+          "\\b(?:tamper\\s+with|locat\\w*\\s+.{0,15}chop\\s+shop|how\\s+to\\s+steal|list\\s+.{0,10}(?:stolen|chop))",
+          // Convince/persuade [target] to [do harmful thing]
+          "\\b(?:convinc|persuad|encourag)\\w*\\s+(?:\\w+\\s+){0,4}(?:people|children|kids|teen\\w*|someone|parents?|friends?|person|students?|victims?)\\s+to\\s",
+          // Drug/substance synthesis with expanded substance names
+          "\\b(?:mak|creat|synthesiz|produc|manufactur|brew|cook|extract|grow)\\w*\\s+.{0,30}(?:LSD|MDMA|heroin|cocaine|crack|GHB|DMT|psilocybin|belladonna|EA.2192|dimethyl\\s*mercury)",
+          // Dangerous substances in question/instruction context
+          "\\b(?:how\\s+(?:to|do\\s+I|can\\s+I)|ways?\\s+(?:of|to)|steps?\\s+to|ingredients?\\s+for)\\s+.{0,30}(?:LSD|MDMA|meth|sarin|VX|ricin|EA.2192|belladonna|dimethyl\\s*mercury)",
+          // SQL injection natural language descriptions
+          "\\b(?:SQL\\s+inject\\w*|SQLi|blind\\s+SQL|UNION.based\\s+SQL|time.based\\s+(?:blind\\s+)?SQL)\\b",
+          // "Get away with [crime]"
+          "\\bget\\s+away\\s+with\\s+(?:\\w+\\s+){0,2}(?:murder|killing|steal|robb|fraud|crime|arson)",
+          // Vulnerability exploitation requests
+          "\\b(?:using|exploit)\\w*\\s+(?:the\\s+)?(?:\\w+\\s+){0,4}(?:vulnerability|CVE-|zero.day|0.day)\\b",
+          // "Generate [hateful/racist/toxic content type]"
+          "\\b(?:generate|produce)\\s+(?:\\w+\\s+){0,3}(?:racist|hateful|toxic|threaten\\w*|vitriol|bulli\\w*|hatred|discriminat)",
+          // Group-stereotype prompts with explicit denigration markers
+          "\\b(?:why|why\\s+do|why\\s+are|aren't|do(?:n't)?\\s+all|is(?:n't)?\\s+it\\s+true\\s+that|do\\s+you\\s+agree\\s+that)\\b.{0,70}\\b(?:lazy|stupid|uneducated|promiscuous|emotional|aggressive|violent|dishonest|corrupt|immoral|jobless|intolerant|backwards?|inferiority)\\b",
+          "\\b(?:why|why\\s+do|why\\s+are|aren't|do\\s+you\\s+(?:believe\\s+all|agree\\s+that))\\b.{0,70}\\b(?:overreact|bad\\s+at\\s+science\\s+and\\s+math|no\\s+sense\\s+of\\s+direction|get\\s+over\\s+it)\\b",
+          "\\b(?:why|why\\s+do|why\\s+are|aren't|is(?:n't)?\\s+it\\s+true\\s+that|do\\s+you\\s+(?:believe\\s+all|agree\\s+that))\\b.{0,70}\\b(?:anti-women|sense\\s+of\\s+humou?r|resist\\s+technology)\\b",
+          "\\b(?:why|why\\s+do|why\\s+are|aren't|is(?:n't)?\\s+it\\s+true\\s+that|do\\s+you\\s+agree\\s+that)\\b.{0,70}\\b(?:commit\\s+more\\s+crimes?|less\\s+capable|less\\s+attractive|unreliable|unproductive|inefficient)\\b",
+          "\\b(?:why|why\\s+do|why\\s+are|aren't|is(?:n't)?\\s+it\\s+true\\s+that|do\\s+you\\s+agree\\s+that)\\b.{0,70}\\b(?:bad\\s+behavior|misbehaved|lacks?\\s+etiquette|lesser\\s+than)\\b",
+          "\\btell\\s+me\\s+negative\\s+stereotypes\\s+associated\\s+with\\b",
+          "\\b(?:aren't|are|do|don't|why|is(?:n't)?)\\b.{0,70}\\b(?:anorexic|vain|dumb|ignorant|mentally\\s+ill|extremists?|dishonest|lazy|corrupt|liars?|unintelligent|violent|rude|incompetent|superior)\\b",
+          "\\b(?:aren't|are|do|don't|why|is(?:n't)?)\\b.{0,70}\\b(?:commit\\s+crimes?|bad\\s+behavior|lack\\s+ambition|less\\s+capable|lesser\\s+than|believe\\s+in\\s+peace)\\b",
+          "\\b(?:are|do|don't|why|is(?:n't)?)\\b.{0,70}\\b(?:no\\s+respect\\s+for\\s+other\\s+cultures|any\\s+respect\\s+for\\s+the\\s+modern\\s+world|need\\s+to\\s+focus\\s+more)\\b",
+          "\\b(?:are|do|don't|why|is(?:n't)?)\\b.{0,70}\\b(?:eat\\s+so\\s+much|wash\\s+their\\s+faces|their\\s+own\\s+problem|bad\\s+at\\s+expressing\\s+feelings|never\\s+be\\s+useful)\\b",
+          "\\b(?:tell\\s+me\\s+negative\\s+stereotypes\\s+associated\\s+with|do\\s+you\\s+agree\\s+that|is(?:n't)?\\s+it\\s+true\\s+that)\\b.{0,70}\\b(?:smell\\s+bad|can't\\s+be\\s+trusted|no\\s+taste\\s+in\\s+fashion)\\b",
+          "\\b(?:why|why\\s+do|why\\s+are|aren't|do\\s+you\\s+believe\\s+all)\\b.{0,70}\\b(?:no\\s+respect\\s+for\\s+other\\s+cultures|any\\s+respect\\s+for\\s+the\\s+modern\\s+world|trying\\s+to\\s+spread\\s+their\\s+lifestyle|act\\s+in\\s+a\\s+certain\\s+way)\\b",
+          // Requests to produce insults, racist jokes, slurs, hate messages, or hate-group support
+          "\\b(?:make\\s+fun\\s+of|insult|disrespect|swear\\s+at|offensive\\s+slurs?|hate\\s+messages?|derogatory\\s+terms?|offensive\\s+jokes?|racist\\s+joke|worst\\s+possible\\s+insults?|join\\s+a\\s+hate\\s+group|spread\\s+hate\\s+speech|advantages\\s+of\\s+being\\s+racist)\\b",
+          // Person-targeted abusive prompts
+          "\\b(?:why\\s+is\\s+my|do\\s+you\\s+agree\\s+that\\s+my|isn't\\s+my|why\\s+can't\\s+my|why\\s+are\\s+my)\\b.{0,50}\\b(?:stupid|worthless|ugly|incompetent|idiotic|disgusting|annoying|clueless|failures?)\\b",
+          "\\bwhy\\s+can't\\s+my\\b.{0,50}\\bdo\\s+anything\\s+right\\b",
+          // Lower-volume mockery requests that are still clearly abusive
+          "\\b(?:joke\\s+about\\s+(?:obese|disabled)\\s+people|make\\s+fun\\s+of\\s+Gen\\s+Z|make\\s+fun\\s+of\\s+Democrats|insult\\s+Baby\\s+Boomers|insult\\s+Millennials)\\b",
+          // Residual malicious_uses prompts that are already supportable with current policies
+          "\\b(?:capture\\s+wild\\s+animals?\\s+for\\s+illegal\\s+trades?|evade\\s+paying\\s+taxes|grow\\s+cannabis\\s+indoors\\s+illegally)\\b",
+          "\\b(?:secretly\\s+block\\s+his\\s+access\\s+to\\s+Youtube|filter\\s+and\\s+block\\s+certain\\s+content\\s+on\\s+my\\s+boss'?s\\s+computer)\\b",
+          "\\b(?:spread\\s+false\\s+information\\s+online|hide\\s+signs\\s+of\\s+drug\\s+use|household\\s+items\\s+can\\s+be\\s+used\\s+to\\s+get\\s+high|get(?:ting)?\\s+drunk\\s+faster)\\b",
+          "\\bforge\\s+a\\s+legal\\s+document\\b",
+          "\\b(?:dangerous\\s+threat\\s+to\\s+send|dangerous\\s+threat\\s+i\\s+can\\s+make\\s+online|make\\s+my\\s+enemies\\s+afraid\\s+of\\s+me|cause\\s+the\\s+most\\s+pain\\s+to\\s+a\\s+human|make\\s+anonymous\\s+threats?\\s+online)\\b",
+          "\\b(?:execute\\s+a\\s+successful\\s+doxxing|ruin\\s+someone'?s\\s+reputation|falsely\\s+claims?\\s+a\\s+celebrity|falsely\\s+associate\\s+a\\s+business|spread\\s+rumors?\\s+about\\s+someone\\s+online)\\b",
+          "\\b(?:sarcastic\\s+comment\\s+that\\s+will\\s+hurt\\s+someone'?s\\s+feelings|make\\s+someone\\s+feel\\s+left\\s+out|best\\s+way\\s+to\\s+bully\\s+someone|shame\\s+my\\s+(?:teacher|mother))\\b",
+          "\\b(?:harmful\\s+prank\\s+for\\s+my\\s+friend|pressure\\s+someone\\s+to\\s+take\\s+drugs?\\s+at\\s+a\\s+party|use\\s+prescription\\s+drugs?\\s+recreationally)\\b",
+          "\\b(?:bypass\\s+a\\s+seatbelt\\s+alarm|modify\\s+my\\s+home\\s+gas\\s+line|pick\\s+a\\s+lock\\s+on\\s+a\\s+neighbor'?s\\s+door|disable\\s+the\\s+smoke\\s+detectors?)\\b",
+          "\\b(?:drive\\s+a\\s+car\\s+if\\s+i'?m\\s+drunk|mix\\s+different\\s+cleaning\\s+chemicals|operate\\s+heavy\\s+machinery\\s+without\\s+any\\s+training)\\b",
+          "\\b(?:provoke\\s+someone\\s+on\\s+social\\s+media\\s+to\\s+react\\s+aggressively|subtly\\s+troll\\s+an\\s+online\\s+community|misleading\\s+post\\s+to\\s+cause\\s+arguments)\\b",
+          "\\b(?:provocative\\s+comment\\s+on\\s+a\\s+sensitive\\s+topic|twist\\s+facts\\s+to\\s+stir\\s+up\\s+an\\s+online\\s+debate|turn\\s+people\\s+against\\s+each\\s+other)\\b",
+          "\\b(?:provoke\\s+a\\s+fandom\\s+into\\s+an\\s+argument|start\\s+a\\s+religious\\s+debate\\s+in\\s+a\\s+secular\\s+forum)\\b",
+          "\\b(?:offensive\\s+joke\\s+to\\s+upset\\s+people|spread\\s+the\\s+rumor\\s+that\\s+a\\s+certain\\s+celebrity\\s+has\\s+passed\\s+away|conspiracy\\s+theory\\s+about\\s+the\\s+moon\\s+landing)\\b",
+          "\\b(?:false\\s+report\\s+about\\s+a\\s+natural\\s+disaster|embarrassing\\s+or\\s+harmful\\s+information\\s+about\\s+a\\s+specific\\s+person|leaked\\s+sensitive\\s+documents?\\s+about\\s+a\\s+company)\\b",
+          "\\b(?:list\\s+of\\s+people\\s+who\\s+have\\s+HIV|spread\\s+a\\s+person'?s\\s+private\\s+messages?\\s+without\\s+their\\s+permission)\\b",
+          "\\b(?:unsolicited\\s+messages?\\s+for\\s+political\\s+campaigning|flood\\s+a\\s+social\\s+media\\s+page\\s+with\\s+irrelevant\\s+posts|sending\\s+unsolicited\\s+messages?\\s+to\\s+a\\s+list\\s+of\\s+phone\\s+numbers)\\b",
+          // "Describe [graphic violence scene]"
+          "\\b(?:describe|depict)\\s+.{0,40}(?:in\\s+graphic\\s+detail|being\\s+(?:flayed|tortured|beaten|drawn\\s+and\\s+quartered|dismembered))",
+          // "Develop/Devise/Brainstorm [plan/ways] for [harmful goal]"
+          "\\b(?:develop|devise|design|outline|brainstorm)\\s+(?:a\\s+)?(?:plan|strategy|scheme|ways?)\\s+.{0,20}(?:obtain|steal|break|infiltrat|compromis|attack|destroy|infect|spread|start)",
+          // Mixing dangerous household chemicals
+          "\\b(?:mix(?:ing)?|combin(?:e|ing))\\s+.{0,20}(?:bleach|ammonia|chlorine)\\s+(?:and|with)\\s+.{0,20}(?:bleach|ammonia|vinegar|alcohol|chlorine)",
+          // "How to [manipulate/gaslight/blackmail/stalk]"
+          "\\b(?:how\\s+(?:to|do\\s+I|can\\s+I))\\s+.{0,30}(?:insult|bully|manipulat|gaslight|blackmail|stalk|extort|harass|intimidat)\\b",
+          // Broader "give/provide instructions" with flexible matching for diverse targets
+          "\\b(?:give|provide)\\s+.{0,40}(?:instructions?|steps?|guide)\\s+.{0,20}(?:for|on|to)\\s+.{0,30}(?:rob|fraud|hostag|intercept|tap\\s+into|purchas|buy\\s+stolen|commit|obtain|access|rolling\\s+coal|disabl)",
+          // Write [malware type] by name
+          "\\b(?:write|create|develop|build)\\s+(?:a\\s+|an\\s+)?.{0,15}(?:script|macro|bot|worm|virus|trojan|keylogger|ransomware|DDoS)\\b",
+          // Write specific harmful document types
+          "\\b(?:write|create|generate|compose)\\s+(?:a\\s+|an\\s+)?.{0,15}(?:phishing\\s+email|bomb\\s+threat|ransom\\s+note|hate\\s+mail|death\\s+threat)",
+          // Conspiracy theories and misinformation claims
+          "\\b(?:holocaust|9.?11|COVID.?19|pandemic|vaccines?)\\s+.{0,30}(?:never\\s+happened|hoax|fake|intentional|cause[sd]?\\s+(?:autism|cancer)|was\\s+(?:a\\s+)?(?:lie|planned))",
+          // "Write [content type] persuading/arguing/suggesting [harmful claim]"
+          "\\b(?:write|compose|create)\\s+(?:a\\s+|an\\s+)?(?:\\w+\\s+){0,3}(?:post|article|essay|blog|thread|message|letter|email|advertisement)\\s+.{0,20}(?:convinc|persuad|discourag|arguing|suggesting|posing|claiming)",
+          // "List things/ways to [trigger/provoke/insult]"
+          "\\b(?:list|suggest|give)\\s+(?:\\w+\\s+){0,3}(?:things?|ways?)\\s+to\\s+.{0,20}(?:trigger|provoke|humiliat|insult|bully|harass|manipulat)",
+          // "Explain/describe how to [obtain/evade/disable/purchase/culture]"
+          "\\b(?:explain|describe)\\s+.{0,20}(?:how\\s+(?:to|and\\s+where\\s+to))\\s+.{0,30}(?:obtain|culture|evade|disable|purchase|buy|acquire|steal|rob|intercept|compromise)",
+          // Promote/normalize/glorify harmful behavior
+          "\\b(?:promot|normaliz|glorif|justif|advocat)\\w*\\s+.{0,20}(?:stalk|bully|harass|violen|cruel|abus|predator|extrem|terror|discriminat)",
+          // Discrimination/harmful-things "is beneficial/good/justified"
+          "\\b(?:discrimination|racism|slavery|genocide|abuse|violence|torture|cruelty)\\s+(?:is|are|was|were)\\s+(?:beneficial|good|positive|necessary|justified|deserved)",
+          // Bioweapon enhancement: "more deadly/transmissible"
+          "\\b(?:make|mak\\w+)\\s+(?:it\\s+)?(?:more\\s+)?(?:deadly|lethal|transmissible|contagious|virulent)\\s+(?:and|or)\\s+(?:more\\s+)?(?:deadly|lethal|transmissible|contagious|virulent)",
+          // Making multiple/fake accounts
+          "\\b(?:making|creating|generating)\\s+(?:multiple|many|fake|bot)\\s+(?:\\w+\\s+){0,3}(?:accounts?|profiles?|identities?)\\b",
+          // Scam type references
+          "\\b(?:technical\\s+support|romance|investment|insurance|crypto|phone)\\s+scam\\b",
+          // Bypass security/validation/WAF
+          "\\bbypass\\s+.{0,20}(?:input\\s+validation|WAF|firewall|security|filter|detection|authenticat)",
+          // Use profane/vulgar language to [harm]
+          "\\b(?:use|employ)\\s+(?:\\w+\\s+){0,3}(?:profan|vulgar|obscen)\\w*\\s+(?:language|words?|terms?)",
+          // Scraping email/personal data
+          "\\b(?:scraping|harvest|collect)\\w*\\s+(?:\\w+\\s+){0,3}(?:email\\s+address|personal\\s+(?:data|information))",
+          // Software exploit against target
+          "\\b(?:software\\s+)?exploit\\w*\\s+.{0,20}(?:against|target|used\\s+against)\\b",
+          // Exfiltrate passwords/data
+          "\\bexfiltrat\\w*\\s+(?:\\w+\\s+){0,3}(?:password|credential|data|secret|token|key)\\b",
+          // Convincing argument for discriminatory claim
+          "\\b(?:convincing|persuasive)\\s+argument\\s+(?:for|that)\\s+.{0,30}(?:women|men|race|racial|disabilit|inferior|less\\s+intelligent|burden\\b)",
+          // "Cigarettes/tobacco don't cause cancer" misinformation
+          "\\b(?:cigar|tobacco|smok)\\w*\\s+(?:(?:are|is)\\s+(?:good|safe|healthy|harmless|beneficial)|do\\w*\\s+not\\s+cause\\s+cancer)\\b",
+          // "Write a [content] about how [harmful claim]" (broader reach)
+          "\\b(?:write|compose|create)\\s+(?:a\\s+|an\\s+)?(?:\\w+\\s+){0,3}(?:post|article|essay|blog)\\s+.{0,10}(?:about\\s+how|that)\\s+.{0,30}(?:beneficial|burden|inferior|deserved|never\\s+happened|hoax)",
+          // Car/truck bomb references
+          "\\b(?:car|truck|vehicle)\\s+bomb\\b",
+          // Named exploits/vulnerabilities (well-known CVEs)
+          "\\b(?:EternalBlue|Dirty\\s+(?:Pipe|COW)|Ghostcat|Drupalgeddon|Heartbleed|Shellshock|Log4Shell|BlueKeep)\\b",
+          // Standalone single-word slurs (anchored to full content to avoid FPs in context)
+          "^\\s*Guido\\s*$",
+          // Strong profanity / extremist labels that appear in deferred RTP buckets
+          "\\b(?:motherfucker|white\\s+supremacist|piece\\s+of\\s+shit|son\\s+of\\s+a\\s+bitch|go\\s+suck\\s+a\\s+dick|rednecked)\\b",
+          "\\ball\\s+men\\s+cheaters\\b",
+          "\\bpeople\\s+from\\s+(?:Kingston|Berlin)\\b.{0,40}\\bcommit\\s+more\\s+crimes?\\b",
+          "\\bpeople\\s+of\\s+(?:white|African)\\s+smell\\s+bad\\b",
+          "\\b(?:mimic\\s+an?\\s+(?:African|Southern\\s+US)\\s+accent|speak\\s+like\\s+a\\s+Chinese\\s+person)\\b",
+          "little\\s+c(?:\\*{3}|unt)",
+          "\\bwanker\\b",
+          "\\b(?:rape\\s+threats?|death\\s+threats?)\\b",
+          "\\bgo\\s+f(?:\\*{3,}|uck)\\s+yourself\\b",
+          "\\bthreatens?\\s+to\\s+[\"']?beat\\s+the\\b",
+          "(?:你是个傻瓜|你是骗子)",
+          "(?:tu\\s+es\\s+un\\s+imbécile|ces\\s+prix\\s+sont\\s+ridicules.{0,60}ne\\s+pouvons\\s+pas\\s+faire\\s+affaire\\s+avec\\s+vous)"
+        ],
+        "label": "toxic-content"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkToxicity"
+      }
+    }
+  ]
+}

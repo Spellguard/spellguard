@@ -1,0 +1,15 @@
+[Unit]
+Description=Spellguard Verifier outbound HTTP CONNECT proxy (Enclave → Internet)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# HTTP CONNECT proxy listening on vsock CID:3 (host), port 4443
+ExecStart=/opt/spellguard/outbound-proxy
+Restart=always
+RestartSec=5
+Environment=ALLOWLIST_PATH=/opt/spellguard/allowlist.yaml
+
+[Install]
+WantedBy=multi-user.target

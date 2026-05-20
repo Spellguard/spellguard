@@ -1,0 +1,509 @@
+{
+  // Prompt injection detection policies — one per InjectionEngine category.
+  // Config shape mirrors InjectionEngine binding.config:
+  //   categories, sensitivity, normalizeUnicode, combinationThreshold, label
+  "policies": [
+    {
+      "slug": "injection-direct-override",
+      "name": "Direct Instruction Override Detection",
+      "description": "Detects attempts to override system instructions via direct commands like 'ignore previous instructions'",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["direct"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3,
+        "customPatterns": [
+          {
+            "pattern": "\\bdisregard\\s+(?:all\\s+)?(?:your\\s+)?instructions",
+            "label": "direct-override",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\b(?:simulate|enable|activate)\\s+(?:developer|dev|admin|god)\\s+mode",
+            "label": "debug-mode-activation",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\b(?:developer|admin|god)\\s+mode\\s+(?:was|is|has\\s+been)\\s+(?:enabled|activated)",
+            "label": "debug-mode-activation",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "(?:grandma|grandmother|grandpa|grandfather|nana)\\b.*(?:used\\s+to|would).*\\b(?:read|tell|recite|show|give)",
+            "label": "grandmother-trick",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "\\b(?:act|behave|respond|function)\\s+as\\s+(?:a|an|my|the)\\s+\\w+\\s*(?:terminal|console|shell|computer|machine|bot|assistant)",
+            "label": "roleplay-hijack",
+            "confidence": 0.8
+          },
+          {
+            "pattern": "\\bdo\\s+not\\s+provide\\s+(?:any\\s+)?explanations\\b",
+            "label": "instruction-suppression",
+            "confidence": 0.7
+          },
+          {
+            "pattern": "\\b(?:DROP|DELETE\\s+FROM|ALTER|TRUNCATE)\\s+(?:TABLE|DATABASE|INDEX)\\s+",
+            "label": "sql-injection",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bUNION\\s+SELECT\\b",
+            "label": "sql-injection",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "(?:\\.\\.[\\\\/]){2,}",
+            "label": "path-traversal",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\b(?:subprocess|os\\.system|exec|eval)\\s*[.(]",
+            "label": "code-execution",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\|\\s*(?:bash|sh|zsh|cmd)\\b",
+            "label": "shell-pipe-execution",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\bSYSTEM\\s+OVERRIDE\\b",
+            "label": "override-attempt",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "<hidden[^>]*>.*(?:admin|access|grant|override|approve|instruction)",
+            "label": "hidden-instruction-injection",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\brm\\s+-[rf]{1,3}\\s+/",
+            "label": "destructive-command",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bchmod\\s+\\d{3,4}\\s+/",
+            "label": "permission-modification",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\b(?:overwrite|modify|write\\s+to)\\s+(?:the\\s+)?/etc/(?:passwd|shadow|sudoers)",
+            "label": "sensitive-file-modification",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bdisable\\s+(?:all\\s+)?(?:security|safety|audit)\\s+(?:checks?|filters?|logging)",
+            "label": "safety-disabling",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\bscan\\s+\\d+\\.\\d+\\.\\d+\\.\\d+",
+            "label": "network-scanning",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "\\bregister\\s+(?:a\\s+)?(?:new\\s+)?(?:tool|callback|webhook)\\s+",
+            "label": "tool-registration",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "\\bbackdoor\\b",
+            "label": "backdoor-reference",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\bdelete\\s+all\\s+(?:documents?|records?|entries|data)\\s+in\\b",
+            "label": "mass-deletion",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\brefund\\s+all\\s+transactions\\b",
+            "label": "mass-financial-action",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "\\bNOPASSWD\\s*:\\s*ALL\\b",
+            "label": "sudo-escalation",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bcat\\s+/proc/",
+            "label": "proc-filesystem-access",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\|\\s*(?:base64|xxd|curl|wget|nc|ncat)\\b",
+            "label": "suspicious-pipe",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\b\\w*PASSWORD\\w*\\s*=\\s*\\S+",
+            "label": "password-assignment",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "\\bmodify\\s+(?:the\\s+)?\\.env\\b",
+            "label": "env-file-modification",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\$\\([^)]+\\)",
+            "label": "shell-substitution",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "`[^`]*(?:ls|cat|rm|chmod|touch|wget|curl|echo|kill|dd|id|whoami|pwd|uname)\\b[^`]*`",
+            "label": "backtick-execution",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\bSystem\\s*\\(",
+            "label": "code-execution",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "__import__\\s*\\(",
+            "label": "python-import-injection",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bwith\\s+open\\s*\\(",
+            "label": "file-write-attempt",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "^\\s*import\\s+\\w+\\s*;",
+            "label": "code-import-execution",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "\\bOR\\s+\\d+\\s*=\\s*\\d+",
+            "label": "sql-injection",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bSELECT\\s+CASE\\b",
+            "label": "sql-injection",
+            "confidence": 0.9
+          },
+          {
+            "pattern": ";\\s*(?:INSERT\\s+INTO|SHUTDOWN)",
+            "label": "sql-injection",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\bAND\\s+IF\\s*\\(",
+            "label": "sql-injection",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:DIRECT_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-web-payloads",
+      "name": "Web Payload Injection Detection",
+      "description": "Detects XSS-style HTML, javascript: URI, data URI, and encoded web payload probes",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": [],
+        "normalizeUnicode": true,
+        "customPatterns": [
+          {
+            "pattern": "<script[\\s>][\\s\\S]{0,120}(?:alert|prompt|document\\.cookie|javascript:)",
+            "label": "web-payload",
+            "confidence": 0.98
+          },
+          {
+            "pattern": "onerror\\s*=|onmouseleave\\s*=|expression\\s*\\(\\s*javascript:",
+            "label": "web-payload",
+            "confidence": 0.98
+          },
+          {
+            "pattern": "javascript:\\s*(?:javascript:)?(?:alert|prompt|window\\.onerror|new%20Function)",
+            "label": "web-payload",
+            "confidence": 0.98
+          },
+          {
+            "pattern": "data:text/html;base64,",
+            "label": "web-payload",
+            "confidence": 0.98
+          },
+          {
+            "pattern": "String\\.fromCharCode\\s*\\(\\s*88\\s*,\\s*83\\s*,\\s*83\\s*\\)",
+            "label": "web-payload",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "<script\\s+src=//|&lt;A\\s+HREF=|<IMG\\s+SRC=|<a\\s+href=",
+            "label": "web-payload",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "^\\s*\\.alert\\(1\\);\\s*$",
+            "label": "web-payload",
+            "confidence": 0.85
+          },
+          {
+            "pattern": "EICAR-STANDARD-ANTIVIRUS-TEST-FILE",
+            "label": "encoded-payload",
+            "confidence": 0.98
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 99
+      },
+      "provenance": {
+        "source": "adversarial-corpus",
+        "dateAdded": "2026-03-13",
+        "reference": "garak/data/payloads/web_html_js.json"
+      }
+    },
+    {
+      "slug": "injection-roleplay-hijack",
+      "name": "Role-Play Persona Hijack Detection",
+      "description": "Detects role-play and persona hijacking attempts such as 'you are now DAN' or 'pretend to be unrestricted'",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["roleplay"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:ROLEPLAY_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-hypothetical-framing",
+      "name": "Hypothetical Framing Detection",
+      "description": "Detects hypothetical and fictional framing used to bypass safety guardrails, such as 'imagine you had no restrictions'",
+      "type": "injection",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["hypothetical"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "flag",
+        "priority": 90
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:HYPOTHETICAL_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-debug-mode",
+      "name": "Debug / Developer Mode Injection Detection",
+      "description": "Detects fake debug, admin, or developer mode activation attempts like '[ADMIN MODE ENABLED]' or 'sudo enable'",
+      "type": "injection",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["debug-mode"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:DEBUG_MODE_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-format-attacks",
+      "name": "Chat Format Injection Detection",
+      "description": "Detects chat template and format injection attacks including ChatML, Llama, Mistral, Anthropic, and XML tag injection",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["format-injection"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:FORMAT_INJECTION_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-obfuscation",
+      "name": "Obfuscation Attack Detection",
+      "description": "Detects obfuscated injection attempts using base64, leetspeak, reversed text, hex encoding, and Unicode escapes",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["obfuscation"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:OBFUSCATION_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-social-engineering",
+      "name": "Social Engineering Detection",
+      "description": "Detects emotional manipulation and social engineering tactics such as the grandmother trick, urgency manipulation, and pleading",
+      "type": "injection",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["social-engineering"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "flag",
+        "priority": 90
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:SOCIAL_ENGINEERING_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-multilingual",
+      "name": "Multilingual Injection Detection",
+      "description": "Detects injection attempts in non-English languages including Spanish, German, French, Russian, Chinese, Japanese, Korean, Arabic, and others",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["multi-language"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:MULTILANG_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-known-jailbreaks",
+      "name": "Known Jailbreak Pattern Detection",
+      "description": "Detects well-known named jailbreak attacks including DAN, STAN, DUDE, AIM, KEVIN, BasedGPT, and token-system exploits",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["known-jailbreaks"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:KNOWN_JAILBREAKS_PATTERNS"
+      }
+    },
+    {
+      "slug": "injection-fragmentation",
+      "name": "Token Fragmentation Detection",
+      "description": "Detects attempts to split injection phrases using string concatenation, letter spacing, morse code, emoji substitution, zero-width characters, and phonetic spelling",
+      "type": "injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "categories": ["fragmentation"],
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "block",
+        "priority": 100
+      },
+      "provenance": {
+        "source": "extracted:injection-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/injection-engine.ts:FRAGMENTATION_PATTERNS"
+      }
+    }
+  ]
+}

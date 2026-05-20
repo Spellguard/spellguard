@@ -1,0 +1,19 @@
+[project]
+name = "spellguard-client"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "spellguard-ctls>=0.1.0",
+    "spellguard-amp>=0.1.0",
+    "httpx>=0.28.0",
+    "fastapi>=0.115.0",
+    "openai>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+spellguard-ctls = { path = "../../ctls/py", editable = true }
+spellguard-amp = { path = "../../amp/py", editable = true }

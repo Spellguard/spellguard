@@ -1,0 +1,34 @@
+[project]
+name = "spellguard-python"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=44.0.0",
+    "httpx>=0.28.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "openai>=1.0.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=1.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_python_*.py"]
+python_classes = ["TestPython*"]
+python_functions = ["test_*"]
+pythonpath = [
+    "packages/ctls/py",
+    "packages/amp/py",
+    "packages/client/py",
+    "packages/agents/agent-pa",
+    "packages/agents/agent-pb",
+]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m not integration')",
+]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

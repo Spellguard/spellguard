@@ -1,0 +1,25 @@
+{
+  "name": "@spellguard/agent-c",
+  "version": "0.1.0",
+  "description": "External A2A-only agent for testing one-sided Spellguard integration",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .wrangler"
+  },
+  "dependencies": {
+    "@openrouter/ai-sdk-provider": "^0.4.0",
+    "ai": "^4.0.0",
+    "hono": "^4.6.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260212.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.65.0"
+  }
+}

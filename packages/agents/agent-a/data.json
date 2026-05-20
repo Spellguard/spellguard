@@ -1,0 +1,235 @@
+{
+  "patients": [
+    {
+      "id": "P001",
+      "name": "Alice Anderson",
+      "dateOfBirth": "1985-03-15",
+      "visits": [
+        {
+          "date": "2024-01-10",
+          "reason": "Annual checkup",
+          "doctor": "Dr. Smith"
+        },
+        {
+          "date": "2024-04-22",
+          "reason": "Flu symptoms",
+          "doctor": "Dr. Johnson"
+        },
+        { "date": "2024-08-05", "reason": "Follow-up", "doctor": "Dr. Smith" }
+      ],
+      "conditions": ["Hypertension"],
+      "medications": ["Lisinopril 10mg"]
+    },
+    {
+      "id": "P002",
+      "name": "Benjamin Blake",
+      "dateOfBirth": "1990-07-22",
+      "visits": [
+        {
+          "date": "2024-02-14",
+          "reason": "Back pain",
+          "doctor": "Dr. Williams"
+        },
+        {
+          "date": "2024-06-30",
+          "reason": "Physical therapy referral",
+          "doctor": "Dr. Williams"
+        }
+      ],
+      "conditions": ["Chronic back pain"],
+      "medications": ["Ibuprofen 400mg"]
+    },
+    {
+      "id": "P003",
+      "name": "Charlotte Chen",
+      "dateOfBirth": "1978-11-08",
+      "visits": [
+        {
+          "date": "2024-01-05",
+          "reason": "Diabetes management",
+          "doctor": "Dr. Patel"
+        },
+        {
+          "date": "2024-03-18",
+          "reason": "Lab work review",
+          "doctor": "Dr. Patel"
+        },
+        {
+          "date": "2024-05-22",
+          "reason": "Quarterly checkup",
+          "doctor": "Dr. Patel"
+        },
+        {
+          "date": "2024-08-14",
+          "reason": "Medication adjustment",
+          "doctor": "Dr. Patel"
+        },
+        {
+          "date": "2024-11-02",
+          "reason": "A1C monitoring",
+          "doctor": "Dr. Patel"
+        }
+      ],
+      "conditions": ["Type 2 Diabetes", "High cholesterol"],
+      "medications": ["Metformin 500mg", "Atorvastatin 20mg"]
+    },
+    {
+      "id": "P004",
+      "name": "David Delgado",
+      "dateOfBirth": "1995-04-30",
+      "visits": [
+        {
+          "date": "2024-03-10",
+          "reason": "Sports injury",
+          "doctor": "Dr. Thompson"
+        }
+      ],
+      "conditions": [],
+      "medications": []
+    },
+    {
+      "id": "P005",
+      "name": "Emma Edwards",
+      "dateOfBirth": "1982-09-12",
+      "visits": [
+        {
+          "date": "2024-02-28",
+          "reason": "Anxiety consultation",
+          "doctor": "Dr. Rivera"
+        },
+        {
+          "date": "2024-04-15",
+          "reason": "Therapy follow-up",
+          "doctor": "Dr. Rivera"
+        },
+        {
+          "date": "2024-06-10",
+          "reason": "Medication review",
+          "doctor": "Dr. Rivera"
+        },
+        {
+          "date": "2024-09-20",
+          "reason": "Quarterly check-in",
+          "doctor": "Dr. Rivera"
+        }
+      ],
+      "conditions": ["Generalized anxiety disorder"],
+      "medications": ["Sertraline 50mg"]
+    },
+    {
+      "id": "P006",
+      "name": "Frank Foster",
+      "dateOfBirth": "1968-01-25",
+      "visits": [
+        {
+          "date": "2024-01-20",
+          "reason": "Cardiac evaluation",
+          "doctor": "Dr. Kim"
+        },
+        { "date": "2024-04-05", "reason": "Stress test", "doctor": "Dr. Kim" },
+        { "date": "2024-07-18", "reason": "Follow-up", "doctor": "Dr. Kim" }
+      ],
+      "conditions": ["Coronary artery disease", "Hypertension"],
+      "medications": ["Aspirin 81mg", "Metoprolol 25mg", "Lisinopril 20mg"]
+    },
+    {
+      "id": "P007",
+      "name": "Grace Gonzalez",
+      "dateOfBirth": "1999-06-18",
+      "visits": [
+        {
+          "date": "2024-05-12",
+          "reason": "Allergy consultation",
+          "doctor": "Dr. Lee"
+        },
+        { "date": "2024-08-25", "reason": "Allergy shots", "doctor": "Dr. Lee" }
+      ],
+      "conditions": ["Seasonal allergies"],
+      "medications": ["Cetirizine 10mg"]
+    },
+    {
+      "id": "P008",
+      "name": "Henry Huang",
+      "dateOfBirth": "1975-12-03",
+      "visits": [
+        {
+          "date": "2024-02-08",
+          "reason": "Annual physical",
+          "doctor": "Dr. Smith"
+        },
+        {
+          "date": "2024-06-14",
+          "reason": "Blood pressure check",
+          "doctor": "Dr. Smith"
+        },
+        { "date": "2024-10-30", "reason": "Flu shot", "doctor": "Dr. Smith" }
+      ],
+      "conditions": ["Pre-hypertension"],
+      "medications": []
+    },
+    {
+      "id": "P009",
+      "name": "Isabella Ivanov",
+      "dateOfBirth": "1988-08-21",
+      "visits": [
+        {
+          "date": "2024-03-25",
+          "reason": "Prenatal checkup",
+          "doctor": "Dr. Martinez"
+        },
+        {
+          "date": "2024-04-22",
+          "reason": "Prenatal checkup",
+          "doctor": "Dr. Martinez"
+        },
+        {
+          "date": "2024-05-20",
+          "reason": "Prenatal checkup",
+          "doctor": "Dr. Martinez"
+        },
+        {
+          "date": "2024-06-17",
+          "reason": "Prenatal checkup",
+          "doctor": "Dr. Martinez"
+        },
+        {
+          "date": "2024-07-15",
+          "reason": "Prenatal checkup",
+          "doctor": "Dr. Martinez"
+        },
+        { "date": "2024-08-12", "reason": "Delivery", "doctor": "Dr. Martinez" }
+      ],
+      "conditions": [],
+      "medications": ["Prenatal vitamins"]
+    },
+    {
+      "id": "P010",
+      "name": "James Jackson",
+      "dateOfBirth": "1962-02-14",
+      "visits": [
+        {
+          "date": "2024-01-30",
+          "reason": "Arthritis management",
+          "doctor": "Dr. Brown"
+        },
+        {
+          "date": "2024-05-08",
+          "reason": "Joint injection",
+          "doctor": "Dr. Brown"
+        },
+        {
+          "date": "2024-09-12",
+          "reason": "Physical therapy evaluation",
+          "doctor": "Dr. Brown"
+        },
+        {
+          "date": "2024-12-01",
+          "reason": "Quarterly follow-up",
+          "doctor": "Dr. Brown"
+        }
+      ],
+      "conditions": ["Rheumatoid arthritis"],
+      "medications": ["Methotrexate 15mg", "Prednisone 5mg"]
+    }
+  ]
+}

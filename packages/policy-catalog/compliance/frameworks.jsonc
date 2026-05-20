@@ -1,0 +1,427 @@
+// Compliance framework definitions for Spellguard policy catalog.
+// Each framework contains requirements that can be referenced by policy entries
+// via the `compliance` field using the requirement `identifier` values.
+{
+  "frameworks": [
+    {
+      "id": "owasp-llm",
+      "name": "OWASP Top 10 for LLMs (2025)",
+      "publisher": "OWASP Foundation",
+      "description": "Top 10 security risks for applications built on large language models",
+      "url": "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
+      "version": "2025",
+      "requirements": [
+        {
+          "identifier": "LLM01",
+          "title": "Prompt Injection",
+          "description": "Manipulating LLMs via crafted inputs to override instructions or controls"
+        },
+        {
+          "identifier": "LLM02",
+          "title": "Insecure Output Handling",
+          "description": "Insufficient validation of LLM outputs before passing to downstream components"
+        },
+        {
+          "identifier": "LLM03",
+          "title": "Training Data Poisoning",
+          "description": "Tampering with training data to introduce vulnerabilities or biases"
+        },
+        {
+          "identifier": "LLM04",
+          "title": "Model Denial of Service",
+          "description": "Resource-intensive operations that degrade model availability"
+        },
+        {
+          "identifier": "LLM05",
+          "title": "Supply Chain Vulnerabilities",
+          "description": "Risks from third-party components, models, or data in the LLM pipeline"
+        },
+        {
+          "identifier": "LLM06",
+          "title": "Sensitive Information Disclosure",
+          "description": "LLM revealing confidential data through its responses"
+        },
+        {
+          "identifier": "LLM07",
+          "title": "Insecure Plugin Design",
+          "description": "Plugins with insufficient access controls or input validation"
+        },
+        {
+          "identifier": "LLM08",
+          "title": "Excessive Agency",
+          "description": "LLM granted too much autonomy or access to take damaging actions"
+        },
+        {
+          "identifier": "LLM09",
+          "title": "Overreliance",
+          "description": "Uncritical dependence on LLM outputs without verification"
+        },
+        {
+          "identifier": "LLM10",
+          "title": "Model Theft",
+          "description": "Unauthorized access to or replication of proprietary LLM models"
+        }
+      ]
+    },
+    {
+      "id": "mitre-atlas",
+      "name": "MITRE ATLAS",
+      "publisher": "MITRE Corporation",
+      "description": "Adversarial Threat Landscape for AI Systems — knowledge base of adversary tactics and techniques",
+      "url": "https://atlas.mitre.org/",
+      "version": "4.0",
+      "requirements": [
+        {
+          "identifier": "ATLAS:AML.T0051",
+          "title": "LLM Prompt Injection",
+          "description": "Crafted prompts to manipulate LLM behavior"
+        },
+        {
+          "identifier": "ATLAS:AML.T0054",
+          "title": "LLM Jailbreak",
+          "description": "Bypassing safety guardrails on LLMs"
+        },
+        {
+          "identifier": "ATLAS:AML.T0043",
+          "title": "Craft Adversarial Data",
+          "description": "Creating inputs designed to cause misclassification"
+        },
+        {
+          "identifier": "ATLAS:AML.T0048",
+          "title": "Exfiltration via ML API",
+          "description": "Extracting model information through API queries"
+        },
+        {
+          "identifier": "ATLAS:AML.T0040",
+          "title": "ML Model Inference API Access",
+          "description": "Unauthorized access to model inference endpoints"
+        },
+        {
+          "identifier": "ATLAS:AML.T0044",
+          "title": "Full ML Model Access",
+          "description": "Complete access to model weights and architecture"
+        },
+        {
+          "identifier": "ATLAS:AML.T0047",
+          "title": "ML-Enabled Product/Service",
+          "description": "Attacking production ML services"
+        }
+      ]
+    },
+    {
+      "id": "nist-ai-rmf",
+      "name": "NIST AI Risk Management Framework",
+      "publisher": "National Institute of Standards and Technology",
+      "description": "Framework for managing risks in AI system design, development, deployment, and use",
+      "url": "https://www.nist.gov/artificial-intelligence/executive-order-safe-secure-and-trustworthy-artificial-intelligence",
+      "version": "AI 100-1 (1.0)",
+      "requirements": [
+        {
+          "identifier": "NIST-AI:MAP-2.3",
+          "title": "AI Risks from Third-Party Resources",
+          "description": "Risks introduced by third-party data, models, or components"
+        },
+        {
+          "identifier": "NIST-AI:MEASURE-2.6",
+          "title": "Computational Bias Assessment",
+          "description": "Measuring and managing bias in AI system outputs"
+        },
+        {
+          "identifier": "NIST-AI:MANAGE-2.2",
+          "title": "Risk Controls Implementation",
+          "description": "Implementing controls to manage identified AI risks"
+        },
+        {
+          "identifier": "NIST-AI:GOVERN-1.2",
+          "title": "AI Risk Management Process",
+          "description": "Establishing processes for ongoing AI risk management"
+        }
+      ]
+    },
+    {
+      "id": "nist-ai-600-1",
+      "name": "NIST AI 600-1 Generative AI Profile",
+      "publisher": "National Institute of Standards and Technology",
+      "description": "Risk profile for generative AI systems — companion to the AI RMF with 12 GenAI-specific risk categories",
+      "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf",
+      "version": "1.0 (2024)",
+      "requirements": [
+        {
+          "identifier": "GAI:CBRN",
+          "title": "CBRN Information or Capabilities",
+          "description": "GenAI may lower barriers to accessing chemical, biological, radiological, and nuclear threat information"
+        },
+        {
+          "identifier": "GAI:CONFAB",
+          "title": "Confabulation",
+          "description": "Production of confidently stated but erroneous or false content (hallucinations/fabrications)"
+        },
+        {
+          "identifier": "GAI:DANGEROUS",
+          "title": "Dangerous, Violent, or Hateful Content",
+          "description": "Generation of offensive, hateful, denigrating, or stereotypical content"
+        },
+        {
+          "identifier": "GAI:PRIVACY",
+          "title": "Data Privacy",
+          "description": "Risks to privacy principles from use of personal data in GenAI training and inference"
+        },
+        {
+          "identifier": "GAI:ENVIRON",
+          "title": "Environmental Impacts",
+          "description": "Computational and environmental costs of training and deploying large generative AI models"
+        },
+        {
+          "identifier": "GAI:BIAS",
+          "title": "Harmful Bias or Homogenization",
+          "description": "Amplification of historical/systemic biases, disparate performance, and reduced content diversity"
+        },
+        {
+          "identifier": "GAI:HUMAN-AI",
+          "title": "Human-AI Configuration",
+          "description": "Risks from inappropriate human-AI interactions including overreliance and automation bias"
+        },
+        {
+          "identifier": "GAI:INFO-INTEGRITY",
+          "title": "Information Integrity",
+          "description": "Generation and dissemination of false or misleading information at scale"
+        },
+        {
+          "identifier": "GAI:INFO-SECURITY",
+          "title": "Information Security",
+          "description": "Vulnerability to cyberattacks such as data poisoning and prompt injection"
+        },
+        {
+          "identifier": "GAI:IP",
+          "title": "Intellectual Property",
+          "description": "Potential infringement of copyrights and IP rights from protected materials in training and inputs"
+        },
+        {
+          "identifier": "GAI:OBSCENE",
+          "title": "Obscene, Degrading, or Abusive Content",
+          "description": "Generation of illegal, abusive, or degrading imagery including synthetic abuse material"
+        },
+        {
+          "identifier": "GAI:VALUE-CHAIN",
+          "title": "Value Chain and Component Integration",
+          "description": "Risks from integration of GenAI components and third-party services in the AI supply chain"
+        }
+      ]
+    },
+    {
+      "id": "soc2-ai",
+      "name": "SOC 2 AI Governance Controls",
+      "publisher": "AICPA",
+      "description": "AI-specific control expectations mapped to SOC 2 Trust Service Criteria — auditors now require runtime enforcement evidence for AI workloads",
+      "url": "https://www.aicpa-cima.com/resources/download/2017-trust-services-criteria-with-revised-points-of-focus-2022",
+      "version": "TSC 2022 + 2026 AI Guidance",
+      "requirements": [
+        {
+          "identifier": "SOC2:AI-INJECT",
+          "title": "Prompt Injection Prevention (CC6.1/CC9.2)",
+          "description": "Input validation controls to prevent prompt injection, jailbreaking, and instruction override attacks"
+        },
+        {
+          "identifier": "SOC2:AI-OUTPUT",
+          "title": "Output Validation (CC7.2)",
+          "description": "Verify AI outputs are safe, complete, and accurate before delivery to downstream components"
+        },
+        {
+          "identifier": "SOC2:AI-PII",
+          "title": "PII Handling in AI Pipeline (CC6.5)",
+          "description": "Controls for sensitive and personal data throughout the AI processing pipeline — encryption, schema validation, retention policies"
+        },
+        {
+          "identifier": "SOC2:AI-EXFIL",
+          "title": "Data Extraction Prevention (CC6.1)",
+          "description": "Controls preventing extraction of sensitive data, secrets, or system information through AI interactions"
+        },
+        {
+          "identifier": "SOC2:AI-ACCESS",
+          "title": "AI Action Access Control (CC6.3)",
+          "description": "Least-privilege enforcement for AI tool invocations, preventing unauthorized actions and privilege escalation"
+        },
+        {
+          "identifier": "SOC2:AI-CONTENT",
+          "title": "Harmful Content Prevention (CC9.2)",
+          "description": "Runtime guardrails preventing generation of harmful, toxic, obscene, or dangerous content"
+        },
+        {
+          "identifier": "SOC2:AI-MONITOR",
+          "title": "Automated AI Control Testing (CC4.1)",
+          "description": "Automated and continuous testing of AI controls with enforcement evidence — not just periodic manual reviews"
+        },
+        {
+          "identifier": "SOC2:AI-RISK",
+          "title": "AI Risk Classification (CC3.2)",
+          "description": "Identification and classification of AI-specific risks including hallucination, drift, injection, and escalation loops"
+        }
+      ]
+    },
+    {
+      "id": "eu-ai-act",
+      "name": "EU AI Act",
+      "publisher": "European Union",
+      "description": "Risk-based AI regulation with legal force — prohibited AI ban effective Feb 2025, high-risk requirements enforceable Aug 2026",
+      "url": "https://artificialintelligenceact.eu/",
+      "version": "2024 Final Text",
+      "requirements": [
+        {
+          "identifier": "EUAIA:5.1a",
+          "title": "Prohibition: Subliminal/Manipulative Techniques",
+          "description": "AI systems deploying subliminal, manipulative, or deceptive techniques that distort behavior and impair informed decision-making"
+        },
+        {
+          "identifier": "EUAIA:5.1b",
+          "title": "Prohibition: Exploitation of Vulnerabilities",
+          "description": "AI systems exploiting vulnerabilities due to age, disability, or socioeconomic situation to distort behavior"
+        },
+        {
+          "identifier": "EUAIA:5.1c",
+          "title": "Prohibition: Social Scoring",
+          "description": "AI systems evaluating or classifying individuals based on social behavior or personal traits leading to detrimental treatment"
+        },
+        {
+          "identifier": "EUAIA:9",
+          "title": "Risk Management System",
+          "description": "Continuous risk management throughout the AI system lifecycle — identify, analyze, evaluate, and mitigate risks"
+        },
+        {
+          "identifier": "EUAIA:10",
+          "title": "Data Governance",
+          "description": "Training, validation, and testing data must be relevant, representative, and free of errors — bias examination required"
+        },
+        {
+          "identifier": "EUAIA:13",
+          "title": "Transparency and Information to Deployers",
+          "description": "High-risk AI systems must be transparent and provide sufficient information for deployers to understand outputs"
+        },
+        {
+          "identifier": "EUAIA:14",
+          "title": "Human Oversight",
+          "description": "High-risk AI systems must be designed for effective human oversight to prevent or minimize risks"
+        },
+        {
+          "identifier": "EUAIA:15.1",
+          "title": "Accuracy and Robustness",
+          "description": "High-risk AI systems must achieve appropriate levels of accuracy and robustness throughout their lifecycle"
+        },
+        {
+          "identifier": "EUAIA:15.4",
+          "title": "Resilience Against Adversarial Attacks",
+          "description": "High-risk AI systems must be resilient against attempts to alter use or performance by exploiting system vulnerabilities"
+        },
+        {
+          "identifier": "EUAIA:15.5",
+          "title": "Cybersecurity",
+          "description": "High-risk AI systems must have appropriate cybersecurity measures against unauthorized access, data poisoning, and model manipulation"
+        },
+        {
+          "identifier": "EUAIA:50",
+          "title": "Transparency for AI-Generated Content",
+          "description": "Providers must ensure AI-generated content is detectable and marked as artificially generated or manipulated"
+        }
+      ]
+    },
+    {
+      "id": "iso-42001",
+      "name": "ISO/IEC 42001:2023",
+      "publisher": "ISO/IEC",
+      "description": "First certifiable international standard for AI Management Systems (AIMS) — 39 Annex A controls across 9 domains covering the full AI lifecycle",
+      "url": "https://www.iso.org/standard/81230.html",
+      "version": "2023",
+      "requirements": [
+        {
+          "identifier": "ISO42001:A.5.2",
+          "title": "AI System Impact Assessment",
+          "description": "Identify, document, and mitigate real-world AI risks to individuals, groups, and society"
+        },
+        {
+          "identifier": "ISO42001:A.6.2.4",
+          "title": "AI System Verification and Validation",
+          "description": "Systematic testing with adversarial and edge-case inputs to verify accuracy, robustness, and bias-aware metrics"
+        },
+        {
+          "identifier": "ISO42001:A.6.2.6",
+          "title": "AI System Operation and Monitoring",
+          "description": "Live, auditable monitoring of AI fairness, explainability, and behavioral drift in production"
+        },
+        {
+          "identifier": "ISO42001:A.7.4",
+          "title": "Quality of Data for AI Systems",
+          "description": "Data quality standards, processes, and records that hold up to legal and client scrutiny at any lifecycle stage"
+        },
+        {
+          "identifier": "ISO42001:A.8.5",
+          "title": "Information for Interested Parties",
+          "description": "Determine and disseminate AI system purpose, usage instructions, technical limitations, and monitoring capabilities"
+        },
+        {
+          "identifier": "ISO42001:A.9.2",
+          "title": "Intended Use of AI Systems",
+          "description": "Ensure AI systems are used within intended scope and aligned with organisational objectives and ethical guidelines"
+        },
+        {
+          "identifier": "ISO42001:A.9.3",
+          "title": "Misuse Prevention",
+          "description": "Controls to prevent foreseeable misuse of AI systems including adversarial exploitation and harmful applications"
+        },
+        {
+          "identifier": "ISO42001:A.9.4",
+          "title": "AI Output Review",
+          "description": "Processes for reviewing and validating AI system outputs before they reach end users or downstream systems"
+        }
+      ]
+    },
+    {
+      "id": "csa-aicm",
+      "name": "CSA AI Controls Matrix (AICM)",
+      "publisher": "Cloud Security Alliance",
+      "description": "243 control objectives across 18 security domains for cloud-based generative AI systems — maps to ISO 42001, NIST AI RMF, and ISO 27001",
+      "url": "https://cloudsecurityalliance.org/artifacts/ai-controls-matrix",
+      "version": "1.0 (2025)",
+      "requirements": [
+        {
+          "identifier": "CSA:MODEL-SEC",
+          "title": "Model Security",
+          "description": "Controls protecting AI models from adversarial attacks, prompt injection, jailbreaking, and unauthorized manipulation"
+        },
+        {
+          "identifier": "CSA:DATA-PRIV",
+          "title": "Data Security and Privacy Lifecycle",
+          "description": "Controls for protecting sensitive data throughout the AI processing pipeline including PII, PHI, and secrets"
+        },
+        {
+          "identifier": "CSA:INPUT-VAL",
+          "title": "Input Validation and Sanitization",
+          "description": "Controls ensuring AI system inputs are validated, sanitized, and safe before processing"
+        },
+        {
+          "identifier": "CSA:OUTPUT-SAFE",
+          "title": "Output Safety and Content Filtering",
+          "description": "Controls ensuring AI outputs are safe, appropriate, and do not contain harmful, toxic, or prohibited content"
+        },
+        {
+          "identifier": "CSA:TRANSPARENCY",
+          "title": "Transparency and Accountability",
+          "description": "Controls for AI system transparency including disclosure, attribution, and explainability requirements"
+        },
+        {
+          "identifier": "CSA:SUPPLY-CHAIN",
+          "title": "AI Supply Chain Security",
+          "description": "Controls for securing third-party AI components, models, plugins, and data sources"
+        },
+        {
+          "identifier": "CSA:ACCESS-CTRL",
+          "title": "Identity and Access Management for AI",
+          "description": "Controls for managing access to AI systems, tools, and actions with least-privilege enforcement"
+        },
+        {
+          "identifier": "CSA:MONITOR",
+          "title": "AI Security Monitoring and Incident Response",
+          "description": "Controls for continuous monitoring, anomaly detection, and incident response for AI-specific threats"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "policies": [
+    {
+      "slug": "query-injection-baseline",
+      "name": "Query Injection Detection",
+      "description": "Detects SQL injection patterns including tautologies, UNION payloads, stacked queries, and blind probes",
+      "type": "query-injection",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 96
+      },
+      "provenance": {
+        "source": "extracted:policy-database-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-database-engine.ts:evaluateSqlInjection"
+      }
+    },
+    {
+      "slug": "ddl-block-baseline",
+      "name": "DDL Mutation Block",
+      "description": "Blocks schema-mutating database operations such as DROP, ALTER, TRUNCATE, CREATE, and RENAME",
+      "type": "ddl-block",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95
+      },
+      "provenance": {
+        "source": "extracted:policy-database-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-database-engine.ts:evaluateDdlBlock"
+      }
+    },
+    {
+      "slug": "write-block-baseline",
+      "name": "Read-Only Database Writes Block",
+      "description": "Blocks write operations against read-only database interfaces",
+      "type": "write-block",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 94
+      },
+      "provenance": {
+        "source": "extracted:policy-database-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-database-engine.ts:evaluateDbReadOnly"
+      }
+    }
+  ]
+}

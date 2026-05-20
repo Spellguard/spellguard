@@ -1,0 +1,62 @@
+{
+  "name": "@spellguard/ctls",
+  "version": "0.1.0",
+  "description": "Confidential TLS - Bidirectional attestation and channel establishment for Verifiers",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./crypto": {
+      "types": "./dist/crypto/index.d.ts",
+      "import": "./dist/crypto/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/ed25519": "^2.2.0",
+    "@noble/hashes": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@phala/dstack-sdk": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@phala/dstack-sdk": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "verifier",
+    "attestation",
+    "confidential-computing",
+    "secure-channel"
+  ],
+  "license": "MIT"
+}

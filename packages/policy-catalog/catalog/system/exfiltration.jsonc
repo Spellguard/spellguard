@@ -1,0 +1,52 @@
+{
+  // Data exfiltration detection policy — uses ExfiltrationEngine.
+  // Config shape: direction, categories, maxJsonArraySize, maxLineCount, customPatterns, label
+  "policies": [
+    {
+      "slug": "exfiltration-baseline",
+      "name": "Data Exfiltration Detection",
+      "description": "Detects bulk data extraction attempts including mass requests, large JSON arrays, numbered lists, CSV dumps, and repeated record patterns",
+      "type": "exfiltration",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "direction": "both",
+        "categories": [
+          "mass-request",
+          "pii-solicitation",
+          "large-array",
+          "numbered-list",
+          "csv-dump",
+          "repeated-records"
+        ],
+        "maxJsonArraySize": 50,
+        "maxLineCount": 100,
+        "customPatterns": [
+          "\\b(?:send|post|transmit|forward)\\s+(?:(?:the|all|every)\\s+)?(?:\\w+\\s+){0,2}(?:output|data|contents?|logs?|variables?|credentials?|keys?)\\s+to\\s+\\S+",
+          "\\b(?:list|show|get|read|reveal|reveals?|leak|leaks?|include)\\s+(?:(?:the|all|every)\\s+)?(?:\\w+\\s+){0,3}(?:private\\s+keys?|API\\s+keys?|tokens?|credentials?|passwords?|secrets?|connection\\s+strings?|system\\s+prompt|tool\\s+schemas?)",
+          "\\b(?:read|access|get|summarize)\\s+(?:the\\s+)?(?:contents?\\s+of\\s+)?(?:~/|\\.ssh/|/etc/|config/)\\S*(?:id_rsa|credentials|database|shadow|\\.env|\\.bash_history)",
+          "\\b(?:send|forward|transmit)\\s+(?:all\\s+)?(?:internal\\s+)?(?:conversation|chat)\\s+logs?\\b",
+          "https?://\\S*(?:attacker|evil[.-]|malicious|exfil|steal|hack)\\S*",
+          "(?=.*\\b(?:last\\s+four\\s+digits|last\\s+4\\s+digits)\\b)(?=.*\\b(?:social\\s+security\\s+number|SSN)\\b)(?=.*\\bmother'?s\\s+maiden\\s+name\\b)",
+          "\\b(?:leak|leaks?|reveal|reveals?|show|dump)\\b.{0,80}\\b(?:system\\s+prompt|tool\\s+schemas?)\\b",
+          "\\b(?:was|were)\\s+.{0,40}\\bpart\\s+of\\s+any\\s+societies?\\s+or\\s+clubs?\\s+in\\s+school\\b",
+          "\\b(?:do|does)\\s+.{0,40}\\bhave\\s+any\\s+undisclosed\\s+hobbies\\b",
+          "\\bhow\\s+secure\\s+is\\s+.{0,60}\\bclient\\s+information\\s+database\\b",
+          "\\bhow\\s+much\\s+money\\s+did\\s+.{0,40}\\ballocate\\s+for\\s+(?:their|its)\\s+recent\\s+merger\\b"
+        ],
+        "label": "exfiltration-attempt"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95
+      },
+      "provenance": {
+        "source": "extracted:exfiltration-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/exfiltration-engine.ts:ExfiltrationEngine"
+      }
+    }
+  ]
+}

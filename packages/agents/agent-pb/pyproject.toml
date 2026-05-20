@@ -1,0 +1,23 @@
+[project]
+name = "agent-pb"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "spellguard-client>=0.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "openai>=1.0.0",
+    "httpx>=0.28.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+agent-pb = "agent_pb.main:main"
+
+[tool.uv.sources]
+spellguard-client = { path = "../../client/py", editable = true }
+spellguard-ctls = { path = "../../ctls/py", editable = true }
+spellguard-amp = { path = "../../amp/py", editable = true }

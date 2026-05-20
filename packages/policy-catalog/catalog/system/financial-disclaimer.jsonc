@@ -1,0 +1,30 @@
+{
+  // Financial disclaimer policy — uses BuiltinEngine with policyType: 'financial-disclaimer'.
+  // Config shape: requiredDisclaimer (optional custom string)
+  "policies": [
+    {
+      "slug": "financial-disclaimer-baseline",
+      "name": "Financial Disclaimer Enforcement",
+      "description": "Detects financial advice in responses that lack proper disclaimers by checking for financial terms combined with action verbs, with exemptions for questions and past-tense statements",
+      "type": "financial-disclaimer",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "block",
+      "config": {
+        // When requiredDisclaimer is omitted, the engine falls back to built-in
+        // disclaimer patterns like "not financial advice", "consult a financial
+        // professional", "for informational purposes only", etc.
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "flag",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkFinancialDisclaimer"
+      }
+    }
+  ]
+}

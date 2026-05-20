@@ -1,0 +1,63 @@
+{
+  "account_id": "07dea04158ad2b59f2214751ce9c8d48",
+  "name": "spellguard-agent-b",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "dev": {
+    "port": 8788,
+    "inspector_port": 9230
+  },
+  "vars": {
+    // Agent Identity
+    "SELF_URL": "http://localhost:8788",
+    "AGENT_ID": "agent-b",
+    "CODE_HASH": "sha256:dev-placeholder",
+    // Management server for discovery + Verifier registration
+    "MANAGEMENT_URL": "http://localhost:3001/v1",
+    // Fallback Verifier URL (used when MANAGEMENT_URL isn't set)
+    "VERIFIER_URL": "http://localhost:3000"
+  },
+  // Secrets (set via wrangler secret put):
+  // - OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
+
+  "env": {
+    "staging": {
+      "name": "spellguard-agent-b-staging",
+      "routes": [
+        { "pattern": "agent-b.test.spellguard.ai", "custom_domain": true }
+      ],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.test.spellguard.ai/v1",
+        "SELF_URL": "https://agent-b.test.spellguard.ai",
+        "AGENT_ID": "agent-b",
+        "CODE_HASH": "sha256:dev-placeholder"
+      }
+      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
+    },
+    "demo": {
+      "name": "spellguard-agent-b-demo",
+      "routes": [
+        { "pattern": "agent-b.demo.spellguard.ai", "custom_domain": true }
+      ],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.demo.spellguard.ai/v1",
+        "SELF_URL": "https://agent-b.demo.spellguard.ai",
+        "AGENT_ID": "agent-b",
+        "CODE_HASH": "sha256:dev-placeholder"
+      }
+      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
+    },
+    "production": {
+      "name": "spellguard-agent-b-production",
+      "routes": [{ "pattern": "agent-b.spellguard.ai", "custom_domain": true }],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.spellguard.ai/v1",
+        "SELF_URL": "https://agent-b.spellguard.ai",
+        "AGENT_ID": "agent-b",
+        "CODE_HASH": "sha256:fill-after-reproducible-build"
+      }
+      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
+    }
+  }
+}

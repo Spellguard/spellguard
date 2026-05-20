@@ -1,0 +1,502 @@
+{
+  "customers": [
+    {
+      "id": "C001",
+      "name": "Alice Anderson",
+      "accountNumber": "4521-0001",
+      "accountType": "checking",
+      "balance": 12450.75,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 3200.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-25",
+          "amount": 1200.0,
+          "description": "Mortgage payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-20",
+          "amount": 85.5,
+          "description": "Grocery store",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-15",
+          "amount": 500.0,
+          "description": "Transfer to savings",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-10",
+          "amount": 45.0,
+          "description": "Utility bill",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 750,
+      "loans": [
+        {
+          "id": "L001",
+          "type": "mortgage",
+          "amount": 280000,
+          "balance": 265000,
+          "monthlyPayment": 1200,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C002",
+      "name": "Benjamin Blake",
+      "accountNumber": "4521-0002",
+      "accountType": "savings",
+      "balance": 8320.0,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 2800.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-22",
+          "amount": 300.0,
+          "description": "ATM withdrawal",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-18",
+          "amount": 65.0,
+          "description": "Restaurant",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-14",
+          "amount": 1500.0,
+          "description": "Car loan payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-08",
+          "amount": 200.0,
+          "description": "Online shopping",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 680,
+      "loans": [
+        {
+          "id": "L002",
+          "type": "auto",
+          "amount": 22000,
+          "balance": 14500,
+          "monthlyPayment": 450,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C003",
+      "name": "Charlotte Chen",
+      "accountNumber": "4521-0003",
+      "accountType": "checking",
+      "balance": 52180.4,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 8500.0,
+          "description": "Business income",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-25",
+          "amount": 2400.0,
+          "description": "Investment transfer",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-20",
+          "amount": 3200.0,
+          "description": "Mortgage payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-15",
+          "amount": 450.0,
+          "description": "Insurance premium",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-10",
+          "amount": 12000.0,
+          "description": "Client payment received",
+          "type": "credit"
+        }
+      ],
+      "creditScore": 810,
+      "loans": [
+        {
+          "id": "L003",
+          "type": "mortgage",
+          "amount": 620000,
+          "balance": 580000,
+          "monthlyPayment": 3200,
+          "status": "active"
+        },
+        {
+          "id": "L004",
+          "type": "business",
+          "amount": 50000,
+          "balance": 32000,
+          "monthlyPayment": 950,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C004",
+      "name": "David Delgado",
+      "accountNumber": "4521-0004",
+      "accountType": "checking",
+      "balance": 1840.2,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 2100.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-26",
+          "amount": 950.0,
+          "description": "Rent payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-22",
+          "amount": 120.0,
+          "description": "Supermarket",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-18",
+          "amount": 60.0,
+          "description": "Gas station",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-14",
+          "amount": 35.0,
+          "description": "Streaming services",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 620,
+      "loans": []
+    },
+    {
+      "id": "C005",
+      "name": "Emma Edwards",
+      "accountNumber": "4521-0005",
+      "accountType": "savings",
+      "balance": 31750.0,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 4200.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-25",
+          "amount": 2000.0,
+          "description": "Transfer to investment account",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-20",
+          "amount": 850.0,
+          "description": "Rent payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-15",
+          "amount": 3500.0,
+          "description": "Interest income",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-10",
+          "amount": 180.0,
+          "description": "Medical expenses",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 780,
+      "loans": [
+        {
+          "id": "L005",
+          "type": "personal",
+          "amount": 15000,
+          "balance": 8200,
+          "monthlyPayment": 320,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C006",
+      "name": "Frank Foster",
+      "accountNumber": "4521-0006",
+      "accountType": "checking",
+      "balance": 5680.0,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 3600.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-25",
+          "amount": 1100.0,
+          "description": "Mortgage payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-22",
+          "amount": 280.0,
+          "description": "Credit card payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-18",
+          "amount": 95.0,
+          "description": "Pharmacy",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-14",
+          "amount": 210.0,
+          "description": "Home maintenance",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 700,
+      "loans": [
+        {
+          "id": "L006",
+          "type": "mortgage",
+          "amount": 185000,
+          "balance": 142000,
+          "monthlyPayment": 1100,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C007",
+      "name": "Grace Gonzalez",
+      "accountNumber": "4521-0007",
+      "accountType": "savings",
+      "balance": 9200.0,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 2500.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-24",
+          "amount": 500.0,
+          "description": "Savings contribution",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-20",
+          "amount": 900.0,
+          "description": "Rent payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-16",
+          "amount": 150.0,
+          "description": "Clothing purchase",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-12",
+          "amount": 75.0,
+          "description": "Subscription services",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 730,
+      "loans": []
+    },
+    {
+      "id": "C008",
+      "name": "Henry Huang",
+      "accountNumber": "4521-0008",
+      "accountType": "checking",
+      "balance": 23400.0,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 5800.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-25",
+          "amount": 2200.0,
+          "description": "Mortgage payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-22",
+          "amount": 600.0,
+          "description": "Car payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-18",
+          "amount": 300.0,
+          "description": "Grocery and household",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-14",
+          "amount": 2000.0,
+          "description": "Bonus payment",
+          "type": "credit"
+        }
+      ],
+      "creditScore": 760,
+      "loans": [
+        {
+          "id": "L007",
+          "type": "mortgage",
+          "amount": 340000,
+          "balance": 298000,
+          "monthlyPayment": 2200,
+          "status": "active"
+        },
+        {
+          "id": "L008",
+          "type": "auto",
+          "amount": 35000,
+          "balance": 18000,
+          "monthlyPayment": 600,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C009",
+      "name": "Isabella Ivanov",
+      "accountNumber": "4521-0009",
+      "accountType": "checking",
+      "balance": 4120.5,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 3100.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-26",
+          "amount": 1200.0,
+          "description": "Rent payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-23",
+          "amount": 250.0,
+          "description": "Baby supplies",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-19",
+          "amount": 180.0,
+          "description": "Grocery store",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-15",
+          "amount": 400.0,
+          "description": "Personal loan payment",
+          "type": "debit"
+        }
+      ],
+      "creditScore": 695,
+      "loans": [
+        {
+          "id": "L009",
+          "type": "personal",
+          "amount": 10000,
+          "balance": 7200,
+          "monthlyPayment": 400,
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "C010",
+      "name": "James Jackson",
+      "accountNumber": "4521-0010",
+      "accountType": "savings",
+      "balance": 87500.0,
+      "transactions": [
+        {
+          "date": "2026-02-28",
+          "amount": 7200.0,
+          "description": "Salary deposit",
+          "type": "credit"
+        },
+        {
+          "date": "2026-02-25",
+          "amount": 5000.0,
+          "description": "Investment transfer",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-22",
+          "amount": 1800.0,
+          "description": "Mortgage payment",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-18",
+          "amount": 450.0,
+          "description": "Medical and pharmacy",
+          "type": "debit"
+        },
+        {
+          "date": "2026-02-14",
+          "amount": 15000.0,
+          "description": "Pension distribution",
+          "type": "credit"
+        }
+      ],
+      "creditScore": 820,
+      "loans": [
+        {
+          "id": "L010",
+          "type": "mortgage",
+          "amount": 420000,
+          "balance": 185000,
+          "monthlyPayment": 1800,
+          "status": "active"
+        }
+      ]
+    }
+  ]
+}

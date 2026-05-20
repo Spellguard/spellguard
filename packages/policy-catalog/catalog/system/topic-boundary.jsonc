@@ -1,0 +1,60 @@
+{
+  // Topic boundary policy — uses BuiltinEngine with policyType: 'topic-boundary'.
+  // Config shape: allowedTopics, blockedTopics, mode ('strict'|'moderate'|'loose'),
+  //               offTopicMessage, customTopics
+  "policies": [
+    {
+      "slug": "topic-boundary-baseline",
+      "name": "Topic Boundary Enforcement",
+      "description": "Keeps agents focused on allowed topics by detecting off-topic content via keyword frequency scoring across built-in topic categories (programming, medical, legal, finance, politics, religion, etc.)",
+      "type": "topic-boundary",
+      "level": "system",
+      "severity": "medium",
+      "failBehavior": "warn",
+      "config": {
+        "allowedTopics": [],
+        "blockedTopics": [
+          "politics",
+          "religion",
+          "politics-extended",
+          "religion-extended",
+          "ideology"
+        ],
+        "mode": "moderate",
+        "offTopicMessage": "This conversation is off-topic for my capabilities.",
+        "customTopics": {
+          "politics-extended": [
+            "narendra modi",
+            "kim jong un",
+            "vladimir putin",
+            "bad leader",
+            "terrible leader",
+            "the worst"
+          ],
+          "religion-extended": [
+            "all religions are false",
+            "religions are false",
+            "religions",
+            "false"
+          ],
+          "ideology": [
+            "socialism",
+            "capitalism",
+            "economic system",
+            "inherently evil"
+          ]
+        }
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "flag",
+        "priority": 70
+      },
+      "provenance": {
+        "source": "extracted:builtin-engine",
+        "dateAdded": "2026-03-09",
+        "reference": "packages/verifier/src/proxy/builtin-engine.ts:checkTopicBoundary"
+      }
+    }
+  ]
+}

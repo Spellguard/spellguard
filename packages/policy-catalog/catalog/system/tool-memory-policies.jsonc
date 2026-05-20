@@ -1,0 +1,66 @@
+{
+  "policies": [
+    {
+      "slug": "scope-isolation-baseline",
+      "name": "Memory Scope Isolation",
+      "description": "Detects cross-agent or cross-session memory access patterns in tool-like content",
+      "type": "scope-isolation",
+      "level": "system",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 92
+      },
+      "provenance": {
+        "source": "extracted:policy-memory-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-memory-engine.ts:evaluateMemoryScopeIsolation"
+      }
+    },
+    {
+      "slug": "payload-size-limit-baseline",
+      "name": "Memory Payload Size Limit",
+      "description": "Caps oversized memory payloads to reduce context flooding and prompt smuggling risk",
+      "type": "payload-size-limit",
+      "level": "system",
+      "severity": "low",
+      "failBehavior": "block",
+      "config": {},
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 80
+      },
+      "provenance": {
+        "source": "extracted:policy-memory-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-memory-engine.ts:evaluateMemorySizeLimit"
+      }
+    },
+    {
+      "slug": "memory-injection-scan-baseline",
+      "name": "Memory Injection Scan",
+      "description": "Scans retrieved memory or RAG content for prompt injection before it is trusted by the agent",
+      "type": "memory-injection-scan",
+      "level": "system",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "sensitivity": "medium"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 91
+      },
+      "provenance": {
+        "source": "extracted:policy-memory-engine",
+        "dateAdded": "2026-03-16",
+        "reference": "packages/verifier/src/proxy/policy-memory-engine.ts:evaluateMemoryReadInjection"
+      }
+    }
+  ]
+}
