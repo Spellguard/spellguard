@@ -1,8 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { getConfig } from '@spellguard/client';
+import { getCachedAgentId } from '../credentials/agent-id-cache';
 import { normalizeContent } from './normalizers/registry';
 import type { HookConfig, HookEvaluateResult } from './types';
+
+/**
+ * Stream B: when the credential socket is active, observation/Verifier-eval
+ * payloads should be tagged with the credential-store's agent_id so a
+ * rotated or admin-reissued credential keeps the dashboard activity view
+ * tied to the correct agent row. Falls back to the static config when the
+ * cache is unprimed (legacy / observation-only deployments where the
+ * credential service never started).
+ *
+ * The cache is primed by `createCredentialService().start()` and
+ * invalidated by `stop()`; reading from it avoids a sync disk hit on every
+ * before_dispatch / before_tool_call / message_sending hook invocation.
+ */
+function effectiveAgentId(fallback: string): string {
+  return getCachedAgentId() ?? fallback;
+}
 
 export async function evaluateContent(
   config: HookConfig,
@@ -20,15 +37,13 @@ export async function evaluateContent(
     return { result: 'unscanned', detections: [] };
   }
 
-  const timeout = config.verifierTimeout ?? 5000;
+  // 5s was too tight: a real bot on a distant/constrained network (or the dev
+  // verifier-proxy path) can exceed it on a healthy verifier, fail-closing a
+  // working bot with "Verifier unreachable". 10s default tolerates that without
+  // being slow to fail on a genuine outage; override via config.verifierTimeout.
+  const timeout = config.verifierTimeout ?? 10_000;
 
   try {
-    // The Verifier's /v1/mcp/evaluate endpoint requires a management-issued JWT
-    // in the Authorization header (verified via MANAGEMENT_PUBLIC_KEY).
-    // Prefer the Verifier URL discovered via the Spellguard client's
-    // discoverAndConfigure() flow over the static hook config — the
-    // discovered URL points to the actual Verifier, while the config may
-    // point to the management server.
     const clientConfig = getConfig();
     const verifierUrl = clientConfig?.verifierUrl || config.verifierUrl;
     const url = `${verifierUrl}/v1/mcp/evaluate`;
@@ -39,8 +54,6 @@ export async function evaluateContent(
       headers.Authorization = `Bearer ${clientConfig.managementToken}`;
     }
 
-    // Normalize platform-specific markup to plain text before evaluation.
-    // Slack has no normalizer registered — content passes through unchanged.
     const platform = context?.channel ?? '';
     const normalizedContent = normalizeContent(content, platform);
 
@@ -51,6 +64,13 @@ export async function evaluateContent(
       method: 'POST',
       headers,
       body: JSON.stringify({
+        // Send the slug (config.agentId) — the management-token JWT claim
+        // is minted with `agent.agent_id` (slug) at proxy-connect.ts:121,
+        // and the Verifier IDOR check at mcp-evaluate.ts:377 compares
+        // claim ↔ body strictly. Sending the cached UUID returns 403
+        // FORBIDDEN. The legacy `effectiveAgentId(config.agentId)` (cached
+        // UUID) is kept for other consumers that need the credential-
+        // store's identity pinning across rotations.
         agentId: config.agentId,
         direction,
         platform: context?.channel,

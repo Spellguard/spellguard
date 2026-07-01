@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createManagementClient } from '@spellguard/agent-control';
 
 const FRAMEWORK = 'openclaw';
 const TIMEOUT_MS = 5_000;
@@ -29,30 +30,30 @@ export async function syncFrameworkIdentity(options: {
   managementUrl: string;
   agentSecret: string;
 }): Promise<void> {
-  const base = options.managementUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '');
-  const url = `${base}/v1/agents/${options.agentId}/plugin-sync`;
+  const api = createManagementClient({
+    baseUrl: options.managementUrl,
+    agentId: options.agentId,
+    agentSecret: options.agentSecret,
+    auth: 'bearer',
+  });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${options.agentSecret}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    const { error, response } = await api.POST('/agents/{id}/plugin-sync', {
+      params: { path: { id: options.agentId } },
+      body: {
         framework: FRAMEWORK,
         pluginVersion: readPluginVersion(),
-      }),
+      },
       signal: controller.signal,
     });
 
-    if (!res.ok) {
+    if (error) {
       console.error(
         JSON.stringify({
           event: 'plugin_sync.failed',
-          status: res.status,
+          status: response.status,
           agentId: options.agentId,
         }),
       );

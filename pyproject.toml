@@ -23,6 +23,7 @@ pythonpath = [
     "packages/client/py",
     "packages/agents/agent-pa",
     "packages/agents/agent-pb",
+    "packages/management-api-py/src",
 ]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m not integration')",

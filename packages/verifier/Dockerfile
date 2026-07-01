@@ -1,7 +1,7 @@
 # ── Stage 1: builder ──────────────────────────────────────────────────
 # Install workspace dependencies, build local packages, and prune
 # dev-only deps so the runtime image stays small.
-FROM node:24-alpine AS builder
+FROM node:24-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
@@ -14,6 +14,7 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.json .npmrc* ./
 COPY packages/verifier/package.json packages/verifier/
 COPY packages/ctls/ts/package.json packages/ctls/ts/
 COPY packages/amp/ts/package.json  packages/amp/ts/
+COPY packages/gateway/package.json packages/gateway/
 
 # Install all deps (skip postinstall scripts — node-llama-cpp, bufferutil, etc.
 # are transitive deps the Verifier doesn't need and require git/cmake/python to build)
@@ -22,6 +23,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 # Copy source for workspace packages
 COPY packages/ctls/ts/ packages/ctls/ts/
 COPY packages/amp/ts/  packages/amp/ts/
+COPY packages/gateway/  packages/gateway/
 COPY packages/verifier/  packages/verifier/
 
 # Build library packages that Verifier depends on
@@ -31,7 +33,7 @@ RUN pnpm --filter @spellguard/ctls --filter @spellguard/amp run build 2>/dev/nul
 RUN pnpm prune --prod
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────
-FROM node:24-alpine
+FROM node:24-slim
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 

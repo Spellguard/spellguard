@@ -11,8 +11,8 @@
 set -eu
 
 # ── Load environment config ──────────────────────────────────────
-# The .env file is baked into the image at build time from the GitHub
-# variable VERIFIER_ENV_NITRO_{STAGING|DEMO}. It contains all env vars the
+# The .env file is baked into the image at build time from a GitHub Actions
+# environment variable. It contains all env vars the
 # Verifier server needs (MANAGEMENT_URL, VERIFIER_ID, MANAGEMENT_PUBLIC_KEY, etc.).
 # ── Bring up loopback interface ─────────────────────────────────
 # Nitro Enclaves have no networking by default — not even loopback.

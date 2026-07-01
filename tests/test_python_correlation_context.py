@@ -18,11 +18,17 @@ import pytest
 from spellguard_client import (
     get_current_correlation_id,
     get_current_hops,
+    get_current_sender_id,
     new_correlation_id,
     set_current_correlation_id,
     set_current_hops,
+    set_current_sender_id,
 )
-from spellguard_client.ai import _current_correlation_id, _current_hops
+from spellguard_client.ai import (
+    _current_correlation_id,
+    _current_hops,
+    _current_sender_id,
+)
 
 
 @pytest.mark.asyncio
@@ -85,3 +91,47 @@ def test_new_correlation_id_returns_unique_values():
     assert isinstance(a, str)
     assert len(a) > 0
     assert a != b
+
+
+# Immediate-sender context (parity with the TS sender-exclusion tests). The
+# receive handler installs the inbound sender so nested routing excludes
+# back-routing to it (2-node cycle prevention — DAG routing).
+@pytest.mark.asyncio
+async def test_set_current_sender_id_propagates_inside_async_context():
+    token = set_current_sender_id("kyc-screener")
+    try:
+        assert get_current_sender_id() == "kyc-screener"
+
+        async def nested() -> str | None:
+            await asyncio.sleep(0)
+            return get_current_sender_id()
+
+        assert await nested() == "kyc-screener"
+    finally:
+        _current_sender_id.reset(token)
+    # Filter is a no-op once cleared (top-level send / chat has no inbound).
+    assert get_current_sender_id() is None
+
+
+def test_outside_any_scope_sender_id_is_none():
+    assert get_current_sender_id() is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_receives_get_isolated_sender_ids():
+    """A module global would cross-contaminate; the contextvar must not."""
+
+    async def receive(sender: str, hold_seconds: float) -> tuple[str, str | None]:
+        token = set_current_sender_id(sender)
+        try:
+            before = get_current_sender_id()
+            await asyncio.sleep(hold_seconds)
+            after = get_current_sender_id()
+            assert after == before
+            return sender, after
+        finally:
+            _current_sender_id.reset(token)
+
+    a, b = await asyncio.gather(receive("agent-a", 0.03), receive("agent-b", 0.01))
+    assert a[1] == "agent-a"
+    assert b[1] == "agent-b"

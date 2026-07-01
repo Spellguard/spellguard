@@ -50,6 +50,13 @@ export async function resolveAgentCard(
   try {
     const response = await fetch(agentCardUrl, {
       headers: { Accept: 'application/json' },
+      // Static well-known card fetch — must be fast. WITHOUT a deadline a
+      // slow/cold agent host holds the event loop here too (this runs on
+      // the verifier main loop during resolution). 8s matches the sibling
+      // discoverAgentUrl fetch; deliberately NOT the 110s LLM budget.
+      signal: AbortSignal.timeout(
+        Number(process.env.SPELLGUARD_VERIFIER_DISCOVERY_TIMEOUT_MS) || 8_000,
+      ),
     });
 
     if (!response.ok) {

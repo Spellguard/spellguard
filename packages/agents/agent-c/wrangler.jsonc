@@ -1,5 +1,5 @@
 {
-  "account_id": "07dea04158ad2b59f2214751ce9c8d48",
+  "account_id": "<YOUR_CLOUDFLARE_ACCOUNT_ID>",
   "name": "spellguard-agent-c",
   "main": "src/index.ts",
   "compatibility_date": "2024-12-01",
@@ -11,7 +11,8 @@
   "vars": {
     // Agent Identity
     "SELF_URL": "http://localhost:8789",
-    "AGENT_ID": "agent-c"
+    "AGENT_ID": "agent-c",
+    "SPELLGUARD_PROFILE": "agntcy"
   },
   // Note: Agent C does NOT use Spellguard - it's a standard A2A agent
   // This is intentional for testing one-sided integration
@@ -21,23 +22,41 @@
   "env": {
     "staging": {
       "name": "spellguard-agent-c-staging",
-      "routes": [
-        { "pattern": "agent-c.test.spellguard.ai", "custom_domain": true }
-      ],
+      "routes": [{ "pattern": "agent-c.example.com", "custom_domain": true }],
       "vars": {
-        "SELF_URL": "https://agent-c.test.spellguard.ai",
-        "AGENT_ID": "agent-c"
+        "SELF_URL": "https://agent-c.example.com",
+        "AGENT_ID": "agent-c",
+        "SPELLGUARD_PROFILE": "agntcy"
       }
       // Secrets are per-env; set via `wrangler secret put --env staging`
     },
+    "design": {
+      "name": "spellguard-agent-c-design",
+      "routes": [{ "pattern": "agent-c.example.com", "custom_domain": true }],
+      "vars": {
+        "SELF_URL": "https://agent-c.example.com",
+        "AGENT_ID": "agent-c",
+        "SPELLGUARD_PROFILE": "agntcy"
+      }
+      // Secrets are per-env; set via `wrangler secret put --env design`
+    },
+    "dev": {
+      "name": "spellguard-agent-c-dev",
+      "routes": [{ "pattern": "agent-c.example.com", "custom_domain": true }],
+      "vars": {
+        "SELF_URL": "https://agent-c.example.com",
+        "AGENT_ID": "agent-c",
+        "SPELLGUARD_PROFILE": "agntcy"
+      }
+      // Secrets are per-env; set via `wrangler secret put --env dev`
+    },
     "demo": {
       "name": "spellguard-agent-c-demo",
-      "routes": [
-        { "pattern": "agent-c.demo.spellguard.ai", "custom_domain": true }
-      ],
+      "routes": [{ "pattern": "agent-c.example.com", "custom_domain": true }],
       "vars": {
-        "SELF_URL": "https://agent-c.demo.spellguard.ai",
-        "AGENT_ID": "agent-c"
+        "SELF_URL": "https://agent-c.example.com",
+        "AGENT_ID": "agent-c",
+        "SPELLGUARD_PROFILE": "agntcy"
       }
       // Secrets are per-env; set via `wrangler secret put --env demo`
     },

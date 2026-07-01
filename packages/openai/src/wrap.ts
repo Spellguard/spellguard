@@ -2,6 +2,7 @@
 
 import {
   buildAgentContextBlock,
+  reportUsageEvent,
   resolveAndCollectAgentResponses,
 } from '@spellguard/client';
 import type OpenAI from 'openai';
@@ -82,12 +83,10 @@ function augmentMessages(
  * ```
  */
 export function wrapOpenAI(client: OpenAI): OpenAI {
-  // biome-ignore lint/suspicious/noExplicitAny: OpenAI create overloads are complex
   const originalCreate = client.chat.completions.create.bind(
     client.chat.completions,
   ) as (...args: any[]) => any;
 
-  // biome-ignore lint/suspicious/noExplicitAny: OpenAI create overloads are complex
   const interceptedCreate = async (
     params: any,
     reqOptions?: any,
@@ -96,7 +95,28 @@ export function wrapOpenAI(client: OpenAI): OpenAI {
     const prompt = extractPrompt(messages);
     const agentResponses = await resolveAndCollectAgentResponses(prompt);
     const prepared = augmentMessages(messages, agentResponses);
-    return originalCreate({ ...params, messages: prepared }, reqOptions);
+    const response = await originalCreate(
+      { ...params, messages: prepared },
+      reqOptions,
+    );
+    // await-and-rewrap usage emit. Skip the
+    // streaming branch — when `stream: true` the return is an async iterable
+    // with no `.usage` (usage lands on the terminal chunk only if
+    // `stream_options.include_usage` is set); instrumenting it is deferred to
+    // avoid wrapping the iterator. Fire-and-forget + fail-open.
+    if (!params?.stream && response?.usage) {
+      const u = response.usage;
+      reportUsageEvent({
+        model: response.model ?? params?.model ?? 'unknown',
+        promptTokens: u.prompt_tokens ?? 0,
+        completionTokens: u.completion_tokens ?? 0,
+        totalTokens:
+          u.total_tokens ?? (u.prompt_tokens ?? 0) + (u.completion_tokens ?? 0),
+        cachedInputTokens: u.prompt_tokens_details?.cached_tokens,
+        reasoningTokens: u.completion_tokens_details?.reasoning_tokens,
+      });
+    }
+    return response;
   };
 
   const completionsProxy = new Proxy(client.chat.completions, {

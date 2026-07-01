@@ -205,14 +205,22 @@ async function verifyPhalaHardwareSignature(
  */
 async function fetchAttestationWithRetry(
   url: string,
-  maxRetries = 2,
+  // Trimmed 2→1: with the 60s per-attempt timeout below, a cold SLIM session
+  // completes on the first attempt; the extra retries only churned the
+  // half-open session pool (a source of the gateway 502/503s). One retry
+  // still covers the genuine transient case (Phala 403 / 5xx).
+  maxRetries = 1,
   baseDelayMs = 1000,
 ): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(8_000),
+        // In the slim profile this fetch traverses the gateway→SLIM→verifier
+        // hop, whose cold-session establishment runs ~20-30s; 8s aborted
+        // mid-handshake on every attempt. 60s clears it with headroom and
+        // stays under the 150s ALB idle timeout even across the retry.
+        signal: AbortSignal.timeout(60_000),
       });
       const isTransient =
         !response.ok && (response.status === 403 || response.status >= 500);

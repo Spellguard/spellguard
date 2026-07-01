@@ -12,15 +12,17 @@ const { values } = parseArgs({
     workspace: { type: 'string' },
     'fail-open': { type: 'boolean', default: false },
     'verifier-timeout': { type: 'string', default: '5000' },
-    'management-url': { type: 'string' },
+    'base-url': { type: 'string' },
   },
   strict: false,
 });
 
 const agentId = process.env.SPELLGUARD_AGENT_ID;
 const agentSecret = process.env.SPELLGUARD_AGENT_SECRET;
-const managementUrl =
-  values['management-url'] || process.env.SPELLGUARD_MANAGEMENT_URL;
+// Spellguard base URL. NOTE: mcp-guard joins request paths directly
+// (`${url}/proxy/...`), so this value must already include the `/v1` prefix
+// (e.g. http://localhost:3001/v1), unlike the origin-only agent plugins.
+const managementUrl = values['base-url'] || process.env.SPELLGUARD_BASE_URL;
 
 if (!agentId || !agentSecret) {
   console.error(
@@ -30,9 +32,7 @@ if (!agentId || !agentSecret) {
 }
 
 if (!managementUrl) {
-  console.error(
-    'Error: --management-url or SPELLGUARD_MANAGEMENT_URL is required',
-  );
+  console.error('Error: --base-url or SPELLGUARD_BASE_URL is required');
   process.exit(1);
 }
 

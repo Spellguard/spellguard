@@ -50,7 +50,11 @@ from spellguard_ctls.types import (
     AgentCardSkill,
 )
 
-from .ai import set_current_correlation_id, set_current_hops
+from .ai import (
+    set_current_correlation_id,
+    set_current_hops,
+    set_current_sender_id,
+)
 from .attestation import configure, discover_and_configure, get_config, get_or_create_channel
 from .intent import set_intent_detect_fn, set_intent_detection_model
 from .types import (
@@ -243,6 +247,10 @@ class SpellguardInstance:
 
                 hop_token = set_current_hops(hops)
                 corr_token = set_current_correlation_id(correlation_id)
+                # Carry the immediate sender so any nested routing this handler
+                # triggers excludes back-routing to the sender (2-node cycle
+                # prevention — keeps the graph a DAG).
+                sender_token = set_current_sender_id(sender_id)
                 try:
                     ctx = MessageContext(
                         message=message,
@@ -252,10 +260,15 @@ class SpellguardInstance:
                     result = await self._options.on_message(ctx)
                 finally:
                     # Reset to previous values even if on_message raises
-                    from .ai import _current_correlation_id, _current_hops
+                    from .ai import (
+                        _current_correlation_id,
+                        _current_hops,
+                        _current_sender_id,
+                    )
 
                     _current_hops.reset(hop_token)
                     _current_correlation_id.reset(corr_token)
+                    _current_sender_id.reset(sender_token)
                 return JSONResponse({"success": True, "response": result})
             except Exception as error:
                 logger.error(

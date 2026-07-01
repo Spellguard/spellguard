@@ -14,6 +14,12 @@ import {
   encryptForManagement,
   isManagementEncryptionEnabled,
 } from '../crypto/management-encrypt';
+import { beginDelivery, endDelivery } from '../recycle-guard';
+import {
+  buildAgentDeliveryBody,
+  decryptRecipientReply,
+  encryptResponseForRequester,
+} from './delivery-encryption';
 
 // Import from @spellguard/amp
 import {
@@ -35,6 +41,13 @@ import {
   dispatchObligations,
   reportBilateralEvent,
 } from '../management/reporter';
+import { getActiveProfile } from '../profile/registry';
+import {
+  deriveAgentSlimName,
+  ensureGatewayRegistered,
+  invalidateGatewayRegistration,
+} from '../slim/managed-delivery';
+import { sendMessageToAgentOverSlim } from '../slim/send-to-agent';
 import {
   handleQuarantine,
   shouldQuarantineFromChecks,
@@ -99,7 +112,88 @@ async function resolveRecipient(
 > {
   const existingAgent = getAgent(recipientId);
   if (existingAgent) {
+    // Agntcy profile delivers over SLIM for ALL recipients. A locally-cached
+    // entry without a slimName (registered before the stamp, or via a non-SLIM
+    // path) would otherwise slip back to HTTP — derive its slimName and make
+    // sure the gateway is subscribed (its endpoint is the HTTP callback) first.
+    const cachedProfile = getActiveProfile();
+    if (
+      cachedProfile?.profile === 'agntcy' &&
+      !existingAgent.slimName &&
+      existingAgent.endpoint?.startsWith('http')
+    ) {
+      const httpBase = existingAgent.endpoint.replace(
+        /\/_spellguard\/receive\/?$/,
+        '',
+      );
+      await ensureGatewayRegistered(recipientId, httpBase);
+      const stamped: RegisteredAgent = {
+        ...existingAgent,
+        slimName: deriveAgentSlimName(recipientId),
+      };
+      registerAgent(stamped, { allowEndpointUpdate: true });
+      return { found: true, agent: stamped };
+    }
     return { found: true, agent: existingAgent };
+  }
+
+  // When the slim profile is active, AGNTCY dir is the registry. On a dir hit
+  // we return immediately. On a dir miss/error the behaviour splits:
+  //   • No-Management (OSS export): dir is the SOLE registry — fail loudly, no
+  //     A2A fallback, so a slim deployment is guaranteed on the AGNTCY stack.
+  //   • Managed: fall through to the Management/A2A resolver below (mirrors the
+  //     original profile's Verifier→Management resolution) and back-fill the
+  //     resolved agent into dir, so dir converges and future lookups hit it.
+  const profile = getActiveProfile();
+  if (profile?.profile === 'agntcy') {
+    const resolved = await profile.directory
+      .resolve(recipientId)
+      .then((a) => ({ ok: true as const, address: a }))
+      .catch((err: unknown) => ({ ok: false as const, err: err as Error }));
+    const address = resolved.ok ? resolved.address : null;
+    if (address) {
+      // Slim profile delivers verifier→gateway→agent over SLIM (managed AND
+      // no-Management). Derive the recipient's slimName and make sure the
+      // gateway is subscribed to it, holding the agent's HTTP callback — the
+      // recipient stays a plain HTTP agent; the gateway proxies SLIM → POST.
+      const slimName = deriveAgentSlimName(address.agentId);
+      const httpBase = address.url ? address.url.replace(/\/$/, '') : null;
+      if (httpBase) await ensureGatewayRegistered(address.agentId, httpBase);
+      const discoveredAgent: RegisteredAgent = {
+        agentId: address.agentId,
+        codeHash: 'discovered-via-dir',
+        // `endpoint` is kept HTTP-shaped so log lines + audit trail stay
+        // readable AND so the delivery retry can re-register the gateway;
+        // SLIM-native delivery is signalled by `slimName` and routed through
+        // sendMessageToAgentOverSlim in forwardToRecipient.
+        endpoint: httpBase
+          ? `${httpBase}/_spellguard/receive`
+          : `slim://${slimName}`,
+        agentCardUrl: httpBase ? `${httpBase}/.well-known/agent.json` : '',
+        channelToken: `temp_${crypto.randomUUID()}`,
+        registeredAt: Date.now(),
+        expiresAt: Date.now() + 60 * 60 * 1000,
+        slimName,
+      };
+      registerAgent(discoveredAgent);
+      console.log(
+        `[Router] Resolved ${recipientId} via AGNTCY dir → SLIM delivery (slimName=${slimName})`,
+      );
+      return { found: true, agent: discoveredAgent };
+    }
+    const dirProblem = resolved.ok
+      ? 'not found in AGNTCY dir'
+      : `dir lookup failed: ${resolved.err.message}`;
+    if (!process.env.MANAGEMENT_URL) {
+      // No-Management: dir is authoritative; no silent fallback.
+      return {
+        found: false,
+        error: `Recipient ${recipientId} ${dirProblem} (no-Management slim — fallback disabled)`,
+      };
+    }
+    console.log(
+      `[Router] ${recipientId} ${dirProblem}; managed slim — resolving via Management and back-filling dir`,
+    );
   }
 
   console.log(
@@ -112,18 +206,53 @@ async function resolveRecipient(
   }
 
   const tempChannelToken = `temp_${crypto.randomUUID()}`;
+  const httpBase = agentCard.url.replace(/\/$/, '');
+
+  // Managed agntcy mode reaches here only on a dir miss (see the agntcy branch
+  // above) — typically a PURE recipient that never self-registers (e.g. a
+  // the demo fleet receiver), so the gateway has no slimName for it yet. Register
+  // it with the gateway now (slimName → HTTP callback) so it's delivered over
+  // SLIM like every other agntcy recipient, then stamp the slimName so
+  // forwardToRecipient takes the SLIM path.
+  let slimName: string | undefined;
+  if (profile?.profile === 'agntcy') {
+    await ensureGatewayRegistered(recipientId, httpBase);
+    slimName = deriveAgentSlimName(recipientId);
+  }
+
   const discoveredAgent: RegisteredAgent = {
     agentId: recipientId,
     codeHash: 'discovered-via-a2a',
-    endpoint: `${agentCard.url}/_spellguard/receive`,
-    agentCardUrl: `${agentCard.url}/.well-known/agent.json`,
+    endpoint: `${httpBase}/_spellguard/receive`,
+    agentCardUrl: `${httpBase}/.well-known/agent.json`,
     channelToken: tempChannelToken,
     registeredAt: Date.now(),
     expiresAt: Date.now() + 60 * 60 * 1000,
+    slimName,
   };
 
   registerAgent(discoveredAgent);
-  console.log(`[Router] Auto-registered ${recipientId} via A2A discovery`);
+  console.log(
+    `[Router] Auto-registered ${recipientId} via A2A discovery${slimName ? ` → SLIM delivery (slimName=${slimName})` : ''}`,
+  );
+
+  // Back-fill the Management-resolved endpoint into AGNTCY dir so the next
+  // lookup resolves from dir directly — dir converges to the full agent set
+  // without re-querying Management each time. Best-effort.
+  if (profile?.profile === 'agntcy') {
+    profile.directory
+      .publish?.({ agentId: recipientId, endpoint: httpBase, skills: [] })
+      .then(() =>
+        console.log(
+          `[Router] Back-filled ${recipientId} into AGNTCY dir (endpoint ${httpBase})`,
+        ),
+      )
+      .catch((err) =>
+        console.warn(
+          `[Router] dir back-fill failed for ${recipientId}: ${(err as Error).message}`,
+        ),
+      );
+  }
 
   return { found: true, agent: discoveredAgent };
 }
@@ -291,6 +420,20 @@ async function runRecipientInboundPolicyChecks(
  * 9. Report with policyChecks
  */
 export async function routeMessage(
+  message: SecureMessage,
+  senderChannelToken: string,
+): Promise<RouteResult> {
+  // In-flight accounting so the proactive self-recycle (recycle-guard) never
+  // exits the process mid-delivery — only in an idle gap.
+  beginDelivery();
+  try {
+    return await routeMessageImpl(message, senderChannelToken);
+  } finally {
+    endDelivery();
+  }
+}
+
+async function routeMessageImpl(
   message: SecureMessage,
   senderChannelToken: string,
 ): Promise<RouteResult> {
@@ -669,21 +812,91 @@ export async function routeMessage(
     const outboundWasRedacted =
       contentForForwarding !== null &&
       contentForForwarding !== decryptedContent;
-    const response = await forwardToRecipient(
+    const rawResponse = await forwardToRecipient(
       recipientAgent.endpoint,
       message,
       recipientAgent.channelToken,
       outboundWasRedacted ? contentForForwarding : undefined,
       currentHops + 1,
       correlationId,
+      recipientAgent.slimName,
+      recipientAgent.clientPublicKey,
     );
+    // Return leg: if the recipient encrypted its reply to the Verifier, decrypt
+    // it so the response policies + audit below operate on plaintext.
+    const response = decryptRecipientReply(rawResponse);
 
-    // Step 8: Run inbound policy checks on response
-    let inboundChecks: PolicyCheckResult[] = [];
-    let finalResponse = response;
-    if (senderPolicies) {
+    // Step 8a: Run recipient outbound policy checks on the response
+    // (recipient's outbound policies, applied to what the recipient is
+    // sending back to the original sender). Symmetric with the sender's
+    // outbound check on the request. Mirrors the "responses don't block,
+    // but can redact and surface obligations" precedent that the
+    // sender-inbound check below already follows — keeps the bilateral
+    // conversation flowing while still applying the recipient's outbound
+    // bindings (e.g. PII / secrets / exfiltration) to its own response.
+    let recipientOutboundChecks: PolicyCheckResult[] = [];
+    let responseAfterRecipientOutbound: unknown = response;
+    if (recipientConfig) {
+      const recipientRecentMessages = getRecentMessages(message.recipient);
       const responseContent =
         typeof response === 'string' ? response : JSON.stringify(response);
+      recipientOutboundChecks = await evaluatePolicies(
+        filterByScope(recipientConfig.outbound, 'messages'),
+        responseContent,
+        {
+          agentId: message.recipient,
+          direction: 'outbound',
+          recentMessages: recipientRecentMessages,
+          agentStatus: recipientConfig.agentStatus,
+          // On the response, the recipient is the "sender" of the
+          // response and the original sender is the "recipient". Flip
+          // the org-context fields accordingly.
+          senderOrgId: recipientConfig.organizationId,
+          recipientOrgId: senderPolicies?.organizationId,
+          identity: recipientConfig.identityContext,
+        },
+      );
+
+      const redactedFromRecipient = applyRedaction(
+        responseContent,
+        recipientOutboundChecks,
+      );
+      if (redactedFromRecipient !== responseContent) {
+        try {
+          responseAfterRecipientOutbound = JSON.parse(redactedFromRecipient);
+        } catch {
+          responseAfterRecipientOutbound = redactedFromRecipient;
+        }
+      }
+    }
+
+    // Quarantine the recipient if any of its outbound bindings on this
+    // response fired a quarantine effect. Independent of the message-
+    // level disposition derived from the outbound+inbound mix.
+    if (shouldQuarantineFromChecks(recipientOutboundChecks)) {
+      const quarantineOk = await handleQuarantine(
+        message.recipient,
+        buildQuarantineReason(recipientOutboundChecks),
+      );
+      if (!quarantineOk) {
+        console.error(
+          `[Router] CRITICAL: Failed to quarantine recipient ${message.recipient} after outbound policy fired quarantine — response delivery continues`,
+        );
+      }
+    }
+
+    // Step 8: Run inbound policy checks on response
+    // The sender's inbound bindings see whatever the recipient's
+    // outbound bindings produced — including any redactions applied
+    // above — so a single redacted span is reflected in both audit
+    // entries and in the response that lands back on Agent A.
+    let inboundChecks: PolicyCheckResult[] = [];
+    let finalResponse = responseAfterRecipientOutbound;
+    if (senderPolicies) {
+      const responseContent =
+        typeof responseAfterRecipientOutbound === 'string'
+          ? responseAfterRecipientOutbound
+          : JSON.stringify(responseAfterRecipientOutbound);
       const recentMessages = getRecentMessages(message.sender);
       inboundChecks = await evaluatePolicies(
         filterByScope(senderPolicies.inbound, 'messages'),
@@ -792,8 +1005,8 @@ export async function routeMessage(
     );
     reportBilateralEvent(
       responseCommitment,
-      'allow',
-      [],
+      deriveResponseLevel(recipientOutboundChecks),
+      recipientOutboundChecks,
       'outbound',
       message.recipient,
     );
@@ -814,10 +1027,24 @@ export async function routeMessage(
       commitment,
       message.recipient,
     );
+    if (recipientOutboundChecks.length > 0) {
+      dispatchObligations(
+        recipientOutboundChecks,
+        'outbound',
+        responseCommitment,
+        message.recipient,
+      );
+    }
 
+    // Return leg: re-encrypt the response TO the requester's key (gateway-opaque)
+    // when it registered one; the requester's client decrypts it. Legacy
+    // requesters (no key) get plaintext.
     return {
       success: true,
-      response: finalResponse,
+      response: encryptResponseForRequester(
+        finalResponse,
+        getAgent(message.sender)?.clientPublicKey,
+      ),
       warnings: warningsArray,
     };
   } catch (error) {
@@ -884,6 +1111,8 @@ async function forwardToRecipient(
   redactedContent?: string | null,
   hops?: number,
   correlationId?: string,
+  slimName?: string,
+  recipientPublicKey?: string,
 ): Promise<unknown> {
   // Use redacted content if provided, otherwise decrypt the payload
   let decryptedPayload: unknown;
@@ -928,18 +1157,74 @@ async function forwardToRecipient(
     }
   }
 
+  // SLIM-native delivery: when the recipient has a slimName, publish the
+  // message to that slimName over the AGNTCY data plane (Task 27). The
+  // gateway — subscribed to the recipient's slimName on the agent's behalf
+  // (the registry entry the Verifier pushed at registration, Task 28) —
+  // receives it, POSTs the body to the agent's /_spellguard/receive callback,
+  // and publishes the agent's response back as the SLIM reply. There is NO
+  // HTTP fallback here: in agntcy profile a slimName recipient is delivered over
+  // SLIM or it fails loudly, so an agntcy deployment is guaranteed to actually be
+  // on the AGNTCY stack rather than silently dropping to the original path.
+  const profile = getActiveProfile();
+  if (slimName && profile?.profile === 'agntcy') {
+    // The agent's HTTP callback base — re-register target for the retry below.
+    // Only available when endpoint is HTTP (managed / back-filled recipients).
+    const httpBase = endpoint.startsWith('http')
+      ? endpoint.replace(/\/_spellguard\/receive\/?$/, '')
+      : null;
+    const MAX_ATTEMPTS = 3;
+    let lastError = 'unknown';
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const result = await sendMessageToAgentOverSlim(
+        slimName,
+        message,
+        decryptedPayload,
+        channelToken,
+        recipientPublicKey,
+      );
+      if (result.ok) return result.response;
+      lastError = result.error ?? 'unknown';
+      // Retry ONLY a `session-failed` send: createSession found no subscriber,
+      // so the gateway's subscription is still propagating (first delivery to a
+      // freshly-registered recipient) or the gateway restarted and lost its
+      // registry. Either way the message did NOT reach the agent, so re-delivery
+      // is safe. Any other failure may already have reached the agent — fail
+      // loud rather than risk a double-delivery. (Still no silent HTTP fallback:
+      // a slim deployment delivers over SLIM or fails.)
+      if (result.errorCode !== 'session-failed' || attempt === MAX_ATTEMPTS) {
+        break;
+      }
+      if (httpBase) {
+        invalidateGatewayRegistration(message.recipient);
+        await ensureGatewayRegistered(message.recipient, httpBase);
+      }
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+    }
+    throw new Error(
+      `SLIM delivery to ${message.recipient} (${slimName}) failed: ${lastError}`,
+    );
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Spellguard-Channel-Token': channelToken,
     },
-    body: JSON.stringify({
-      message: decryptedPayload,
-      senderId: message.sender,
-      messageId: message.id,
-      timestamp: message.timestamp,
-    }),
+    body: JSON.stringify(
+      buildAgentDeliveryBody(decryptedPayload, message, recipientPublicKey),
+    ),
+    // Bound the delivery to the recipient. This fetch awaits the recipient
+    // agent's FULL turn (it may run an LLM), so it's legitimately long —
+    // but WITHOUT a deadline a hung/cold cross-org agent holds this socket
+    // (and a SLIM routeMessage chain) open for minutes (observed 273-301s
+    // live), piling up on the verifier's single event loop until /ready +
+    // heartbeat starve and ECS recycles the task. Cap just under the SLIM
+    // reply budget (120s) so a zombie turn fails cleanly at ~110s instead.
+    signal: AbortSignal.timeout(
+      Number(process.env.SPELLGUARD_VERIFIER_FORWARD_TIMEOUT_MS) || 110_000,
+    ),
   });
 
   if (!response.ok) {

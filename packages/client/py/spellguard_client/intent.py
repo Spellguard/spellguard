@@ -13,6 +13,8 @@ import logging
 import re
 from typing import Any, Awaitable, Callable
 
+from .usage_telemetry import report_openai_usage
+
 logger = logging.getLogger("spellguard")
 
 # ===================================================================
@@ -135,6 +137,11 @@ async def detect_agent_references(prompt: str) -> list[str]:
                 ],
                 max_tokens=100,
             )
+
+            # the intent-detection call is a real
+            # (small) inference billed to the org -- emit its usage. Already
+            # awaited; pure additive read, fire-and-forget + fail-open.
+            report_openai_usage(response, model_name)
 
             text = response.choices[0].message.content or ""
             text = text.strip()

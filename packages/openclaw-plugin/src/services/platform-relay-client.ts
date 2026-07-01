@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHmac } from 'node:crypto';
+import { createManagementClient } from '@spellguard/agent-control';
+import WebSocket from 'ws';
 import type { SpellguardConfig } from '../config';
 import { getAdapter } from '../hooks/adapters/dispatcher';
 import { stashTeamsActivityContext } from '../hooks/msteams-activity-stash';
@@ -12,6 +14,17 @@ interface PlatformRelayOptions {
   teamsPort?: number;
   teamsPath?: string;
   openclawConfig?: Record<string, unknown>;
+  /**
+   * Feature #10: invoked inside `ws.onopen` once the management platform-relay
+   * socket is up. This covers the Slack HTTP-mode and Teams paths (where the
+   * relay client is actually started). Slack socket-mode does not start the
+   * relay client — that readiness signal is fired from the credential-service
+   * Slack credential merge instead (see credential-service.ts B6).
+   *
+   * `platform` is derived from which options were set: `slackSigningSecret`
+   * present → 'slack', else 'teams'.
+   */
+  onRelayReady?: (platform: 'slack' | 'teams') => void;
 }
 
 export function createPlatformRelayClient(
@@ -28,26 +41,33 @@ export function createPlatformRelayClient(
   // post one block notice per original message.
   const recentBlocks = new Set<string>();
 
-  async function getManagementToken(): Promise<string> {
-    const url = `${baseUrl}/v1/proxy/${config.agentId}/proxy-connect`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Spellguard-Agent-Secret': config.agentSecret ?? '',
-      },
-      body: JSON.stringify({
-        platform: options?.slackSigningSecret ? 'slack' : 'msteams',
-        upstreamType: options?.slackSigningSecret ? 'websocket' : 'webhook',
-        slackSigningSecret: options?.slackSigningSecret,
-      }),
-    });
+  const managementApi = createManagementClient({
+    baseUrl,
+    agentId: config.agentId,
+    agentSecret: config.agentSecret ?? '',
+    auth: 'agent-secret',
+    // The relay drives its own reconnect/backoff on a failed proxy-connect, so
+    // the client makes a single attempt (no built-in 5xx retry).
+    retry: false,
+  });
 
-    if (!response.ok) {
+  async function getManagementToken(): Promise<string> {
+    const { data, error, response } = await managementApi.POST(
+      '/proxy/{agentId}/proxy-connect',
+      {
+        params: { path: { agentId: config.agentId } },
+        body: {
+          platform: options?.slackSigningSecret ? 'slack' : 'msteams',
+          upstreamType: options?.slackSigningSecret ? 'websocket' : 'webhook',
+          slackSigningSecret: options?.slackSigningSecret,
+        },
+      },
+    );
+
+    if (error || !data) {
       throw new Error(`proxy-connect failed: ${response.status}`);
     }
 
-    const data = (await response.json()) as { managementToken: string };
     return data.managementToken;
   }
 
@@ -115,7 +135,36 @@ export function createPlatformRelayClient(
       headers['X-Slack-Signature'] = sig;
     }
 
-    await fetch(localBoltUrl, { method: 'POST', headers, body });
+    // Fail-loud, like forwardToTeamsEndpoint above. This hop was previously a
+    // bare `await fetch` with no .ok check, no try/catch, and no log — so a
+    // refused port (gateway not on the expected port) or a Bolt rejection
+    // vanished silently: the inbound mention reached the bot but produced no
+    // reply and no trace anywhere. Bolt ACKs 200 BEFORE it dispatches, so a 200
+    // here only proves the receiver accepted the frame, not that a reply went
+    // out — but a non-200 or a throw is a definitive, grep-able failure signal.
+    console.log(
+      `[spellguard-relay] forward->slack url=${localBoltUrl} bodyLen=${body.length} hasSig=${!!options?.slackSigningSecret} agentId=${config.agentId}`,
+    );
+    try {
+      const resp = await fetch(localBoltUrl, { method: 'POST', headers, body });
+      const respText =
+        typeof resp.text === 'function'
+          ? await resp.text().catch(() => '<no-body>')
+          : '';
+      console.log(
+        `[spellguard-relay] forward->slack status=${resp.status} respLen=${respText.length} agentId=${config.agentId}`,
+      );
+      if (!resp.ok) {
+        console.error(
+          `[spellguard-relay] forward->slack NON-OK status=${resp.status} body=${respText.slice(0, 200)}`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        '[spellguard-relay] forward->slack fetch threw (gateway not listening on the configured port?):',
+        err,
+      );
+    }
   }
 
   const teamsEndpoint = `http://localhost:${options?.teamsPort ?? 3978}${options?.teamsPath ?? '/api/messages'}`;
@@ -279,12 +328,24 @@ export function createPlatformRelayClient(
         .replace('https://', 'wss://')
         .replace('http://', 'ws://');
 
+      // Use the `ws` library (not the Node-native undici WebSocket) so we
+      // can pass an Authorization header on the upgrade. Native WebSocket's
+      // second arg is `protocols: string|string[]`, not options — passing
+      // `{headers}` silently drops the header and the server 401s, which
+      // sends undici into a recursive close → `RangeError: Maximum call
+      // stack size exceeded`. The agent-control channel client at
+      // `packages/agent-control/src/client.ts:41`
+      // uses the same import for the same reason.
       ws = new WebSocket(`${wsUrl}/v1/platform/relay/${config.agentId}`, {
         headers: { Authorization: `Bearer ${token}` },
-      } as unknown as string[]);
+      });
 
       ws.onopen = () => {
         console.log('[spellguard] Platform relay WebSocket connected');
+        // Feature #10: the management relay socket is up — derive the platform
+        // from which options were set and notify the readiness callback.
+        const platform = options?.slackSigningSecret ? 'slack' : 'teams';
+        options?.onRelayReady?.(platform);
       };
 
       ws.onmessage = async (event) => {

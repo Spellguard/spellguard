@@ -30,6 +30,12 @@ export class DurableObject {
     this.env = env;
   }
 }
+export class WorkflowEntrypoint {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+}
 export const env = {};
 `;
       }
@@ -140,13 +146,17 @@ export default defineConfig({
         __dirname,
         'packages/client/ts/src/index.ts',
       ),
-      '@openclaw/spellguard': resolve(
+      '@spellguard/openclaw-plugin': resolve(
         __dirname,
         'packages/openclaw-plugin/src/index.ts',
       ),
       '@spellguard/verifier': resolve(
         __dirname,
         'packages/verifier/src/index.ts',
+      ),
+      '@spellguard/amp/profile': resolve(
+        __dirname,
+        'packages/amp/ts/src/profile/index.ts',
       ),
       '@spellguard/ctls': resolve(__dirname, 'packages/ctls/ts/src'),
       '@spellguard/policy-sdk/testing': resolve(
@@ -160,6 +170,14 @@ export default defineConfig({
       '@spellguard/policy-catalog': resolve(
         __dirname,
         'packages/policy-catalog/src/index.ts',
+      ),
+      '@spellguard/agent-control': resolve(
+        __dirname,
+        'packages/agent-control/src/index.ts',
+      ),
+      '@spellguard/claude-code-plugin': resolve(
+        __dirname,
+        'packages/claude-code-plugin/src/index.ts',
       ),
     },
   },

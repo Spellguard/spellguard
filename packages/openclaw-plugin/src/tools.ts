@@ -15,6 +15,7 @@ import {
   StatusParameters,
 } from './adapter';
 import type { SpellguardConfig } from './config';
+import { getActiveGithubCredential, getAuthorIdentity } from './credentials';
 import type {
   DiscoverData,
   RouteData,
@@ -181,6 +182,18 @@ export function createTools(config: SpellguardConfig): ToolBundle[] {
 
             logEvent('status', config.agentId);
 
+            const cred = getActiveGithubCredential();
+            const author = getAuthorIdentity();
+            const credentialBlock: StatusData['credential'] = cred
+              ? {
+                  source: 'socket',
+                  scopedTokenId: cred.scopedTokenId,
+                  expiresAt: cred.expiresAt,
+                  repos: cred.repos,
+                  author,
+                }
+              : { source: 'none' };
+
             return {
               success: true,
               data: {
@@ -190,6 +203,7 @@ export function createTools(config: SpellguardConfig): ToolBundle[] {
                   agentId: config.agentId,
                   webhookUrl: config.selfUrl,
                 },
+                credential: credentialBlock,
               },
             };
           } catch (err) {

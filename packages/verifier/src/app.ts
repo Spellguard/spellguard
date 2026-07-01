@@ -25,6 +25,7 @@ import {
   getAllAgents,
   getSessionPublicKey,
   isAgentRegistered,
+  registerAgent,
   rotateChannelToken,
   verifyEvidence,
 } from '@spellguard/ctls';
@@ -68,6 +69,7 @@ import {
 } from './management/reporter';
 import { signRequest } from './management/request-signer';
 import type { NonceStore } from './nonce-store';
+import { getActiveProfile } from './profile/registry';
 import {
   handleQuarantine,
   resolveResponseLevel,
@@ -89,6 +91,10 @@ import {
 } from './proxy/toxicity-semantic-endpoint';
 import { routeUnilateral } from './proxy/unilateral-router';
 import { checkVisibility } from './proxy/visibility-checker';
+import {
+  deriveAgentSlimName,
+  ensureGatewayRegistered,
+} from './slim/managed-delivery';
 import { normalizeAgentUrl } from './url-normalize';
 
 /**
@@ -123,6 +129,14 @@ export interface VerifierAppOptions {
    * `NODE_ENV !== 'production'`.
    */
   isDevMode?: boolean;
+
+  /**
+   * Returns whether the SLIM listener worker is alive and subscribed.
+   * Surfaced by the /ready readiness probe so a SLIM-dead verifier fails
+   * its health check (and ECS replaces it), unlike /health which is local
+   * and stays 200. Omitted by non-slim runtimes — they report ready.
+   */
+  getSlimReady?: () => boolean;
 }
 
 /**
@@ -432,6 +446,20 @@ export function createVerifierApp(options: VerifierAppOptions): Hono {
     await next();
   });
 
+  // Stamp the active transport on every response. Lets curl/agents/CI
+  // see whether they're talking through the slim-mode gateway (and
+  // riding the AGNTCY SLIM transport) or the original direct-HTTP
+  // path. Reads from the profile bundle singleton; on the original
+  // profile the header is just 'http' (still informative).
+  app.use('*', async (c, next) => {
+    const bundle = getActiveProfile();
+    if (bundle) {
+      c.header('X-Spellguard-Profile', bundle.profile);
+      c.header('X-Spellguard-Transport', bundle.transport.name);
+    }
+    await next();
+  });
+
   // ═══════════════════════════════════════════════════════════════════
   // Health
   // ═══════════════════════════════════════════════════════════════════
@@ -468,6 +496,27 @@ export function createVerifierApp(options: VerifierAppOptions): Hono {
         ...(semanticToxicity ? { semanticToxicity } : {}),
       },
       status === 'ok' ? 200 : 503,
+    );
+  });
+
+  // /ready — READINESS probe. /health (above) is liveness: it's served
+  // locally and stays 200 whenever the process is up, even if the SLIM
+  // listener died (the false-positive oracle that let ECS keep zombie
+  // tasks alive). /ready reflects whether the SLIM listener worker is
+  // actually alive and subscribed, so health checks pointed here cull a
+  // SLIM-dead verifier. Non-slim runtimes (no getSlimReady) report ready.
+  app.get('/ready', (c) => {
+    const hasSlim = !!options.getSlimReady;
+    const slimReady = hasSlim
+      ? (options.getSlimReady as () => boolean)()
+      : true;
+    return c.json(
+      {
+        ready: slimReady,
+        sessionKeyReady: !!getSessionPublicKey(),
+        slim: hasSlim ? (slimReady ? 'ok' : 'down') : 'n/a',
+      },
+      slimReady ? 200 : 503,
     );
   });
 
@@ -538,6 +587,7 @@ export function createVerifierApp(options: VerifierAppOptions): Hono {
 
     const body = await c.req.json();
     const evidence = body.evidence as Evidence;
+    const clientPublicKey = body.clientPublicKey as string | undefined;
 
     if (!evidence || !evidence.agentId || !evidence.claims) {
       return c.json({ error: 'Invalid evidence format' }, 400);
@@ -621,6 +671,20 @@ export function createVerifierApp(options: VerifierAppOptions): Hono {
       );
     }
 
+    // Stamp the client's X25519 public key onto the local registry so the
+    // router can encrypt delivered payloads + responses TO this agent
+    // (gateway-opaque, app-layer end-to-end). Absent ⇒ the agent stays in
+    // legacy plaintext mode. All profiles (encryption is above transport).
+    if (clientPublicKey) {
+      const reg = getAgent(evidence.agentId);
+      if (reg && reg.clientPublicKey !== clientPublicKey) {
+        registerAgent(
+          { ...reg, clientPublicKey },
+          { allowEndpointUpdate: true },
+        );
+      }
+    }
+
     // Persist the agent's base URL to management so that resolution
     // survives Verifier restarts.
     if (managementUrl && evidence.claims?.endpoint) {
@@ -628,7 +692,13 @@ export function createVerifierApp(options: VerifierAppOptions): Hono {
         /\/_spellguard\/receive\/?$/,
         '',
       );
-      const patchBody = JSON.stringify({ endpointUrl: baseUrl });
+      // Report the agent's gateway-opaque encryption mode alongside its
+      // endpoint: 'full' when it registered an X25519 key (E2E-to-agent),
+      // 'legacy' otherwise. Drives the dashboard's legacy-mode badge.
+      const patchBody = JSON.stringify({
+        endpointUrl: baseUrl,
+        encryptionMode: clientPublicKey ? 'full' : 'legacy',
+      });
       signRequest(patchBody)
         .then((headers) =>
           fetch(
@@ -646,6 +716,65 @@ export function createVerifierApp(options: VerifierAppOptions): Hono {
             `[Verifier] Failed to persist endpoint for ${evidence.agentId}: ${err}`,
           ),
         );
+    }
+
+    // Agntcy profile: publish the agent into AGNTCY dir so recipient resolution
+    // (router.resolveRecipient → directory.resolve) finds it. dir is the SOLE
+    // registry in agntcy mode (no A2A fallback), so resolution MUST succeed —
+    // which is why we now publish in BOTH managed and no-Management modes.
+    // (Management itself never wrote to dir; after a verifier restart its
+    // in-memory registry is empty, so even managed recipients resolve via dir.)
+    // Best-effort: a dir/gateway failure must not block attestation.
+    const profile = getActiveProfile();
+    if (profile?.profile === 'agntcy' && evidence.claims?.endpoint) {
+      const baseUrl = evidence.claims.endpoint.replace(
+        /\/_spellguard\/receive\/?$/,
+        '',
+      );
+      // Agntcy profile delivers verifier→gateway→agent over SLIM in BOTH managed
+      // and no-Management modes (the recipient stays a plain HTTP agent; the
+      // gateway proxies SLIM → POST callback). So every attested agent gets a
+      // 3-component slimName, is published into dir under it (the gateway's
+      // doSubscribe requires exactly 3 parts; org/group from env, default/default
+      // single-tenant), and is registered with the gateway so it subscribes.
+      // Stamp the slimName onto this verifier's local registry entry too —
+      // resolveRecipient() returns a locally-registered agent BEFORE consulting
+      // dir, so without the stamp a self-registered recipient would have no
+      // slimName and bypass the data plane.
+      const slimOrg =
+        process.env.SPELLGUARD_DEFAULT_ORG_SLIM_PREFIX ?? 'default';
+      const slimName = deriveAgentSlimName(evidence.agentId);
+      const localReg = getAgent(evidence.agentId);
+      if (localReg && localReg.slimName !== slimName) {
+        registerAgent({ ...localReg, slimName }, { allowEndpointUpdate: true });
+      }
+      // Publish the agent's HTTP endpoint as the dir locator: resolve() yields
+      // a url that the router uses for the gateway callback (and the delivery
+      // retry's re-register). The slimName itself is derived deterministically
+      // from the agentId at resolve time, so it needn't be stored in dir.
+      profile.directory
+        .publish?.({
+          agentId: evidence.agentId,
+          endpoint: baseUrl,
+          skills: [],
+          org: slimOrg,
+        })
+        .catch((err) =>
+          console.warn(
+            `[Verifier] dir publish failed for ${evidence.agentId}: ${(err as Error).message}`,
+          ),
+        );
+      // Register the slimName → callbackUrl mapping with the gateway so it
+      // subscribes and can dispatch inbound SLIM to the agent. Fire-and-forget +
+      // cached (ensureGatewayRegistered), so a later resolve of this recipient
+      // skips a duplicate push; a failure here is retried on first delivery.
+      void ensureGatewayRegistered(evidence.agentId, baseUrl).then((sn) =>
+        console.log(
+          sn
+            ? `[Verifier] Published ${evidence.agentId} to dir + registered with gateway (slimName=${slimName})`
+            : `[Verifier] dir-published ${evidence.agentId}; gateway registration deferred (retries on delivery)`,
+        ),
+      );
     }
 
     await persist(options);

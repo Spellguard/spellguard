@@ -2,6 +2,7 @@
 
 import { generateText as originalGenerateText } from 'ai';
 import type { LanguageModel } from 'ai';
+import { modelIdOf, reportAiSdkUsage } from './usage-telemetry';
 
 /**
  * Model to use for intent detection.
@@ -102,6 +103,16 @@ export async function detectAgentReferences(prompt: string): Promise<string[]> {
         prompt: prompt,
         maxTokens: 100,
       });
+
+      // (§6.1): the intent-detection call is a real (small)
+      // inference billed to the org — emit its usage. Already awaited above, so
+      // this is a pure additive read; fire-and-forget + fail-open.
+      const intentModelId = (analysis as { response?: { modelId?: string } })
+        .response?.modelId;
+      reportAiSdkUsage(
+        analysis.usage,
+        intentModelId ?? modelIdOf(intentDetectionModel),
+      );
 
       const text = analysis.text.trim();
       const jsonMatch = text.match(/\[.*\]/s);

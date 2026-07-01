@@ -1,17 +1,22 @@
 {
-  "name": "@openclaw/spellguard",
-  "version": "0.1.0",
+  "name": "@spellguard/openclaw-plugin",
+  "version": "0.0.3",
   "type": "module",
   "main": "./dist/index.js",
-  "files": ["dist", "openclaw.plugin.json", "README.md"],
+  "files": ["dist", "openclaw.plugin.json", "README.md", "LICENSE", "skills"],
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:openclaw --external:openclaw/plugin-sdk --sourcemap",
+    "build": "pnpm run build:lib && pnpm run build:types",
+    "build:lib": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:openclaw --external:openclaw/plugin-sdk",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tgz",
-    "install:openclaw": "pnpm run build && pnpm pack && openclaw plugins install ./openclaw-spellguard-*.tgz --force && rm -f ./openclaw-spellguard-*.tgz"
+    "install:openclaw": "pnpm run build && pnpm pack && env PATH=/usr/local/bin:$PATH openclaw plugins install ./spellguard-openclaw-plugin-*.tgz --force && rm -f ./spellguard-openclaw-plugin-*.tgz",
+    "build:types": "tsc -p tsconfig.build.json"
   },
   "openclaw": {
     "extensions": ["./dist/index.js"]
@@ -24,14 +29,35 @@
       "optional": true
     }
   },
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
   "devDependencies": {
     "@hono/node-server": "^1.0.0",
     "@sinclair/typebox": "^0.34.0",
+    "@spellguard/agent-control": "workspace:*",
     "@spellguard/client": "workspace:*",
+    "@spellguard/management-api-types": "workspace:*",
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.21.0",
     "hono": "^4.6.0",
     "typescript": "^5.7.0",
     "zod": "^4.0.0"
-  }
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Spellguard/spellguard.git",
+    "directory": "packages/openclaw-plugin"
+  },
+  "homepage": "https://spellguard.ai",
+  "bugs": {
+    "url": "https://github.com/Spellguard/spellguard/issues"
+  },
+  "keywords": ["spellguard", "ai-security", "openclaw", "plugin", "extension"],
+  "types": "./dist/index.d.ts"
 }

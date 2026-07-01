@@ -23,6 +23,13 @@ export interface SpellguardConfig {
   signingPrivateKey?: string;
   /** Management token forwarded to Verifier during registration */
   managementToken?: string;
+  /**
+   * Management server base URL (WITHOUT the `/v1` suffix). Populated on the
+   * managed/discovery path so the SDK can reach Management directly — e.g. the
+   * Tier-3 self-reported usage emit (`POST /v1/agents/:id/usage`, §6.5). Absent
+   * on direct-config agents that have no management endpoint (emit skips).
+   */
+  managementUrl?: string;
   /** Agent card for A2A discovery */
   agentCard: AgentCard;
 }

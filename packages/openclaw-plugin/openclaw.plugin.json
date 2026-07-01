@@ -39,11 +39,15 @@
         "type": "string",
         "description": "URL of the Spellguard management server"
       },
+      "spellguardBaseUrl": {
+        "type": "string",
+        "description": "Spellguard API base URL (e.g., https://console.example.com). Defaults from credential store if absent."
+      },
       "gatewayPort": {
         "type": "number",
         "description": "Port for the local MCP Guard gateway HTTP listener"
       }
     },
-    "required": ["selfUrl", "agentId", "agentSecret"]
+    "required": ["selfUrl", "agentId"]
   }
 }

@@ -1,0 +1,81 @@
+{
+  "name": "@spellguard/claude-code-plugin",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Spellguard plugin for Claude Code — manages a scoped, attributable git credential and tracks agent git activity",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.mjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./agent-control": {
+      "types": "./dist/lib/agent-control/index.d.ts",
+      "default": "./dist/lib/agent-control/index.mjs"
+    }
+  },
+  "bin": {
+    "spellguard-setup": "./bin/spellguard-setup",
+    "run-spellguard-setup": "./bin/spellguard-setup",
+    "spellguard-credential-daemon": "./bin/spellguard-credential-daemon"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm run build:lib && pnpm run build:bin && pnpm run build:types",
+    "vendor-externals": "node scripts/vendor-externals.mjs",
+    "clean": "rm -rf dist",
+    "build:lib": "esbuild src/index.ts src/lib/agent-control/index.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --out-extension:.js=.mjs --external:better-sqlite3 --external:js-yaml --external:partysocket --external:ws",
+    "build:bin": "esbuild bin/run-session-start.ts bin/run-pre-tool-use.ts bin/run-post-tool-use.ts bin/run-spellguard-setup.ts bin/run-spellguard-reset.ts bin/spellguard-credential-daemon.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist/bin --out-extension:.js=.mjs --packages=bundle --external:better-sqlite3 --external:node-pty --banner:js=\"import {createRequire as __cr} from 'module'; const require = __cr(import.meta.url);\" && node scripts/vendor-externals.mjs",
+    "build:types": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "js-yaml": "^4.1.0",
+    "node-pty": "1.0.0",
+    "partysocket": "^1.1.18",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@spellguard/agent-control": "workspace:*",
+    "@spellguard/management-api-types": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Spellguard/spellguard.git",
+    "directory": "packages/claude-code-plugin"
+  },
+  "homepage": "https://spellguard.ai",
+  "bugs": {
+    "url": "https://github.com/Spellguard/spellguard/issues"
+  },
+  "keywords": ["spellguard", "ai-security", "claude-code", "plugin"],
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    ".claude-plugin",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "bin/hook-post-tool-use",
+    "bin/hook-pre-tool-use",
+    "bin/hook-session-start",
+    "bin/resolve-node",
+    "bin/skill-spellguard-setup",
+    "bin/spellguard-git-helper",
+    "bin/spellguard-setup",
+    "bin/spellguard-credential-daemon"
+  ]
+}

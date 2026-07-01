@@ -9,6 +9,8 @@ import type { AttestationResult, Evidence } from '@spellguard/ctls/types';
 // Import from @spellguard/amp
 import {
   type UnilateralSendResult,
+  decryptFromVerifier,
+  deriveAgentKeyPair,
   encryptForVerifier,
 } from '@spellguard/amp/client';
 
@@ -59,7 +61,7 @@ function stampTraceContext(payload: unknown): unknown {
 // ────────────────────────────────────────────────────────────────────
 //
 // A single worker may host multiple agent identities (e.g. the
-// demo-fleet worker multiplexes 20 agents behind /agents/:agentId/*).
+// the demo fleet worker multiplexes 20 agents behind /agents/:agentId/*).
 // Each agent needs its own channel/config/discoveryConfig — using
 // module-level singletons causes agents to overwrite each other's
 // state on every initialize() and produces cross-agent sends with the
@@ -148,6 +150,45 @@ export function configure(config: SpellguardConfig): void {
  * Get or create a channel to the Verifier.
  * Handles implicit channel establishment via attestation.
  */
+// Per-agent X25519 keypair for gateway-opaque app-layer encryption, DERIVED
+// deterministically from the agent's stable secret (agent-secret → signing key)
+// and cached per-seed. Determinism is load-bearing: the agent registers its
+// PUBLIC key at one point and decrypts inbound at another — possibly in a
+// different process/instance (ephemeral or multi-instance agents). A random
+// per-process key would NOT match across those, so the Verifier would encrypt
+// to a stale pubkey the receiving process can't decrypt (the bug this fixes).
+// Deriving from the stable secret makes every instance of an agent produce the
+// SAME keypair. An agent with NO secret material can't derive a secure key →
+// `undefined` → it stays on the legacy plaintext path (registers no pubkey).
+const clientKeyPairCache = new Map<
+  string,
+  { publicKeyHex: string; privateKeyHex: string }
+>();
+
+export function getClientKeyPair():
+  | { publicKeyHex: string; privateKeyHex: string }
+  | undefined {
+  const config = getConfig();
+  const seed = config?.agentSecret || config?.signingPrivateKey;
+  if (!seed) return undefined;
+  let kp = clientKeyPairCache.get(seed);
+  if (!kp) {
+    kp = deriveAgentKeyPair(seed);
+    clientKeyPairCache.set(seed, kp);
+  }
+  return kp;
+}
+
+// The Verifier's X25519 session public key, captured at registration so the
+// inbound receive handler can encrypt this agent's reply back TO the Verifier
+// (return leg of gateway-opaque encryption). Undefined ⇒ legacy plaintext reply.
+let verifierX25519PublicKey: string | undefined;
+
+/** The Verifier's X25519 public key from the last registration, if any. */
+export function getVerifierPublicKey(): string | undefined {
+  return verifierX25519PublicKey;
+}
+
 export async function getOrCreateChannel(): Promise<ClientChannel> {
   const s = state();
   if (!s.currentConfig) {
@@ -234,8 +275,15 @@ async function createChannel(config: SpellguardConfig): Promise<ChannelImpl> {
   const response = await fetch(`${config.verifierUrl}/agents/register`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ evidence }),
-    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({
+      evidence,
+      clientPublicKey: getClientKeyPair()?.publicKeyHex,
+    }),
+    // Slim profile routes this through the gateway→SLIM→verifier hop, whose
+    // cold-session establishment runs ~20-30s. 10s aborted registration
+    // before the session warmed. (c976c0c4 raised the message routes to
+    // 120s but left this control-plane call at 10s.)
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!response.ok) {
@@ -246,6 +294,7 @@ async function createChannel(config: SpellguardConfig): Promise<ChannelImpl> {
   }
 
   const attestation = (await response.json()) as AttestationResult;
+  verifierX25519PublicKey = attestation.sessionX25519PublicKey;
 
   if (!attestation.verified) {
     throw new Error('Verifier rejected our evidence');
@@ -354,6 +403,12 @@ class ChannelImpl implements ClientChannel {
           recipient,
           encryptedPayload,
         }),
+        // 120s covers verifier-side LLM-bearing routing (the route
+        // can synchronously call the destination agent's LLM —
+        // observed ~65s). Cloudflare Workers' default subrequest
+        // timeout is 30s, so without an explicit signal the agent
+        // gives up before the verifier finishes.
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (fetchError) {
       // Network error — Verifier may be down. Re-discover if possible.
@@ -400,7 +455,25 @@ class ChannelImpl implements ClientChannel {
     }
 
     const result = (await response.json()) as { response: unknown };
-    return result.response;
+    // Return leg: when the Verifier encrypted the response to our key, decrypt
+    // it with our private key. Legacy plaintext responses pass through.
+    const resp = result.response;
+    const keyPair = getClientKeyPair();
+    if (
+      keyPair &&
+      resp &&
+      typeof resp === 'object' &&
+      typeof (resp as { encryptedResponse?: unknown }).encryptedResponse ===
+        'string'
+    ) {
+      return JSON.parse(
+        decryptFromVerifier(
+          (resp as { encryptedResponse: string }).encryptedResponse,
+          keyPair.privateKeyHex,
+        ),
+      );
+    }
+    return resp;
   }
 
   /**
@@ -487,6 +560,10 @@ class ChannelImpl implements ClientChannel {
           payload: encryptedPayload,
           method: options?.method || 'tasks/send',
         }),
+        // 120s — same rationale as /messages/send: the unilateral
+        // route can hit an A2A endpoint whose handler runs an LLM
+        // call, exceeding the 30s Workers subrequest default.
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (fetchError) {
       // Network error — Verifier may be down. Re-discover if possible.
@@ -610,7 +687,10 @@ export async function checkToolPolicy(
         params,
         result,
       }),
-      signal: AbortSignal.timeout(10_000),
+      // Same SLIM hop as the other control-plane calls; keep above the
+      // ~20-30s cold-session establishment so a first tool check after an
+      // idle period doesn't abort prematurely.
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (!response.ok) {
@@ -730,7 +810,18 @@ export async function discoverAndConfigure(
     headers['X-Spellguard-Platform-Attestation'] = btoa(JSON.stringify(tokens));
   }
 
-  const response = await fetch(`${config.managementUrl}/discover`, {
+  // managementUrl convention in this codebase is split: agent-template +
+  // the demo fleet wranglers + deploy.ts inject it WITH `/v1` already baked in
+  // (legacy CF Worker agents); the managed-provisioning bootstrap
+  // (install.ts → openclaw.json) writes it WITHOUT `/v1`. Nine existing
+  // callsites already normalize defensively (e.g. plugin-sync.ts:32,
+  // verifier-state.ts:165, discovery/resolver.ts:112). Match that idiom
+  // here so the SDK is the canonical home for the normalization rather
+  // than every caller having to remember which convention to use.
+  const baseUrl = config.managementUrl
+    .replace(/\/v1\/?$/, '')
+    .replace(/\/$/, '');
+  const response = await fetch(`${baseUrl}/v1/discover`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -763,6 +854,9 @@ export async function discoverAndConfigure(
     agentSecret: config.agentSecret,
     signingPrivateKey: config.signingPrivateKey,
     managementToken: discovery.managementToken,
+    // Normalized base (no `/v1`) so the Tier-3 usage emit can reach Management
+    // directly (§6.5); the emit helper appends `/v1/agents/:id/usage`.
+    managementUrl: baseUrl,
     agentCard: config.agentCard,
   });
 

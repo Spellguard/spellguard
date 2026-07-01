@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { generateText as originalGenerateText, tool } from 'ai';
+import {
+  generateText as originalGenerateText,
+  streamText as originalStreamText,
+  tool,
+} from 'ai';
 import type { GenerateTextResult, LanguageModel } from 'ai';
 import { checkToolPolicy, getConfig, getOrCreateChannel } from './attestation';
 import type { ToolCheckResult } from './attestation';
 import { discoverAgents } from './discovery';
-import { getCurrentHops } from './hop-context';
+import { getCurrentHops, getCurrentSenderId } from './hop-context';
 import { detectAgentReferences, mightContainAgentReference } from './intent';
 import type { ClientChannel, ResolvedAgent } from './types';
+import { modelIdOf, reportAiSdkUsage } from './usage-telemetry';
 
 // biome-ignore lint/suspicious/noExplicitAny: ai-sdk types require flexible generics
 type AnyGenerateTextResult = GenerateTextResult<any, any>;
@@ -30,13 +35,22 @@ export interface GenerateTextOptions {
 
 /**
  * Call the original generateText function with proper type casting.
+ *
+ * instrumentation seam: this single helper backs BOTH
+ * `generateText` return paths, so the await-and-rewrap usage emit lives here once
+ * rather than at each call site. The emit is fire-and-forget + fail-open
+ * (`reportAiSdkUsage`) — it never throws into, blocks, or slows the LLM call.
  */
-function callOriginalGenerateText<T extends GenerateTextOptions>(
+async function callOriginalGenerateText<T extends GenerateTextOptions>(
   options: T,
 ): Promise<AnyGenerateTextResult> {
-  return originalGenerateText(
+  const result = (await originalGenerateText(
     options as Parameters<typeof originalGenerateText>[0],
-  ) as Promise<AnyGenerateTextResult>;
+  )) as AnyGenerateTextResult;
+  const resultModelId = (result as { response?: { modelId?: string } }).response
+    ?.modelId;
+  reportAiSdkUsage(result.usage, resultModelId ?? modelIdOf(options.model));
+  return result;
 }
 
 /**
@@ -268,9 +282,21 @@ export async function resolveAndCollectAgentResponses(
 
   const agentRefs = await detectFn(prompt);
   const config = getConfig();
-  const filteredRefs = config?.agentId
-    ? agentRefs.filter((ref) => ref !== config.agentId)
-    : agentRefs;
+  // Exclude SELF and the immediate inbound SENDER from auto-route targets so
+  // a receiver never routes BACK to whoever just messaged it — that would be
+  // a 2-node cycle (A→B→A). This keeps the agent-communication graph a DAG.
+  // The sender id (lowercased to match detectAgentReferences' normalized
+  // output) comes from the receive handler via the hop-context ALS; it's
+  // undefined for hop-0 top-level sends and /chat (no inbound), so the
+  // sender clause is a no-op there. Deeper cycles (A→B→C→A) are backstopped
+  // by the Verifier's MAX_MESSAGE_HOPS.
+  const selfId = config?.agentId;
+  const senderId = getCurrentSenderId()?.toLowerCase();
+  const filteredRefs = agentRefs.filter(
+    (ref) =>
+      ref !== selfId &&
+      (senderId === undefined || ref.toLowerCase() !== senderId),
+  );
 
   if (filteredRefs.length === 0) return [];
 
@@ -476,5 +502,52 @@ export function spellguardTool(options: any): any {
 
 export type { ToolCheckResult };
 
-// Re-export everything else from ai unchanged
+/**
+ * Drop-in replacement for ai-sdk's `streamText` (, PRD §6.1).
+ *
+ * MUST be a NAMED export — it shadows `streamText` flowing through the
+ * `export * from 'ai'` wildcard below; without this shadow the wildcard would
+ * re-export the raw, uninstrumented function (a silent fail-open coverage hole,
+ * §6.2). Unlike `generateText`, a `StreamTextResult`'s `usage` is a Promise that
+ * resolves only when the stream FINISHES, so we drain it off the consumer's
+ * critical path (`.then`) rather than read a field — never consuming the text
+ * stream itself, never blocking, never throwing (fail-open).
+ */
+export function streamText(
+  options: Parameters<typeof originalStreamText>[0],
+): ReturnType<typeof originalStreamText> {
+  const result = originalStreamText(options);
+  try {
+    const usagePromise = (result as { usage?: Promise<unknown> }).usage;
+    // Handle fulfilment AND rejection in the SAME reaction (onFulfilled,
+    // onRejected) so the usage promise is settled directly — a stream that
+    // errors must never surface as an unhandled rejection. The trailing .catch
+    // absorbs any throw from the emit itself (belt-and-suspenders; the emit is
+    // already fail-open).
+    void Promise.resolve(usagePromise)
+      .then(
+        (usage) => {
+          reportAiSdkUsage(
+            usage as
+              | {
+                  promptTokens?: number;
+                  completionTokens?: number;
+                  totalTokens?: number;
+                }
+              | undefined,
+            modelIdOf((options as { model?: unknown })?.model),
+          );
+        },
+        () => undefined,
+      )
+      .catch(() => undefined);
+  } catch {
+    /* fail-open — telemetry must never affect the stream */
+  }
+  return result;
+}
+
+// Re-export everything else from ai unchanged. NOTE: the named `generateText`,
+// `streamText`, and `tool`/`spellguardTool` exports above intentionally shadow
+// the same names coming through this wildcard.
 export * from 'ai';

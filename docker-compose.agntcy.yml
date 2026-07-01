@@ -1,0 +1,86 @@
+# Spellguard AGNTCY-profile backing services for local development.
+#
+# The `agntcy` profile (SPELLGUARD_PROFILE=agntcy) routes agent↔agent traffic over
+# the AGNTCY SLIM data plane instead of plain HTTP. Two services can't run on
+# the host without Docker, so this compose provides them:
+#
+#   - slim: the AGNTCY SLIM data plane + control plane (unified ghcr.io/agntcy
+#     image), listening on :46357. The Verifier and Gateway connect to it.
+#   - dir:  a single self-contained AGNTCY `dirctl daemon` (embedded SQLite +
+#     OCI store), bound to 0.0.0.0:8888. The Verifier's gRPC dir client resolves
+#     agents through it; in the agntcy profile dir is the SOLE registry (no HTTP fallback).
+#
+# Boot the backing services, then run the rest of the stack on the host:
+#
+#   docker compose -f docker-compose.agntcy.yml up -d      # slim + dir
+#   SPELLGUARD_PROFILE=agntcy pnpm run dev                  # verifier + gateway + agents
+#
+# (`pnpm run dev:agntcy` does both in one step; `pnpm run dev:agntcy:down` stops the
+# backing services.)
+#
+# Optional: run the Gateway in a container too (instead of on the host via
+# `pnpm run dev`). It is gated behind the `agntcy` profile so a plain `up` never
+# starts it and collides on :46358 with the host gateway that `pnpm run dev`
+# starts. Stop the host gateway first, then:
+#
+#   docker compose -f docker-compose.agntcy.yml --profile agntcy up gateway
+#
+# All images are publicly pullable from ghcr.io. The unified `slim` image is
+# distroless and expects a config file mounted at /config.yaml; we mount the
+# minimal base config from slim-config/server-config.yaml.
+
+services:
+  slim:
+    image: ghcr.io/agntcy/slim:2.0.0-alpha.1
+    command: ["/slim", "--config", "/config.yaml"]
+    volumes:
+      - ./slim-config/server-config.yaml:/config.yaml:ro
+    ports:
+      - "46357:46357"
+    restart: unless-stopped
+
+  # ── AGNTCY Directory ─────────────────────────────────────────────────
+  #
+  # A single self-contained `dirctl daemon`: it bundles the gRPC apiserver +
+  # reconciler with embedded SQLite and a local OCI store — no separate
+  # Postgres / OASF server / OCI registry. The Verifier's gRPC dir client
+  # (agntcy-dir SDK) talks to it at localhost:8888 via the published port.
+  #
+  # DIRECTORY_DAEMON_SERVER_LISTEN_ADDRESS binds 0.0.0.0 — the daemon's default
+  # is localhost:8888, which is reachable only inside its own container, not
+  # from the host or other compose services.
+  dir:
+    # Pinned (not :latest) so the export doesn't silently adopt a breaking
+    # upstream dir-ctl major; matches the deployed Fargate sidecar.
+    image: ghcr.io/agntcy/dir-ctl:v1.4.0
+    command: ["daemon", "start"]
+    environment:
+      DIRECTORY_DAEMON_SERVER_LISTEN_ADDRESS: "0.0.0.0:8888"
+    ports:
+      - "8888:8888"
+    restart: unless-stopped
+
+  # ── Optional containerized Gateway (`agntcy` profile only) ─────────────
+  #
+  # The default local-dev flow runs the Gateway on the host via `pnpm run dev`
+  # (so it hot-reloads). This service is for running it in Docker instead; it
+  # is profile-gated so a plain `up` never starts it and collides with the host
+  # gateway on :46358. Run it explicitly with `--profile agntcy up gateway`.
+  gateway:
+    profiles: ["agntcy"]
+    build:
+      context: .
+      dockerfile: packages/gateway/Dockerfile
+    ports:
+      - "46358:46358"
+    environment:
+      SPELLGUARD_GATEWAY_PORT: "46358"
+      # Inside the compose network the data plane is reachable by service name.
+      SLIM_CONTROL_PLANE_URL: "http://slim:46357"
+      # Inbound delivery (verifier → SLIM → gateway → HTTP → agent) awaits the
+      # recipient agent's full turn, which may run an LLM. Raise the callback
+      # timeout above the default 30s so a real LLM turn completes.
+      SPELLGUARD_GATEWAY_CALLBACK_TIMEOUT_MS: "115000"
+    depends_on:
+      - slim
+    restart: unless-stopped

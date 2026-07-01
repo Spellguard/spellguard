@@ -7,6 +7,7 @@ import type {
 } from 'openclaw/plugin-sdk';
 import { createAgentTool } from './adapter';
 import { buildAgentCard, loadConfig } from './config';
+import { createCredentialService, decideCredentialSource } from './credentials';
 import { discordAdapter } from './hooks/adapters/discord';
 import { registerAdapter } from './hooks/adapters/dispatcher';
 import { msteamsAdapter } from './hooks/adapters/msteams';
@@ -83,6 +84,47 @@ function detectTeamsConfig(api: OpenClawPluginApi): {
   };
 }
 
+/**
+ * Register the legacy `spellguard-plugin-sync` service if a static
+ * `agentSecret` is present in the OpenClaw config. Returns `true` when it
+ * registered, so callers can suppress the credential service's own
+ * framework-reconcile call during the deprecation window (CR-015).
+ */
+function registerLegacyPluginSync(
+  api: OpenClawPluginApi,
+  config: ReturnType<typeof loadConfig>,
+): boolean {
+  if (config.agentId && config.managementUrl && config.agentSecret) {
+    const managementUrl = config.managementUrl;
+    const agentId = config.agentId;
+    const agentSecret = config.agentSecret;
+    api.registerService({
+      id: 'spellguard-plugin-sync',
+      async start() {
+        await syncFrameworkIdentity({
+          agentId,
+          managementUrl,
+          agentSecret,
+        });
+      },
+      stop() {
+        // No teardown — plugin-sync is a one-shot on start.
+      },
+    });
+    return true;
+  }
+  if (config.agentId && config.managementUrl) {
+    console.error(
+      JSON.stringify({
+        event: 'plugin_sync.skipped',
+        reason: 'no-agent-secret',
+        agentId: config.agentId,
+      }),
+    );
+  }
+  return false;
+}
+
 export function register(api: OpenClawPluginApi): void {
   const config = loadConfig(api.pluginConfig ?? {});
   const agentCard = buildAgentCard(config);
@@ -104,32 +146,48 @@ export function register(api: OpenClawPluginApi): void {
   // webhook's `fetchInitialManifest`, so on a cold start it can still
   // be `null` when this service starts. The explicit config is the
   // authoritative source here.
-  if (config.agentId && config.managementUrl && config.agentSecret) {
-    const managementUrl = config.managementUrl;
-    const agentId = config.agentId;
-    const agentSecret = config.agentSecret;
+  const legacyPluginSyncRegistered = registerLegacyPluginSync(api, config);
+
+  // === Credential socket (Stream B) ===
+  // Auto-detect whether the operator has run `openclaw spellguard setup` (new
+  // path) versus the legacy agentSecret-based config. Prefer the socket if
+  // both are present; emit a deprecation log line. If neither is present, do
+  // not register the service — the plugin's security hooks still work in
+  // observation mode.
+  const credentialDecision = decideCredentialSource({
+    hasLegacyConfig: !!(config.agentSecret && config.managementUrl),
+  });
+  // Feature #10: the credential service owns the agent-control socket and
+  // therefore the `channel_ready` emit path. Hoist the reference out of the
+  // socket-source branch so the platform-relay clients below can call
+  // `signalChannelReady` from their `onRelayReady` callbacks. It is `null`
+  // when no credential socket is registered (legacy/none), in which case the
+  // relay callbacks no-op.
+  let credentialService: ReturnType<typeof createCredentialService> | null =
+    null;
+  if (credentialDecision.source === 'socket') {
+    // CR-015: when the legacy `agentSecret`-driven `spellguard-plugin-sync`
+    // service above is *also* registered (deprecation-window case), suppress
+    // the framework-reconcile call inside the credential service to avoid
+    // two POSTs per startup. Outside that window (socket-only — the
+    // future-state), the credential service is the only path that writes
+    // `agents.framework='openclaw'`.
+    credentialService = createCredentialService({
+      reconcileFrameworkOnStart: !legacyPluginSyncRegistered,
+    });
+    const credentialServiceForRegistration = credentialService;
     api.registerService({
-      id: 'spellguard-plugin-sync',
+      id: 'spellguard-credential-channel',
       async start() {
-        await syncFrameworkIdentity({
-          agentId,
-          managementUrl,
-          agentSecret,
-        });
+        await credentialServiceForRegistration.start();
       },
       stop() {
-        // No teardown — plugin-sync is a one-shot on start.
+        credentialServiceForRegistration.stop();
       },
     });
-  } else if (config.agentId && config.managementUrl) {
-    console.error(
-      JSON.stringify({
-        event: 'plugin_sync.skipped',
-        reason: 'no-agent-secret',
-        agentId: config.agentId,
-      }),
-    );
   }
+  // legacy/none: the existing webhook + plugin-sync paths above already
+  // cover the "old-style" flow; no extra wiring needed during the transition.
 
   // Manage webhook server lifecycle via service registration
   let serverClose: (() => void) | undefined;
@@ -156,6 +214,14 @@ export function register(api: OpenClawPluginApi): void {
       slackSigningSecret: httpSlack.signingSecret,
       slackBotToken: httpSlack.botToken,
       gatewayPort,
+      // Feature #10: when the Slack HTTP-mode relay socket is up, signal
+      // channel-ready (guarded inside signalChannelReady on the Slack botToken
+      // being persisted on disk and not revoked).
+      onRelayReady: (platform) =>
+        credentialService?.signalChannelReady({
+          reason: 'relay_connected',
+          platform,
+        }),
     });
 
     api.registerService({
@@ -181,6 +247,16 @@ export function register(api: OpenClawPluginApi): void {
       teamsPort: teams.port,
       teamsPath: teams.path,
       openclawConfig: api.config as Record<string, unknown>,
+      // Feature #10: when the Teams relay socket is up, signal channel-ready
+      // (guarded inside signalChannelReady; Teams readiness still requires a
+      // persisted Slack botToken per the B3 guard — Teams-only deployments
+      // will no-op until that guard is generalized, which is out of scope
+      // for this phase).
+      onRelayReady: (platform) =>
+        credentialService?.signalChannelReady({
+          reason: 'relay_connected',
+          platform,
+        }),
     });
     api.registerService({
       id: 'spellguard-teams-relay',
@@ -197,7 +273,9 @@ export function register(api: OpenClawPluginApi): void {
   const hookConfig = {
     verifierUrl: config.verifierUrl ?? config.managementUrl ?? '',
     agentId: config.agentId,
+    agentUuid: config.agentUuid,
     managementUrl: config.managementUrl,
+    verifierTimeout: config.verifierTimeout,
   };
 
   if (hookConfig.verifierUrl) {
