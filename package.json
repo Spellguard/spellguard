@@ -3,7 +3,10 @@
   "private": true,
   "scripts": {
     "dev": "pnpm -r --parallel --filter './packages/**' run dev",
-    "build:libs": "pnpm --filter @spellguard/ctls --filter @spellguard/amp --filter @spellguard/client --filter @spellguard/langchain --filter @spellguard/openai --filter @openclaw/spellguard run build",
+    "dev:agntcy": "docker compose -f docker-compose.agntcy.yml up -d && SPELLGUARD_PROFILE=agntcy pnpm run dev",
+    "dev:agntcy:up": "docker compose -f docker-compose.agntcy.yml up -d",
+    "dev:agntcy:down": "docker compose -f docker-compose.agntcy.yml down",
+    "build:libs": "pnpm --filter @spellguard/agent-control --filter @spellguard/ctls --filter @spellguard/amp --filter @spellguard/client --filter @spellguard/langchain --filter @spellguard/openai --filter @spellguard/openclaw-plugin run build",
     "dev:verifier": "pnpm --filter @spellguard/verifier dev",
     "dev:agent-a": "pnpm --filter @spellguard/agent-a dev",
     "dev:agent-b": "pnpm --filter @spellguard/agent-b dev",
@@ -15,7 +18,7 @@
     "dev:agent-pd": "pnpm --filter @spellguard/agent-pd dev",
     "dev:openclaw": "openclaw gateway run --dev --port 4000 --verbose",
     "dev:openclaw:stop": "pkill -f 'openclaw.*gateway' 2>/dev/null || true",
-    "install:openclaw": "pnpm --filter @openclaw/spellguard run install:openclaw",
+    "install:openclaw": "pnpm --filter @spellguard/openclaw-plugin run install:openclaw",
     "build": "pnpm -r run build",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mts",
@@ -30,6 +33,7 @@
     "clean": "pnpm -r run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
     "@biomejs/biome": "^1.9.4",
     "@langchain/core": "^0.3.0",
     "@noble/ciphers": "^2.1.1",
@@ -43,6 +47,7 @@
     "husky": "^9.1.0",
     "jsdom": "^28.0.0",
     "lint-staged": "^15.5.2",
+    "msw": "^2.6.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "supabase": "^2.89.1",
@@ -54,5 +59,10 @@
     "node": ">=24.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "@peculiar/webcrypto": "1.6.0"
+    }
+  }
 }

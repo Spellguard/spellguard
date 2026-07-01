@@ -14,6 +14,8 @@ import asyncio
 import base64
 import json
 import logging
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -163,9 +165,15 @@ async def discover_and_configure(
     if config.capabilities:
         body["capabilities"] = config.capabilities
 
+    # Mirror the TS attestation.ts normalization: callers in this codebase
+    # split between including `/v1` and omitting it (legacy CF Worker agents
+    # vs the managed-provisioning bootstrap). Strip trailing `/v1` then
+    # re-append so the SDK accepts either convention. Matches the existing
+    # idiom used by plugin-sync.ts, verifier-state.ts, etc.
+    base_url = re.sub(r"/v1/?$", "", config.management_url).rstrip("/")
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"{config.management_url}/discover",
+            f"{base_url}/v1/discover",
             headers=headers,
             json=body,
             timeout=10.0,
@@ -193,6 +201,10 @@ async def discover_and_configure(
             agent_secret=config.agent_secret,
             signing_private_key=config.signing_private_key,
             management_token=discovery["managementToken"],
+            # Normalized base (no /v1) so the Tier-3 usage emit can reach
+            # Management directly; the emit helper appends
+            # /v1/agents/:id/usage.
+            management_url=base_url,
             agent_card=config.agent_card,
         )
     )
@@ -214,6 +226,12 @@ async def discover_and_configure(
             "[Spellguard] Pre-registration failed (will retry on first send): %s",
             error,
         )
+
+    # No agent-side SLIM awareness: the agent only knows its Verifier
+    # URL (which points at the gateway in slim mode). The verifier
+    # derives the agent's slimName from the CTLS registration above and
+    # pushes the slimName → callback-URL mapping to the gateway via a
+    # SLIM control message. Nothing for the Python client to do here.
 
     return discovery
 

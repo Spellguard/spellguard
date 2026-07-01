@@ -20,6 +20,7 @@ import {
 
 import { decryptPayload } from '../crypto/encrypt';
 import { encryptForManagement } from '../crypto/management-encrypt';
+import { beginDelivery, endDelivery } from '../recycle-guard';
 
 // Import from @spellguard/amp
 import {
@@ -333,6 +334,23 @@ export function extractStampedCorrelationId(
 }
 
 export async function routeUnilateral(
+  request: UnilateralSendRequest,
+  senderChannelToken: string,
+  options?: {
+    outboundPolicy?: OutboundPolicy;
+    inboundPolicy?: InboundPolicy;
+  },
+): Promise<UnilateralSendResult> {
+  // In-flight accounting so the proactive self-recycle never exits mid-delivery.
+  beginDelivery();
+  try {
+    return await routeUnilateralImpl(request, senderChannelToken, options);
+  } finally {
+    endDelivery();
+  }
+}
+
+async function routeUnilateralImpl(
   request: UnilateralSendRequest,
   senderChannelToken: string,
   options?: {

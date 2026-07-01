@@ -135,6 +135,52 @@ export function decryptFromVerifier(
  * @param payload - Payload to hash
  * @returns Hex-encoded SHA256 hash
  */
+/**
+ * Generate a fresh X25519 key pair for an agent client. The agent keeps the
+ * private key and registers the public key with the Verifier, so the Verifier
+ * can encrypt delivered payloads + responses TO this agent (gateway-opaque,
+ * app-layer end-to-end to the agent). Keys are per-process/ephemeral — the
+ * agent re-registers (rotating the key) on restart.
+ */
+export function generateAgentKeyPair(): {
+  publicKeyHex: string;
+  privateKeyHex: string;
+} {
+  const privateKey = x25519.utils.randomSecretKey();
+  const publicKey = x25519.getPublicKey(privateKey);
+  return {
+    publicKeyHex: bytesToHex(publicKey),
+    privateKeyHex: bytesToHex(privateKey),
+  };
+}
+
+/**
+ * Derive a STABLE X25519 keypair for an agent from a secret seed (its
+ * agent-secret or signing key). DETERMINISTIC — every process/instance of the
+ * same agent derives the SAME keypair, so the public key the agent registers
+ * always matches the private key it decrypts with, even across restarts and
+ * multiple instances. (A random per-process key does NOT match across
+ * processes, which silently breaks gateway-opaque delivery — the bug this
+ * replaces.) HKDF domain-separates this from the seed's other uses (signing).
+ */
+export function deriveAgentKeyPair(seed: string): {
+  publicKeyHex: string;
+  privateKeyHex: string;
+} {
+  const privateKey = hkdf(
+    sha256,
+    new TextEncoder().encode(seed),
+    undefined,
+    'spellguard-agent-x25519-v1',
+    KEY_LENGTH,
+  );
+  const publicKey = x25519.getPublicKey(privateKey);
+  return {
+    publicKeyHex: bytesToHex(publicKey),
+    privateKeyHex: bytesToHex(privateKey),
+  };
+}
+
 export function hashPayload(payload: string): string {
   return bytesToHex(sha256(new TextEncoder().encode(payload)));
 }

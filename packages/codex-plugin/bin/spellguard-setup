@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# spellguard-setup — npm-installed CLI entry point used by managed cloud
+# deployments at first boot and by interactive users running the browser flow.
+#
+# This file is declared in `package.json#bin` as `spellguard-setup`
+# so `npm install -g @spellguard/codex-plugin` puts a `spellguard-setup`
+# binary on PATH. A first-boot wrapper executes `spellguard-setup` and
+# expects the dispatcher in `run-spellguard-setup.ts` to route based on
+# `SPELLGUARD_BOOTSTRAP_NONCE`.
+set -euo pipefail
+
+# Resolve PLUGIN_ROOT to the package directory regardless of where the
+# `bin/spellguard-setup` symlink lives (npm global installs symlink-bin to
+# /usr/lib/node_modules/.bin/spellguard-setup pointing here; readlink -f
+# follows the chain).
+SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0")"
+PLUGIN_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+
+BUNDLE="${PLUGIN_ROOT}/dist/bin/run-spellguard-setup.mjs"
+if [[ ! -f "$BUNDLE" ]]; then
+  echo '[spellguard] dist/ missing — run `pnpm --filter @spellguard/codex-plugin build`' >&2
+  exit 1
+fi
+NODE_BIN="$(bash "${PLUGIN_ROOT}/bin/resolve-node" 2>/dev/null || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  echo '[spellguard] node executable not found; cannot run setup.' >&2
+  exit 1
+fi
+exec "$NODE_BIN" "$BUNDLE"

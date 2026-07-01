@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from .types import ClientChannel, ResolvedAgent
+from .usage_telemetry import report_openai_usage
 
 logger = logging.getLogger("spellguard")
 
@@ -54,6 +55,10 @@ _current_correlation_id: contextvars.ContextVar[str | None] = (
     contextvars.ContextVar("_current_correlation_id", default=None)
 )
 
+_current_sender_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_current_sender_id", default=None
+)
+
 
 def get_current_hops() -> int:
     """Return the hop count from the current async context (0 if unset)."""
@@ -82,6 +87,30 @@ def set_current_correlation_id(
     Pass ``None`` to clear the id (e.g. exiting a trace scope).
     """
     return _current_correlation_id.set(correlation_id)
+
+
+def get_current_sender_id() -> str | None:
+    """Return the immediate inbound sender's agent id from the current async
+    context, or None when there's no inbound (a top-level send or /chat call).
+
+    The routing layer (``resolve_and_collect_agent_responses``) excludes this
+    id from auto-route targets so a receiver never routes BACK to whoever just
+    messaged it — that would be a 2-node cycle (A->B->A). Keeps the
+    agent-communication graph a DAG; deeper cycles are backstopped by the
+    Verifier's MAX_MESSAGE_HOPS.
+    """
+    return _current_sender_id.get()
+
+
+def set_current_sender_id(
+    sender_id: str | None,
+) -> contextvars.Token[str | None]:
+    """Set the immediate inbound sender for the current async context.
+
+    Returns a reset token so the caller can restore the previous value.
+    Set by the receive handler so nested routing excludes back-routing.
+    """
+    return _current_sender_id.set(sender_id)
 
 
 def new_correlation_id() -> str:
@@ -208,11 +237,23 @@ async def resolve_and_collect_agent_responses(
     _detect = detect_fn or detect_agent_references
     agent_refs = await _detect(prompt)
     config = get_config()
-    filtered_refs = (
-        [ref for ref in agent_refs if ref != config.agent_id]
-        if config and config.agent_id
-        else agent_refs
-    )
+    # Exclude SELF and the immediate inbound SENDER from auto-route targets so
+    # a receiver never routes BACK to whoever just messaged it — that would be
+    # a 2-node cycle (A->B->A). Keeps the agent-communication graph a DAG. The
+    # sender id (lowercased to match the detector's normalized output) comes
+    # from the receive handler via the contextvar; it's None for top-level
+    # sends and /chat (no inbound), so the sender clause is a no-op there.
+    # Deeper cycles (A->B->C->A) are backstopped by the Verifier's
+    # MAX_MESSAGE_HOPS.
+    self_id = config.agent_id if config else None
+    sender_id = get_current_sender_id()
+    sender_lower = sender_id.lower() if sender_id else None
+    filtered_refs = [
+        ref
+        for ref in agent_refs
+        if ref != self_id
+        and (sender_lower is None or ref.lower() != sender_lower)
+    ]
 
     if not filtered_refs:
         return []
@@ -327,6 +368,9 @@ async def generate_text(
             kwargs["temperature"] = temperature
 
         response = await model.chat.completions.create(**kwargs)
+        # await-and-rewrap usage emit. Fire-and-
+        # forget + fail-open -- never affects the LLM call or its return value.
+        report_openai_usage(response, model_name)
         choice = response.choices[0]
 
         # No tool calls -> we're done
@@ -360,6 +404,8 @@ async def generate_text(
         messages=chat_messages,
         max_tokens=max_tokens,
     )
+    # emit the final completion's usage too.
+    report_openai_usage(final, model_name)
     return GenerateTextResult(text=final.choices[0].message.content or "")
 
 

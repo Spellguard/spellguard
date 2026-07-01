@@ -290,7 +290,7 @@ describe.skipIf(!serverCheck.running)('Unilateral Integration Tests', () => {
   // integration suite. The unilateral routing path uses the same loader and
   // same policy engines, so an extra wrapper here doesn't gain coverage —
   // and routing through agent-a → agent-c requires management to discover
-  // agent-c's URL (see PR #242 follow-up notes).
+  // agent-c's URL.
 });
 
 describe.skipIf(!serverCheck.status.agentC)('Agent C Standalone Tests', () => {

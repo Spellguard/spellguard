@@ -24,6 +24,7 @@ from spellguard_client.ai import (
     build_agent_context_block,
     resolve_and_collect_agent_responses,
 )
+from spellguard_client.usage_telemetry import UsageEvent, report_usage_event
 
 logger = logging.getLogger("spellguard.langchain")
 
@@ -116,6 +117,58 @@ class SpellguardChatModel(BaseChatModel):
         agent_responses = await resolve_and_collect_agent_responses(prompt)
         return _augment_messages(messages, agent_responses)
 
+    def _emit_usage(self, result: ChatResult) -> None:
+        """emit token usage from a wrapped-model
+        ``ChatResult``. Usage shape varies by provider -- read defensively across
+        ``llm_output['token_usage']`` (OpenAI-family), ``llm_output['usage']``,
+        and the per-generation ``usage_metadata`` (input/output tokens).
+        Fire-and-forget + fail-open -- never raises into the LLM call."""
+        try:
+            out = result.llm_output or {}
+            tu = out.get("token_usage") or out.get("usage") or {}
+            meta: dict[str, Any] = {}
+            gens = result.generations or []
+            if gens:
+                msg = getattr(gens[0], "message", None)
+                meta = getattr(msg, "usage_metadata", None) or {}
+            prompt = (
+                tu.get("prompt_tokens")
+                or tu.get("promptTokens")
+                or meta.get("input_tokens")
+            )
+            completion = (
+                tu.get("completion_tokens")
+                or tu.get("completionTokens")
+                or meta.get("output_tokens")
+            )
+            total = (
+                tu.get("total_tokens")
+                or tu.get("totalTokens")
+                or meta.get("total_tokens")
+            )
+            if prompt is None and completion is None:
+                return
+            # NB: langchain_core defines `_llm_type` as a @property (unlike the
+            # JS `_llmType()` method), so read it with getattr — calling it
+            # `()` raises TypeError and (via fail-open) silently drops the event.
+            model = (
+                out.get("model")
+                or getattr(self.wrapped_model, "model", None)
+                or getattr(self.wrapped_model, "_llm_type", None)
+            )
+            report_usage_event(
+                UsageEvent(
+                    model=model if isinstance(model, str) else "unknown",
+                    prompt_tokens=prompt or 0,
+                    completion_tokens=completion or 0,
+                    total_tokens=(
+                        total if total is not None else (prompt or 0) + (completion or 0)
+                    ),
+                )
+            )
+        except Exception:
+            return  # fail-open
+
     def _generate(
         self,
         messages: List[BaseMessage],
@@ -126,9 +179,11 @@ class SpellguardChatModel(BaseChatModel):
         prepared = asyncio.get_event_loop().run_until_complete(
             self._prepare_messages(messages)
         )
-        return self.wrapped_model._generate(
+        result = self.wrapped_model._generate(
             prepared, stop=stop, run_manager=run_manager, **kwargs
         )
+        self._emit_usage(result)
+        return result
 
     async def _agenerate(
         self,
@@ -138,9 +193,11 @@ class SpellguardChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         prepared = await self._prepare_messages(messages)
-        return await self.wrapped_model._agenerate(
+        result = await self.wrapped_model._agenerate(
             prepared, stop=stop, run_manager=run_manager, **kwargs
         )
+        self._emit_usage(result)
+        return result
 
     def _stream(
         self,

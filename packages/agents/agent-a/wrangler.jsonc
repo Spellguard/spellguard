@@ -1,5 +1,5 @@
 {
-  "account_id": "07dea04158ad2b59f2214751ce9c8d48",
+  "account_id": "<YOUR_CLOUDFLARE_ACCOUNT_ID>",
   "name": "spellguard-agent-a",
   "main": "src/index.ts",
   "compatibility_date": "2024-12-01",
@@ -16,7 +16,8 @@
     // Management server for discovery + Verifier registration
     "MANAGEMENT_URL": "http://localhost:3001/v1",
     // Fallback Verifier URL (used when MANAGEMENT_URL isn't set)
-    "VERIFIER_URL": "http://localhost:3000"
+    "VERIFIER_URL": "http://localhost:46358",
+    "SPELLGUARD_PROFILE": "agntcy"
   },
   // Secrets (set via wrangler secret put):
   // - OPENROUTER_API_KEY
@@ -24,27 +25,49 @@
   "env": {
     "staging": {
       "name": "spellguard-agent-a-staging",
-      "routes": [
-        { "pattern": "agent-a.test.spellguard.ai", "custom_domain": true }
-      ],
+      "routes": [{ "pattern": "agent-a.example.com", "custom_domain": true }],
       "vars": {
-        "MANAGEMENT_URL": "https://console.test.spellguard.ai/v1",
-        "SELF_URL": "https://agent-a.test.spellguard.ai",
+        "MANAGEMENT_URL": "https://console.example.com/v1",
+        "SELF_URL": "https://agent-a.example.com",
         "AGENT_ID": "agent-a",
-        "CODE_HASH": "sha256:dev-placeholder"
+        "CODE_HASH": "sha256:dev-placeholder",
+        "SPELLGUARD_PROFILE": "agntcy"
+      }
+      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
+    },
+    "design": {
+      "name": "spellguard-agent-a-design",
+      "routes": [{ "pattern": "agent-a.example.com", "custom_domain": true }],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.example.com/v1",
+        "SELF_URL": "https://agent-a.example.com",
+        "AGENT_ID": "agent-a",
+        "CODE_HASH": "sha256:dev-placeholder",
+        "SPELLGUARD_PROFILE": "agntcy"
+      }
+      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
+    },
+    "dev": {
+      "name": "spellguard-agent-a-dev",
+      "routes": [{ "pattern": "agent-a.example.com", "custom_domain": true }],
+      "vars": {
+        "MANAGEMENT_URL": "https://console.example.com/v1",
+        "SELF_URL": "https://agent-a.example.com",
+        "AGENT_ID": "agent-a",
+        "CODE_HASH": "sha256:dev-placeholder",
+        "SPELLGUARD_PROFILE": "agntcy"
       }
       // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
     },
     "demo": {
       "name": "spellguard-agent-a-demo",
-      "routes": [
-        { "pattern": "agent-a.demo.spellguard.ai", "custom_domain": true }
-      ],
+      "routes": [{ "pattern": "agent-a.example.com", "custom_domain": true }],
       "vars": {
-        "MANAGEMENT_URL": "https://console.demo.spellguard.ai/v1",
-        "SELF_URL": "https://agent-a.demo.spellguard.ai",
+        "MANAGEMENT_URL": "https://console.example.com/v1",
+        "SELF_URL": "https://agent-a.example.com",
         "AGENT_ID": "agent-a",
-        "CODE_HASH": "sha256:dev-placeholder"
+        "CODE_HASH": "sha256:dev-placeholder",
+        "SPELLGUARD_PROFILE": "agntcy"
       }
       // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
     },

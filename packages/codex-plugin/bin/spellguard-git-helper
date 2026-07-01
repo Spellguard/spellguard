@@ -1,0 +1,109 @@
+#!/bin/sh
+# Spellguard git credential helper (Phase C: multi-org).
+#   get   -> selects the token whose GitHub org matches the repo path's owner
+#            segment (git passes path= when credential.useHttpPath=true),
+#            falling back to the wildcard '*' entry, then to the legacy
+#            config.json scopedToken.
+#   erase/store -> no-op (daemon owns lifecycle).
+set -eu
+OP="${1:-get}"
+
+REQ_PATH=""
+while IFS= read -r _line; do
+  [ -z "$_line" ] && break
+  case "$_line" in
+    path=*) REQ_PATH="${_line#path=}" ;;
+  esac
+done
+
+[ "$OP" = "get" ] || exit 0
+
+# Per-framework config dir (B1 isolation): the daemon writes git-tokens +
+# config.json under <root>/<framework> so Codex and Claude Code don't collide.
+# Resolve that dir; fall back to the legacy shared root for a pre-isolation
+# machine whose state has not yet been migrated. <root> mirrors config-store's
+# spellguardRootDir() exactly (XDG_CONFIG_HOME or ~/.config, then /spellguard).
+SG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/spellguard"
+CFG_DIR="$SG_ROOT/codex"
+if [ ! -r "$CFG_DIR/git-tokens" ] && [ ! -r "$CFG_DIR/config.json" ]; then
+  CFG_DIR="$SG_ROOT"
+fi
+TOKENS="$CFG_DIR/git-tokens"
+CFG="$CFG_DIR/config.json"
+
+# Not a Spellguard machine at all: neither the daemon-maintained token file nor
+# a legacy config exists. Stay SILENT (exit 0, no stderr) — the SessionStart
+# additionalContext owns the "not configured" prompt, and a credential-helper
+# notice here would fire on every git op of a non-Spellguard checkout. The
+# stderr notices below are reserved for a machine that IS set up but has no
+# usable token yet (revoked, or identity-only awaiting the dashboard connect).
+if [ ! -r "$TOKENS" ] && [ ! -r "$CFG" ]; then
+  exit 0
+fi
+
+OWNER="$(printf '%s' "$REQ_PATH" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')"
+
+TOKEN=""
+if [ -r "$TOKENS" ]; then
+  if [ -n "$OWNER" ]; then
+    TOKEN="$(awk -F'\t' -v o="$OWNER" '$1==o{print $2; exit}' "$TOKENS")"
+  fi
+  if [ -z "$TOKEN" ]; then
+    TOKEN="$(awk -F'\t' '$1=="*"{print $2; exit}' "$TOKENS")"
+  fi
+fi
+
+# Legacy fallback: single-slot config.json (pre-Phase-C daemon). ONLY
+# consulted when NO git-tokens TSV exists at all — on a Phase-C machine the
+# daemon-maintained TSV is authoritative, and a TSV miss must FAIL CLOSED
+# (PR #338 review CR-004): falling through to config.json here would serve the
+# stale top-level mirror token (possibly a REVOKED org's, or a sibling org's)
+# for an owner the TSV deliberately has no line for.
+# POSIX-portable JSON extraction without jq: sed pulls the value, assuming the
+# writer emits canonical JSON via JSON.stringify.
+REVOKED=""
+# A multi-org config keys its tokens under "githubCredentials"; when that key is
+# present the daemon-maintained TSV is the SOLE authority (PR #338 review
+# R2-008). Refuse the single-slot legacy mirror in that case even if the TSV is
+# momentarily missing (the daemon regenerates it from config.json on boot) —
+# serving the top-level mirror would hand out one org's token for every owner.
+if [ -z "$TOKEN" ] && [ ! -r "$TOKENS" ] && [ -r "$CFG" ] \
+   && ! grep -q '"githubCredentials"' "$CFG"; then
+  REVOKED="$(
+    sed -n 's/.*"revoked"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "$CFG" \
+      | head -n 1
+  )"
+  if [ "$REVOKED" != "true" ]; then
+    TOKEN="$(
+      sed -n 's/.*"scopedToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG" \
+        | head -n 1
+    )"
+  fi
+fi
+
+# No usable token. git surfaces a credential helper's STDERR to the user, so
+# print an actionable Spellguard notice here — this is the hard-stop that
+# explains why the git operation can't authenticate and what to do next.
+# Codex's setup skill is reached via the `@spellguard-setup` MENTION (Codex has
+# no `/spellguard-setup` slash command), so this codex copy uses `@`. STDOUT
+# stays empty so git falls through to its own "could not read credentials"
+# failure.
+if [ "$REVOKED" = "true" ]; then
+  printf 'Spellguard: this credential has been revoked. Run `@spellguard-setup` to provision a new one.\n' >&2
+  exit 0
+fi
+
+if [ -z "$TOKEN" ]; then
+  if [ -r "$TOKENS" ] && [ -n "$OWNER" ]; then
+    # Phase-C machine, owner-specific miss: the TSV is authoritative and has
+    # no line for this GitHub org — out of scope or revoked. Re-running setup
+    # would not help; the agent's dashboard scope is the lever.
+    printf 'Spellguard: no credential for GitHub org "%s" — it is outside this agent'\''s scope (or its credential was revoked). Update the agent'\''s GitHub scope in the Spellguard dashboard to enable access.\n' "$OWNER" >&2
+  else
+    printf 'Spellguard: no GitHub credential available yet. Run `@spellguard-setup` (and complete the dashboard GitHub connect) to enable git access.\n' >&2
+  fi
+  exit 0
+fi
+
+[ -n "$TOKEN" ] || exit 0
+printf 'username=x-access-token\npassword=%s\n' "$TOKEN"

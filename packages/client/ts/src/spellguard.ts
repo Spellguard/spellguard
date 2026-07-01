@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import {
+  decryptFromVerifier,
+  encryptForVerifier,
+} from '@spellguard/amp/client';
+import { loadProfile } from '@spellguard/amp/profile';
 import type { AgentCard } from '@spellguard/ctls';
 import type { LanguageModel } from 'ai';
 import { Hono } from 'hono';
@@ -7,8 +12,10 @@ import {
   configure,
   createAttestationState,
   discoverAndConfigure,
+  getClientKeyPair,
   getConfig,
   getOrCreateChannel,
+  getVerifierPublicKey,
   runWithAttestationState,
 } from './attestation';
 import type { AttestationState } from './attestation';
@@ -36,7 +43,7 @@ export function createSpellguard<E extends object = object, M = unknown>(
 
   // Per-instance attestation state: each createSpellguard() call gets
   // its own channel / config / discoveryConfig bucket, so multiple
-  // instances hosted in the same worker (e.g. the demo-fleet) don't
+  // instances hosted in the same worker (e.g. the the demo fleet) don't
   // overwrite each other on init or during outbound sends.  The
   // middleware wraps each request in this state via ALS.
   const instanceState: AttestationState = createAttestationState();
@@ -59,6 +66,30 @@ export function createSpellguard<E extends object = object, M = unknown>(
 
   async function initialize(env: E): Promise<void> {
     const cfg = resolveConfig(options.config, env);
+
+    // Resolve the active profile (original | slim). Under the original
+    // profile the existing attestation / channel / send code paths
+    // remain authoritative; this call just surfaces the active profile
+    // in startup logs and gives slim-profile follow-up commits a hook
+    // to subscribe to. Pulls SPELLGUARD_* keys defensively from env
+    // since the Worker env shape is generic.
+    const envRecord = env as Record<string, unknown>;
+    const profileBundle = loadProfile({
+      SPELLGUARD_PROFILE: stringEnv(envRecord.SPELLGUARD_PROFILE),
+      SPELLGUARD_TRANSPORT: stringEnv(envRecord.SPELLGUARD_TRANSPORT),
+      SPELLGUARD_DIRECTORY: stringEnv(envRecord.SPELLGUARD_DIRECTORY),
+      SPELLGUARD_IDENTITY: stringEnv(envRecord.SPELLGUARD_IDENTITY),
+      SPELLGUARD_SLIM_GATEWAY_URL: stringEnv(
+        envRecord.SPELLGUARD_SLIM_GATEWAY_URL,
+      ),
+      SPELLGUARD_DIR_URL: stringEnv(envRecord.SPELLGUARD_DIR_URL),
+      SPELLGUARD_IDENTITY_ISSUER_URL: stringEnv(
+        envRecord.SPELLGUARD_IDENTITY_ISSUER_URL,
+      ),
+    });
+    console.log(
+      `[Spellguard] Profile: ${profileBundle.profile} (transport=${profileBundle.transport.name}, directory=${profileBundle.directory.name}, identity=${profileBundle.identity.name})`,
+    );
 
     // Auto-fill agentCard.url from config.selfUrl when empty
     const agentCard: AgentCard = options.agentCard.url
@@ -135,6 +166,13 @@ export function createSpellguard<E extends object = object, M = unknown>(
       await options.onInitialized(env);
     }
 
+    // No agent-side SLIM awareness: the agent only knows about its
+    // Verifier URL (which points at the gateway in slim mode). The
+    // gateway-backed verifier owns the slimName ↔ callbackUrl mapping
+    // — it derives the agent's slimName from the CTLS registration
+    // that already happened above and pushes a registry-update SLIM
+    // control message to the gateway. Nothing here for the agent to do.
+
     console.log('[Spellguard] Initialization complete');
   }
 
@@ -178,7 +216,8 @@ export function createSpellguard<E extends object = object, M = unknown>(
       }
 
       let body: {
-        message: unknown;
+        message?: unknown;
+        encryptedMessage?: string;
         senderId: string;
         messageId: string;
         timestamp: number;
@@ -190,7 +229,36 @@ export function createSpellguard<E extends object = object, M = unknown>(
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
 
-      const { message, senderId, messageId } = body;
+      const { senderId, messageId } = body;
+      // Gateway-opaque delivery (option a): when the Verifier encrypted to this
+      // agent's registered key, decrypt it with our private key. A legacy
+      // delivery carries a plaintext `message` instead — use it as-is.
+      const wasEncrypted = typeof body.encryptedMessage === 'string';
+      let message: unknown;
+      if (wasEncrypted) {
+        const keyPair = getClientKeyPair();
+        if (!keyPair) {
+          console.error(
+            '[Spellguard] Received an encrypted message but have no agent keypair to decrypt with',
+          );
+          return c.json({ error: 'Failed to decrypt message' }, 400);
+        }
+        try {
+          message = JSON.parse(
+            decryptFromVerifier(
+              body.encryptedMessage as string,
+              keyPair.privateKeyHex,
+            ),
+          );
+        } catch (err) {
+          console.error(
+            `[Spellguard] Failed to decrypt delivered message: ${err}`,
+          );
+          return c.json({ error: 'Failed to decrypt message' }, 400);
+        }
+      } else {
+        message = body.message;
+      }
       if (!message || !senderId) {
         return c.json({ error: 'Missing required fields' }, 400);
       }
@@ -231,7 +299,24 @@ export function createSpellguard<E extends object = object, M = unknown>(
               env: c.env,
             }),
           correlationId,
+          // Carry the immediate sender into the trace context so any nested
+          // routing this handler triggers excludes back-routing to the
+          // sender (2-node cycle prevention — keeps the graph a DAG).
+          senderId,
         );
+        // Return leg: if the inbound was encrypted (so the Verifier supports it
+        // and registered its X25519 key with us), encrypt our reply back TO the
+        // Verifier. Otherwise reply in plaintext (legacy).
+        const verifierPubkey = getVerifierPublicKey();
+        if (wasEncrypted && verifierPubkey) {
+          return c.json({
+            success: true,
+            encryptedResponse: encryptForVerifier(
+              JSON.stringify(response),
+              verifierPubkey,
+            ),
+          });
+        }
         return c.json({ success: true, response });
       } catch (error) {
         console.error(`[Spellguard] Error handling message: ${error}`);
@@ -286,6 +371,10 @@ function resolveConfig<E extends object>(
   env: E,
 ): SpellguardConfigMode {
   return typeof config === 'function' ? config(env) : config;
+}
+
+function stringEnv(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 function resolveModel<E extends object, M>(

@@ -66,6 +66,26 @@ export async function ensureSupabaseUser(
   config: SupabaseAuthConfig,
   creds: TestCredentials,
 ): Promise<void> {
+  // Probe signInWithPassword first. If the user already exists, sign-in
+  // returns 200 + we exit cleanly. We avoid calling /signup for an
+  // existing user because the local Supabase Auth stack cascades the
+  // user's `public.profiles` row in that 422 "user_already_exists" path
+  // — observed empirically: calling /signup with a duplicate email
+  // returns HTTP 422 but the profile row vanishes. That broke seeded
+  // tests that depend on operator/member profile + org membership
+  // (analytics, management, detection-pipeline integration tests).
+  const probeRes = await fetch(
+    `${config.url}/auth/v1/token?grant_type=password`,
+    {
+      method: 'POST',
+      headers: authHeaders(config.anonKey),
+      body: JSON.stringify({ email: creds.email, password: creds.password }),
+    },
+  );
+  if (probeRes.ok) {
+    return; // User already exists with the expected password.
+  }
+
   const response = await fetch(`${config.url}/auth/v1/signup`, {
     method: 'POST',
     headers: authHeaders(config.anonKey),

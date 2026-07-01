@@ -423,3 +423,68 @@ class TestPythonLangchainStreaming:
         msgs = captured_messages[0]
         system_msg = next(m for m in msgs if m.type == "system")
         assert "agent-b" in system_msg.content
+
+
+# =====================================================================
+# token-usage emit (_emit_usage)
+# =====================================================================
+
+
+class UsageEchoModel(BaseChatModel):
+    """Returns token_usage in llm_output but NO model id, and exposes no
+    `.model` attr — forcing the `_llm_type` (@property) fallback. This is the
+    exact shape that regressed when `_llm_type` was called as a method."""
+
+    @property
+    def _llm_type(self) -> str:
+        return "mock"
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        return ChatResult(
+            generations=[
+                ChatGeneration(
+                    text=MOCK_RESPONSE,
+                    message=AIMessage(content=MOCK_RESPONSE),
+                )
+            ],
+            llm_output={
+                "token_usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15,
+                }
+            },
+        )
+
+
+class TestPythonLangchainUsageEmit:
+    async def test_emits_usage_with_llm_type_fallback_when_no_model_echoed(self):
+        """Regression: with no echoed model id and no `.model` attr the emit
+        must STILL fire, using the wrapped model's `_llm_type` @property — not
+        drop the event because `_llm_type` was called as a method."""
+        model = create_spellguard_chat_model(UsageEchoModel())
+
+        with (
+            patch(
+                "spellguard_langchain.chat_model.resolve_and_collect_agent_responses",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "spellguard_langchain.chat_model.report_usage_event"
+            ) as mock_emit,
+        ):
+            await model._agenerate([HumanMessage(content="hi")])
+
+        assert mock_emit.call_count == 1
+        event = mock_emit.call_args.args[0]
+        assert event.model == "mock"
+        assert event.prompt_tokens == 10
+        assert event.completion_tokens == 5
+        assert event.total_tokens == 15

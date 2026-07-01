@@ -70,6 +70,8 @@ export { OBLIGATION_VALUES } from './types/index';
 export {
   encryptForVerifier,
   decryptFromVerifier,
+  deriveAgentKeyPair,
+  generateAgentKeyPair,
   hashPayload,
 } from './client/encrypt';
 
@@ -124,3 +126,31 @@ export {
   getMemoryArchiveCount,
   getMemoryCommitmentCount,
 } from './logging/index';
+
+// ═══════════════════════════════════════════════════════════════════
+// Profile (transport / discovery / identity abstraction)
+// ═══════════════════════════════════════════════════════════════════
+
+export {
+  loadProfile,
+  createOriginalProfile,
+  createAgntcyProfile,
+  resolveProfileLayers,
+} from './profile/index';
+
+export type {
+  AgentAddress,
+  DirectoryName,
+  IdentityName,
+  IssueCredentialInput,
+  IssuedCredential,
+  ProfileBundle,
+  ProfileEnv,
+  ProfileName,
+  PublishableRecord,
+  SpellguardDirectory,
+  SpellguardIdentity,
+  SpellguardTransport,
+  TransportName,
+  VerifiedClaims,
+} from './profile/index';

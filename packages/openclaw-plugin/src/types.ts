@@ -64,6 +64,15 @@ export interface StatusData {
     agentId: string;
     webhookUrl: string;
   };
+  credential:
+    | {
+        source: 'socket';
+        scopedTokenId: string;
+        expiresAt: string;
+        repos: string[];
+        author: { name: string; email: string } | null;
+      }
+    | { source: 'none' };
 }
 
 export interface DiscoverData {

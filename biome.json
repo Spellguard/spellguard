@@ -1,5 +1,10 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "organizeImports": {
     "enabled": true
   },
@@ -36,16 +41,19 @@
     }
   },
   "files": {
+    "maxSize": 2097152,
     "ignore": [
       "node_modules",
       "dist",
       ".wrangler",
       ".venv",
+      ".cache",
       "coverage",
       "tmp",
       "*.min.js",
       "pnpm-lock.yaml",
-      "tests/adversarial/corpus.json"
+      "tests/adversarial/corpus.json",
+      "tests/adversarial/reports"
     ]
   }
 }

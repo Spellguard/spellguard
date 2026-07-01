@@ -121,6 +121,16 @@ export {
 // Backwards-compatible middleware helper
 export { createSpellguardMiddleware } from './middleware';
 
+// — self-reported SDK token telemetry. Exported
+// so the OpenAI + LangChain adapter packages emit through the same fail-open
+// transport as the core generateText/intent/streamText instrumentation.
+export {
+  reportUsageEvent,
+  reportAiSdkUsage,
+  modelIdOf,
+} from './usage-telemetry';
+export type { UsageEvent, ReportUsageDeps } from './usage-telemetry';
+
 // Lockfile / dependency reporting (advisory pipeline input)
 export {
   readLockfileFromDir,

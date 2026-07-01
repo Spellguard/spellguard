@@ -134,6 +134,19 @@ export interface RegisteredAgent {
   registeredAt: number;
   /** When the registration expires */
   expiresAt: number;
+  /**
+   * AGNTCY SLIM hierarchical name (e.g. `org/agent-a`). Populated only when
+   * the agent was discovered through the slim profile (DirDirectory). When
+   * present, the router forwards via SlimTransport instead of HTTP fetch.
+   */
+  slimName?: string;
+  /**
+   * The agent client's X25519 public key (hex). Registered so the Verifier can
+   * encrypt delivered payloads + responses TO this agent (gateway-opaque,
+   * app-layer end-to-end to the agent). Absent ⇒ legacy mode: the Verifier
+   * forwards app-layer plaintext to/from this agent (transport-encrypted only).
+   */
+  clientPublicKey?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════

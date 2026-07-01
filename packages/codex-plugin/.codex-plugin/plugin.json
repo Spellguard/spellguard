@@ -1,0 +1,13 @@
+{
+  "name": "spellguard",
+  "version": "0.2.9",
+  "description": "Spellguard agent credential management for OpenAI Codex (GitHub MVP).",
+  "author": {
+    "name": "Spellguard"
+  },
+  "homepage": "https://spellguard.dev",
+  "license": "Apache-2.0",
+  "keywords": ["spellguard", "credentials", "github", "security"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

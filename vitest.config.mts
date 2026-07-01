@@ -57,6 +57,15 @@ export class DurableObject {
     this.env = env;
   }
 }
+// Workflows base class — runtime-only at deploy time; stubbed so modules that
+// declare \`class X extends WorkflowEntrypoint\` can be imported under Node for
+// unit-testing their pure step functions without spinning up workerd.
+export class WorkflowEntrypoint {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+}
 `;
       }
     },
@@ -72,9 +81,17 @@ export default defineConfig({
         __dirname,
         'packages/client/ts/src/index.ts',
       ),
-      '@openclaw/spellguard': resolve(
+      '@spellguard/openclaw-plugin': resolve(
         __dirname,
         'packages/openclaw-plugin/src/index.ts',
+      ),
+      // Resolve the shared agent-control client to source so leaf-module
+      // vi.mock()s (packages/agent-control/src/client) intercept code that
+      // imports the package by name (the daemon, the setup skill, the
+      // OpenClaw credential-service).
+      '@spellguard/agent-control': resolve(
+        __dirname,
+        'packages/agent-control/src/index.ts',
       ),
       '@spellguard/verifier': resolve(__dirname, 'packages/verifier/src'),
       '@spellguard/amp/client': resolve(
@@ -92,6 +109,10 @@ export default defineConfig({
       '@spellguard/amp/types': resolve(
         __dirname,
         'packages/amp/ts/src/types/index.ts',
+      ),
+      '@spellguard/amp/profile': resolve(
+        __dirname,
+        'packages/amp/ts/src/profile/index.ts',
       ),
       '@spellguard/amp': resolve(__dirname, 'packages/amp/ts/src/index.ts'),
       '@spellguard/ctls': resolve(__dirname, 'packages/ctls/ts/src'),
@@ -135,5 +156,17 @@ export default defineConfig({
     ],
     testTimeout: 120000, // 2 minutes for LLM-based responses
     hookTimeout: 30000,
+    server: {
+      deps: {
+        // `partyserver` (a node_module) imports `cloudflare:workers` at module
+        // top-level. Externalized deps bypass the cloudflareWorkersStubPlugin
+        // (its resolveId hook only runs on transformed sources), so inline it so
+        // the stub catches its `cloudflare:workers` import. Without this, any
+        // unit test that imports the full `typedApi` graph (e.g. the
+        // openapi-contract guard) fails to load once a typed route transitively
+        // reaches partyserver (via services/agent-control-push).
+        inline: ['partyserver'],
+      },
+    },
   },
 });

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Claude Code SessionStart hook wrapper.
+# Invokes the pre-built bundle. Hook is non-blocking — any failure exits 0.
+set -euo pipefail
+
+PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUNDLE="${PLUGIN_ROOT}/dist/bin/run-session-start.mjs"
+
+if [[ ! -f "$BUNDLE" ]]; then
+  echo '[spellguard] dist/ missing — run `pnpm --filter @spellguard/codex-plugin build`' >&2
+  exit 0
+fi
+
+NODE_BIN="$("${PLUGIN_ROOT}/bin/resolve-node" 2>/dev/null || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  echo '[spellguard] node executable not found; skipping session-start setup.' >&2
+  exit 0
+fi
+exec "$NODE_BIN" "$BUNDLE"

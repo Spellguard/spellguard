@@ -6,7 +6,7 @@
 #
 # Prerequisites:
 #   - Docker and Docker Compose installed
-#   - .env.agents file with bot credentials (copy from 1Password)
+#   - .env.agents file with bot credentials (copy from your secret store)
 #   - cloudflared installed (brew install cloudflared / apt install cloudflared)
 #   - Verifier + Management server running (pnpm run dev:all in another terminal)
 #
@@ -59,10 +59,10 @@ if [ ! -f .env.agents ]; then
   echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
   echo ""
   echo -e "  Each developer has their own set of Slack bot credentials and"
-  echo -e "  Cloudflare tunnel token. Get yours from 1Password:"
+  echo -e "  Cloudflare tunnel token. Get yours from your secret store:"
   echo ""
-  echo -e "  1. Open 1Password → search \"Spellguard Slack Bots\""
-  echo -e "  2. Find your environment (e.g., \"Spellguard Slack Bots — NICK\")"
+  echo -e "  1. Open your secret store → find the shared Spellguard bot-credentials item"
+  echo -e "  2. Find your environment's entry"
   echo -e "  3. Copy the contents and save to ${CYAN}.env.agents${RESET} in the repo root"
   echo ""
   echo -e "  ${DIM}Do NOT share credentials between developers — each set is unique.${RESET}"
@@ -103,10 +103,9 @@ if [ ${#MISSING[@]} -gt 0 ]; then
   done
   echo ""
   echo -e "  Your .env.agents should contain your developer-specific credentials"
-  echo -e "  from 1Password. Each developer has a unique set — do not copy from"
+  echo -e "  from your secret store. Each developer has a unique set — do not copy from"
   echo -e "  another developer's file."
   echo ""
-  echo -e "  ${DIM}See: docs/staging-infrastructure.md${RESET}"
   echo ""
   exit 1
 fi

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# PostToolUse hook wrapper.
+set -euo pipefail
+PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUNDLE="${PLUGIN_ROOT}/dist/bin/run-post-tool-use.mjs"
+if [[ ! -f "$BUNDLE" ]]; then
+  printf '{}\n'
+  exit 0
+fi
+NODE_BIN="$(bash "${PLUGIN_ROOT}/bin/resolve-node" 2>/dev/null || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  echo '[spellguard] node executable not found; skipping post-tool observation.' >&2
+  printf '{}\n'
+  exit 0
+fi
+exec "$NODE_BIN" "$BUNDLE"

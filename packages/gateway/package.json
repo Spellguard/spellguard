@@ -1,0 +1,40 @@
+{
+  "name": "@spellguard/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HTTP↔SLIM gateway for Spellguard. The single Workers-facing entry point for the slim profile: receives HTTP from agents, forwards via SLIM to the Verifier; receives SLIM from the Verifier, POSTs HTTP to agents' /_spellguard/receive endpoints. Pure translation — no policy, no dir lookups, no audit. The Verifier owns those concerns and pushes agent registry updates to the gateway via SLIM control messages.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "spellguard-gateway": "./dist/index.js"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./wire": "./src/wire.ts",
+    "./control": "./src/control.ts",
+    "./slim-service": "./src/slim-service.ts",
+    "./slim-worker": "./src/slim-worker.mjs",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "optionalDependencies": {
+    "@agntcy/slim-bindings": "2.0.0-alpha.1"
+  },
+  "license": "MIT"
+}

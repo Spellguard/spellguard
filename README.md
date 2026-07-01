@@ -21,6 +21,34 @@ As AI agents become more autonomous and interact with each other, we need:
    build secure agents.
 4. **Interoperability** — Communicate with agents that don't use Spellguard.
 
+## How It Works
+
+```
+┌─────────────┐     ┌─────────────────────┐     ┌─────────────┐     ┌─────────────────────┐     ┌─────────────┐
+│   Agent A   │     │ @spellguard/client  │     │  Verifier   │     │ @spellguard/client  │     │   Agent B   │
+│             │     │   (A's middleware)  │     │   (proxy)   │     │   (B's middleware)  │     │             │
+└──────┬──────┘     └──────────┬──────────┘     └──────┬──────┘     └──────────┬──────────┘     └──────┬──────┘
+       │                       │                       │                       │                       │
+       │  generateText(...)    │                       │                       │                       │
+       │──────────────────────>│                       │                       │                       │
+       │                       │  1. Discover Agent B  │                       │                       │
+       │                       │──────────────────────>│                       │                       │
+       │                       │  2. Establish channel │                       │                       │
+       │                       │<─────────────────────>│<─────────────────────>│                       │
+       │                       │  3. Send message      │                       │                       │
+       │                       │─────────────────────->│                       │                       │
+       │                       │                       │  4. Policy checks     │                       │
+       │                       │                       │  5. Log commitment    │                       │
+       │                       │                       │  6. Archive message   │                       │
+       │                       │                       │  7. Forward to Agent B│                       │
+       │                       │                       │─────────────────────->│─────────────────────->│
+       │                       │                       │                       │<──────────────────────│
+       │                       │                       │<──────────────────────│      response         │
+       │                       │<──────────────────────│      result           │                       │
+```
+
+**Key insight**: Agents never communicate directly. All messages flow through the Verifier, which handles discovery, verification, and logging automatically.
+
 ## Deployment
 
 **☁️  Managed Service (Recommended)**
@@ -45,7 +73,7 @@ This repository contains the open source implementation — ideal for developmen
 | `@spellguard/amp` (`packages/amp/ts/`) | Auditable Messaging Protocol — ECDH encryption, commitment logging |
 | `@spellguard/langchain` (`packages/langchain/ts/`) | LangChain.js integration — wrap any `BaseChatModel` |
 | `@spellguard/openai` (`packages/openai/`) | OpenAI SDK integration — wrap an OpenAI client |
-| `@openclaw/spellguard` (`packages/openclaw-plugin/`) | OpenClaw plugin |
+| `@spellguard/openclaw-plugin` (`packages/openclaw-plugin/`) | OpenClaw plugin |
 | `@spellguard/policy-sdk` (`packages/policy-sdk/`) | SDK for building external policy servers |
 | `@spellguard/policy-catalog` (`packages/policy-catalog/`) | Policy definitions as JSONC — validate, diff, sync |
 | `@spellguard/mcp-guard` (`packages/mcp-guard/`) | MCP server guard |
@@ -92,10 +120,38 @@ cp packages/agents/agent-a/.env.example packages/agents/agent-a/.env
 
 Agents will fail to start without a valid `OPENROUTER_API_KEY`.
 
+### AGNTCY profile (default for the demo agents)
+
+The demo agents under `packages/agents/` ship configured for the **`agntcy`
+profile** (`SPELLGUARD_PROFILE=agntcy`): instead of speaking plain HTTP, they
+route agent↔agent traffic over the [AGNTCY SLIM](https://github.com/agntcy/slim)
+data plane and resolve each other through an AGNTCY `dir` registry. Two backing
+services can't run on the host without Docker, so start them first (requires
+Docker):
+
 ```bash
-pnpm run dev                  # Verifier + every demo agent in one go
+# Start the SLIM data plane (:46357) + AGNTCY dir (:8888) in the background.
+pnpm run dev:agntcy:up
+# ...then run the Verifier + Gateway + every demo agent on the host:
+SPELLGUARD_PROFILE=agntcy pnpm run dev
+```
+
+`pnpm run dev:agntcy` does both in one step (boots the backing services, then runs
+`pnpm run dev` with the profile set); `pnpm run dev:agntcy:down` stops them. The
+Verifier logs the active profile at startup so you can confirm:
+
+```
+[Verifier] Profile: agntcy (transport=slim, directory=dir, identity=agntcy-vc)
+```
+
+```bash
+pnpm run dev:agntcy           # SLIM backing services + Verifier + Gateway + agents
 pnpm run dev:verifier         # Or: just the Verifier server (no agents)
 ```
+
+> Running without the SLIM backing services (e.g. plain `pnpm run dev`) leaves
+> the Verifier and Gateway retrying their SLIM connection — start the data plane
+> with `pnpm run dev:agntcy:up` first.
 
 ### Policy enforcement
 
@@ -127,8 +183,9 @@ pnpm run typecheck
 pnpm run lint
 pnpm run test                 # TypeScript unit tests (vitest)
 pnpm run test:python          # Python unit tests (pytest)
-# Integration tests need the Verifier + agents running. Start them with
-# `pnpm run dev` in another terminal before running either of these:
+# Integration tests need the full agntcy stack (SLIM data plane + dir + Verifier +
+# Gateway + agents) running. Start it with `pnpm run dev:agntcy` in another
+# terminal before running either of these:
 pnpm run test:integration     # TypeScript integration tests
 pnpm run test:python:integration
 ```

@@ -43,6 +43,12 @@ class SpellguardConfig:
     signing_private_key: str | None = None
     # Management token forwarded to Verifier during registration
     management_token: str | None = None
+    # Management server base URL (WITHOUT the /v1 suffix). Populated on the
+    # managed/discovery path so the SDK can reach Management directly -- e.g.
+    # the Tier-3 self-reported usage emit (POST /v1/agents/:id/usage, PRD
+    #  S6.5). Absent on direct-config agents that
+    # have no management endpoint (emit skips).
+    management_url: str | None = None
 
 
 @dataclass

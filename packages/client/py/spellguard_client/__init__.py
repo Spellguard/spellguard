@@ -129,6 +129,10 @@ from spellguard_client.ai import (
     get_current_correlation_id,
     set_current_correlation_id,
     new_correlation_id,
+    # Immediate inbound sender — excluded from auto-routing so a receiver
+    # never routes back to its sender (2-node cycle prevention; DAG routing).
+    get_current_sender_id,
+    set_current_sender_id,
 )
 
 # ===================================================================
@@ -224,6 +228,8 @@ __all__ = [
     "get_current_correlation_id",
     "set_current_correlation_id",
     "new_correlation_id",
+    "get_current_sender_id",
+    "set_current_sender_id",
     # spellguard instance
     "SpellguardInstance",
     "create_spellguard",

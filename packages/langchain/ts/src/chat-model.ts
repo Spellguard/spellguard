@@ -8,6 +8,7 @@ import type { ChatResult } from '@langchain/core/outputs';
 import { ChatGenerationChunk } from '@langchain/core/outputs';
 import {
   buildAgentContextBlock,
+  reportUsageEvent,
   resolveAndCollectAgentResponses,
 } from '@spellguard/client';
 
@@ -83,14 +84,58 @@ class SpellguardChatModel extends BaseChatModel {
     return augmentMessages(messages, agentResponses);
   }
 
+  /**
+   * emit token usage from a wrapped-model
+   * `ChatResult`. Usage shape varies by provider — read defensively across
+   * `llmOutput.tokenUsage` (OpenAI-family camelCase), `llmOutput.usage`, and the
+   * per-generation `usage_metadata` (snake_case input/output tokens).
+   * Fire-and-forget + fail-open — never throws into the LLM call.
+   */
+  private emitUsage(result: ChatResult): void {
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: provider llmOutput shapes vary
+      const out = (result.llmOutput ?? {}) as any;
+      const tu = out.tokenUsage ?? out.usage;
+      // biome-ignore lint/suspicious/noExplicitAny: per-generation message shape varies
+      const meta = (result.generations?.[0]?.message as any)?.usage_metadata;
+      const promptTokens =
+        tu?.promptTokens ?? tu?.prompt_tokens ?? meta?.input_tokens;
+      const completionTokens =
+        tu?.completionTokens ?? tu?.completion_tokens ?? meta?.output_tokens;
+      const totalTokens =
+        tu?.totalTokens ?? tu?.total_tokens ?? meta?.total_tokens;
+      if (promptTokens == null && completionTokens == null) return;
+      const model =
+        out.model ??
+        // biome-ignore lint/suspicious/noExplicitAny: wrapped model id is not on the shared type
+        (this.wrappedModel as any).model ??
+        this.wrappedModel._llmType();
+      reportUsageEvent({
+        model: typeof model === 'string' ? model : 'unknown',
+        promptTokens: promptTokens ?? 0,
+        completionTokens: completionTokens ?? 0,
+        totalTokens:
+          totalTokens ?? (promptTokens ?? 0) + (completionTokens ?? 0),
+      });
+    } catch {
+      /* fail-open */
+    }
+  }
+
   async _generate(
     messages: BaseMessage[],
     options: this['ParsedCallOptions'],
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
     const prepared = await this.prepareMessages(messages);
-    // biome-ignore lint/suspicious/noExplicitAny: options type varies per wrapped model
-    return this.wrappedModel._generate(prepared, options as any, runManager);
+    const result = await this.wrappedModel._generate(
+      prepared,
+      // biome-ignore lint/suspicious/noExplicitAny: options type varies per wrapped model
+      options as any,
+      runManager,
+    );
+    this.emitUsage(result);
+    return result;
   }
 
   async *_streamResponseChunks(
@@ -123,6 +168,8 @@ class SpellguardChatModel extends BaseChatModel {
           options as any,
           runManager,
         );
+        // the non-streaming fallback carries final usage.
+        this.emitUsage(result);
         for (const gen of result.generations) {
           yield new ChatGenerationChunk({
             text: gen.text,

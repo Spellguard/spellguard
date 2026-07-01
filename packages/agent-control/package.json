@@ -1,0 +1,54 @@
+{
+  "name": "@spellguard/agent-control",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Neutral agent-control credential-socket client and wire protocol shared by the Spellguard agent plugins (Claude Code, Codex, OpenClaw)",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm run build:lib && pnpm run build:types",
+    "clean": "rm -rf dist",
+    "build:lib": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --out-extension:.js=.mjs --packages=external",
+    "build:types": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0",
+    "partysocket": "^1.1.18",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@spellguard/management-api-types": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Spellguard/spellguard.git",
+    "directory": "packages/agent-control"
+  },
+  "homepage": "https://spellguard.ai",
+  "bugs": {
+    "url": "https://github.com/Spellguard/spellguard/issues"
+  },
+  "keywords": [
+    "spellguard",
+    "ai-security",
+    "agent-control",
+    "credential-channel"
+  ],
+  "files": ["dist", "README.md", "LICENSE"]
+}

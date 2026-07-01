@@ -9,6 +9,8 @@
 export {
   encryptForVerifier,
   decryptFromVerifier,
+  deriveAgentKeyPair,
+  generateAgentKeyPair,
   hashPayload,
 } from './encrypt';
 export { verifyArchiveIntegrity } from './verify';

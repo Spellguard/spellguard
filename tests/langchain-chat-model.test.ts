@@ -20,6 +20,8 @@ const mockResolveAndCollect = vi.fn().mockResolvedValue([]);
 vi.mock('@spellguard/client', () => ({
   resolveAndCollectAgentResponses: (...args: unknown[]) =>
     mockResolveAndCollect(...args),
+  // emit — no-op in unit tests (fail-open transport, tested separately).
+  reportUsageEvent: () => undefined,
   buildAgentContextBlock: (
     responses: Array<{ agent: string; response: string }>,
   ) => {

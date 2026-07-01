@@ -9,8 +9,24 @@
  */
 
 import type { AuditCommitment } from '@spellguard/amp';
+import { getActiveProfile } from '../profile/registry';
 import type { PolicyCheckResult } from '../proxy/policy-evaluator';
 import { signRequest } from './request-signer';
+
+/**
+ * Wraps `getActiveProfile()` so callers in the audit hot path can call
+ * it without worrying about init-order: if the profile registry hasn't
+ * been seeded yet (startup race or test harness), we just return null
+ * and let the caller skip the metadata stamp. The dashboard's
+ * per-Verifier badge still works as a fallback.
+ */
+function getActiveProfileOrNull(): ReturnType<typeof getActiveProfile> | null {
+  try {
+    return getActiveProfile();
+  } catch {
+    return null;
+  }
+}
 
 interface AuditLogEntry {
   id: string;
@@ -252,6 +268,25 @@ export function dispatchObligations(
 }
 
 function addToBuffer(entry: AuditLogEntry): void {
+  // Stamp the active AGNTCY layer triple on the entry so the dashboard can
+  // render a per-request topology cue on each audit row — which transport
+  // carried it (SLIM gateway vs direct HTTP), which directory resolved the
+  // recipient (AGNTCY `dir` vs A2A well-known), and which identity layer
+  // issued the credential (AGNTCY VC vs CTLS). Reads from the profile
+  // registry singleton; if it hasn't been initialised yet (very-early
+  // startup race) we leave the fields unset and the dashboard falls back to
+  // the per-Verifier badge.
+  const bundle = getActiveProfileOrNull();
+  if (bundle) {
+    entry.metadata = {
+      ...(entry.metadata ?? {}),
+      transport: bundle.transport.name,
+      profile: bundle.profile,
+      directory: bundle.directory.name,
+      identity: bundle.identity.name,
+    };
+  }
+
   // Observability ring: always retains the most recent entries regardless
   // of whether/when the upstream flush runs.
   auditRing.push(entry);

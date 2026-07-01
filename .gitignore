@@ -6,6 +6,15 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Plugin distribution bundles are committed so marketplace installs run from
+# dist without a build step.
+!packages/claude-code-plugin/dist/
+!packages/claude-code-plugin/dist/**
+!packages/codex-plugin/dist/
+!packages/codex-plugin/dist/**
+!packages/agent-control/dist/
+!packages/agent-control/dist/**
+
 # Environment files (contain secrets)
 .env
 .env.local

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../",
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*",
+    "bin/**/*",
+    "../../tests/unit/github-mvp/plugin-*.test.ts",
+    "../../tests/unit/github-mvp/plugin-*.test.tsx"
+  ],
+  "exclude": ["node_modules", "dist"]
+}
