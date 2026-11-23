@@ -76,8 +76,8 @@ This repository contains the open source implementation — ideal for developmen
 | `@spellguard/openclaw-plugin` (`packages/openclaw-plugin/`) | OpenClaw plugin |
 | `@spellguard/policy-sdk` (`packages/policy-sdk/`) | SDK for building external policy servers |
 | `@spellguard/policy-catalog` (`packages/policy-catalog/`) | Policy definitions as JSONC — validate, diff, sync |
-| `@spellguard/mcp-guard` (`packages/mcp-guard/`) | MCP server guard — checks every tool call and its result against your policies; on npm as `@spellguard/mcp-guard` |
-| `@spellguard/audit-verify` (`packages/audit-verify/ts/`) | Audit verifier — checks an audit export against its locked checkpoints and Verifier signatures, without trusting Spellguard (also a Go CLI in `packages/audit-verify/go/`) |
+| `@spellguard/mcp-guard` (`packages/mcp-guard/`) | MCP server guard — checks every tool call and its result against your policies, and acts only on answers an attested Verifier signed; on npm as `@spellguard/mcp-guard` |
+| `@spellguard/audit-verify` (`packages/audit-verify/ts/`) | Audit checker — checks an audit export against its locked checkpoints and Verifier signatures, without trusting Spellguard (also a Go CLI in `packages/audit-verify/go/`) |
 | `@spellguard/gateway` (`packages/gateway/`) | HTTP↔SLIM gateway for the AGNTCY profile |
 | `@spellguard/claude-code-plugin` (`packages/claude-code-plugin/`) | Claude Code plugin — a scoped, attributable git credential and git-activity tracking |
 | `@spellguard/codex-plugin` (`packages/codex-plugin/`) | Codex plugin — the same credential management for OpenAI Codex |

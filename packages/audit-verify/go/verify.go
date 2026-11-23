@@ -767,7 +767,7 @@ func Verify(ctx context.Context, b *Bundle, opts Options) (*Report, error) {
 			case line.CheckpointSeq == nil || *line.CheckpointSeq > maxListed:
 				result.Status = StatusPending
 			default:
-				tamper(CodeRecordUnlisted, fmt.Sprintf("Spellguard says checkpoint %d lists this record, but no checkpoint the verifier read does.", *line.CheckpointSeq), ptr(*line.CheckpointSeq))
+				tamper(CodeRecordUnlisted, fmt.Sprintf("Spellguard says checkpoint %d lists this record, but no checkpoint the audit checker read does.", *line.CheckpointSeq), ptr(*line.CheckpointSeq))
 			}
 			// The signature, pending records included.
 			_, fields, _ := objectFields(line.Record)

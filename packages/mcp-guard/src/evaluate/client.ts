@@ -9,6 +9,12 @@ import type {
   EvaluateResponse,
   Redaction,
 } from '../types';
+import {
+  VERDICT_NONCE_HEADER,
+  VERDICT_SIGNATURE_HEADER,
+  checkVerdictSignature,
+  newVerdictNonce,
+} from './verdict-signature';
 
 const VERDICTS = new Set(['allow', 'block', 'flag']);
 
@@ -20,8 +26,14 @@ export const FRESH_TOKEN_MS = 60_000;
  * - `unreachable`: network error, timeout or a 5xx. Fail-open applies.
  * - `refused`: a 4xx, a configuration problem. Always blocks.
  * - `malformed`: a 2xx the guard can't read as a verdict. Always blocks.
+ * - `unverified`: a 2xx no attested Verifier signed. Always blocks: it is
+ *   what an impostor answering in the Verifier's place looks like.
  */
-export type CheckFailureKind = 'unreachable' | 'refused' | 'malformed';
+export type CheckFailureKind =
+  | 'unreachable'
+  | 'refused'
+  | 'malformed'
+  | 'unverified';
 
 export class CheckFailure extends Error {
   constructor(
@@ -117,6 +129,19 @@ export function parseBatchVerdict(
   return parsed;
 }
 
+/** A 2xx answer's body, exactly as sent, for the signature check. */
+async function readAnswer(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CheckFailure(
+      'unreachable',
+      `the Verifier's answer was cut off: ${message}`,
+    );
+  }
+}
+
 export class EvaluateClient {
   constructor(
     private authClient: AuthClient,
@@ -205,9 +230,13 @@ export class EvaluateClient {
    * reconnect once and retry. A 401 on a fresh token is not an expiry: the
    * Verifier doesn't trust this Spellguard's tokens, and reconnecting would
    * only open a new connection per call. That is a refusal.
+   *
+   * A 2xx is read only once its signature checks out (#1915). Other answers
+   * aren't checked: a refusal blocks anyway, and an impostor can always
+   * make the Verifier look unreachable by not answering.
    */
   private async post(path: string, body: unknown): Promise<unknown> {
-    let res = await this.send(path, body);
+    let { res, nonce } = await this.send(path, body);
     if (res.status === 401 && this.authClient.tokenAgeMs() >= FRESH_TOKEN_MS) {
       await res.body?.cancel();
       try {
@@ -219,7 +248,7 @@ export class EvaluateClient {
           `the management token expired and reconnecting failed: ${message}`,
         );
       }
-      res = await this.send(path, body);
+      ({ res, nonce } = await this.send(path, body));
     }
     if (res.status >= 500) {
       const text = await res.text().catch(() => '');
@@ -235,8 +264,10 @@ export class EvaluateClient {
         `the Verifier refused the check (${res.status}${text ? `: ${text.slice(0, 200)}` : ''})`,
       );
     }
+    const text = await readAnswer(res);
+    await this.checkSignature(res, text, nonce);
     try {
-      return await res.json();
+      return JSON.parse(text);
     } catch {
       throw new CheckFailure(
         'malformed',
@@ -245,19 +276,64 @@ export class EvaluateClient {
     }
   }
 
-  private async send(path: string, body: unknown): Promise<Response> {
+  /**
+   * Throw unless an attested Verifier signed this answer. A signature no
+   * known key matches may come from a key the Verifier rotated to since the
+   * guard last asked, so ask Spellguard for the current keys once and check
+   * again before refusing.
+   */
+  private async checkSignature(
+    res: Response,
+    text: string,
+    nonce: string,
+  ): Promise<void> {
+    const check = () =>
+      checkVerdictSignature({
+        headerValue: res.headers.get(VERDICT_SIGNATURE_HEADER),
+        nonce,
+        body: text,
+        keys: this.authClient.getVerifierKeys(),
+      });
+    let verdict = check();
+    if (
+      !verdict.ok &&
+      (verdict.reason === 'bad_signature' || verdict.reason === 'no_keys')
+    ) {
+      await this.authClient.refreshVerifierKeys();
+      verdict = check();
+    }
+    if (verdict.ok) return;
+    const why = {
+      no_keys: 'Spellguard names no attested Verifier to check it against',
+      missing: 'it is not signed',
+      malformed: 'its signature is unreadable',
+      bad_signature: 'no attested Verifier signed it',
+    }[verdict.reason];
+    throw new CheckFailure(
+      'unverified',
+      `the Verifier's answer can't be trusted: ${why}`,
+    );
+  }
+
+  private async send(
+    path: string,
+    body: unknown,
+  ): Promise<{ res: Response; nonce: string }> {
+    const nonce = newVerdictNonce();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.options.timeout);
     try {
-      return await fetch(`${this.authClient.getVerifierUrl()}${path}`, {
+      const res = await fetch(`${this.authClient.getVerifierUrl()}${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.authClient.getToken()}`,
+          [VERDICT_NONCE_HEADER]: nonce,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      return { res, nonce };
     } catch (err) {
       const message = controller.signal.aborted
         ? `no answer within ${this.options.timeout} ms`
@@ -292,12 +368,12 @@ export class EvaluateClient {
         source: 'guard',
       };
     }
-    const policy =
-      failure.kind === 'unreachable'
-        ? 'verifier-unreachable'
-        : failure.kind === 'refused'
-          ? 'verifier-refused'
-          : 'malformed-verdict';
+    const policy = {
+      unreachable: 'verifier-unreachable',
+      refused: 'verifier-refused',
+      malformed: 'malformed-verdict',
+      unverified: 'unverified-verdict',
+    }[failure.kind];
     return guardBlock(policy, `Blocked for safety: ${failure.message}.`);
   }
 }

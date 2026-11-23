@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="278" role="img" aria-labelledby="t d" viewBox="0 0 960 278">
+  <title id="t">The check for one record</title>
+  <desc id="d">An unchanged record hashes to the fingerprint stored in its locked checkpoint, so it is OK. The same record with its decision changed from block to allow hashes to a different fingerprint, so it is Tampered, and the report names the changed field and both values.</desc>
+  <style>
+    svg { --bg:#ffffff; --surface:#ffffff; --soft:#eef1f4; --fg:#151a1f; --muted:#5b6672; --line:#d2d9df; --lock:#1b6582; --lock-soft:#e2eff4; --ok:#1b7a44; --ok-soft:#e0f2e7; --bad:#b5302a; --bad-soft:#fae5e3; --warn:#9c650f; --pend:#5f6974; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg:#0d1117; --surface:#161b22; --soft:#1d242c; --fg:#e4e9ed; --muted:#9aa6b2; --line:#30363d; --lock:#62b4d3; --lock-soft:#12303b; --ok:#55c487; --ok-soft:#12301f; --bad:#f2786f; --bad-soft:#3b1917; --warn:#e2aa55; --pend:#a5afb9; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); }
+    .bg { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+    .b-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+    .b-untrusted { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+    .b-lock { fill: var(--lock-soft); stroke: var(--lock); stroke-width: 1.5; }
+    .b-run { fill: var(--soft); stroke: var(--fg); stroke-width: 1.5; }
+    .t-title { font-size: 15px; font-weight: 600; }
+    .t-big { font-size: 17px; font-weight: 600; }
+    .t-tag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; fill: var(--muted); }
+    .t-tag.lock { fill: var(--lock); }
+    .t-body { font-size: 12.5px; }
+    .t-small { font-size: 11.5px; fill: var(--muted); }
+    .t-small.lock { fill: var(--lock); }
+    .t-edge { font-size: 11px; fill: var(--muted); }
+    .t-hash { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+    .t-sym { font-size: 20px; font-weight: 600; }
+    .t-chip { font-size: 13px; font-weight: 600; }
+    .t-bad { fill: var(--bad); }
+    .t-ok { fill: var(--ok); }
+    .strong { font-weight: 600; }
+    .edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+    .mk { fill: var(--muted); }
+    .rule { stroke: var(--line); stroke-width: 1; }
+    .num { fill: var(--surface); stroke: var(--fg); stroke-width: 1.2; }
+    .t-num { font-size: 11px; font-weight: 600; }
+    .dot-ok { fill: var(--ok); } .dot-bad { fill: var(--bad); } .dot-warn { fill: var(--warn); } .dot-pend { fill: var(--pend); }
+    .cmp-ok { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.5; }
+    .cmp-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+  </style>
+  <rect class="bg" x="0.5" y="0.5" width="959" height="277" rx="12"/>
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="mk"/>
+    </marker>
+  </defs>
+
+  <!-- Row 1: unchanged -->
+  <rect class="b-box" x="16" y="16" width="270" height="80" rx="10"/>
+  <text class="t-small" x="34" y="40">Record 4f2a, as written</text>
+  <text class="t-body" x="34" y="62">order-desk → supplier</text>
+  <text class="t-body" x="34" y="84">decision: <tspan class="strong">block</tspan></text>
+
+  <line class="edge" x1="286" y1="56" x2="364" y2="56" marker-end="url(#arr2)"/>
+  <text class="t-edge" x="325" y="48" text-anchor="middle">SHA-256</text>
+
+  <rect class="b-box" x="366" y="30" width="180" height="52" rx="8"/>
+  <text class="t-small" x="382" y="50">fingerprint</text>
+  <text class="t-hash" x="382" y="70">7c3e 91d0 … a14f</text>
+
+  <line class="edge" x1="546" y1="56" x2="586" y2="56"/>
+  <circle class="cmp-ok" cx="608" cy="56" r="22"/>
+  <text class="t-ok" x="608" y="63" text-anchor="middle" font-size="20" font-weight="600">=</text>
+
+  <line class="edge" x1="630" y1="56" x2="720" y2="56" marker-end="url(#arr2)"/>
+  <rect class="cmp-ok" x="724" y="44" width="44" height="24" rx="12"/>
+  <text class="t-ok" x="746" y="61" text-anchor="middle" font-size="13" font-weight="600">OK</text>
+  <text class="t-small" x="724" y="90">matches its checkpoint</text>
+
+  <!-- Locked checkpoint, shared by both rows -->
+  <rect class="b-lock" x="508" y="114" width="200" height="50" rx="8"/>
+  <text class="t-small lock" x="524" y="134">Checkpoint #42, locked in S3</text>
+  <text class="t-hash" x="524" y="154">4f2a → 7c3e 91d0 … a14f</text>
+  <line class="edge" x1="608" y1="114" x2="608" y2="80" marker-end="url(#arr2)"/>
+  <text class="t-edge" x="616" y="102">expected</text>
+  <line class="edge" x1="608" y1="164" x2="608" y2="196" marker-end="url(#arr2)"/>
+  <text class="t-edge" x="616" y="184">expected</text>
+
+  <!-- Row 2: one word changed -->
+  <rect class="b-box" x="16" y="180" width="270" height="80" rx="10"/>
+  <text class="t-small" x="34" y="204">Same record, one word changed</text>
+  <text class="t-body" x="34" y="226">order-desk → supplier</text>
+  <text class="t-body" x="34" y="248">decision: <tspan class="strong t-bad">allow</tspan></text>
+
+  <line class="edge" x1="286" y1="220" x2="364" y2="220" marker-end="url(#arr2)"/>
+  <text class="t-edge" x="325" y="212" text-anchor="middle">SHA-256</text>
+
+  <rect class="b-box" x="366" y="194" width="180" height="52" rx="8"/>
+  <text class="t-small" x="382" y="214">fingerprint</text>
+  <text class="t-hash t-bad" x="382" y="234">19f0 c2e7 … 08be</text>
+
+  <line class="edge" x1="546" y1="220" x2="586" y2="220"/>
+  <circle class="cmp-bad" cx="608" cy="220" r="22"/>
+  <text class="t-bad" x="608" y="227" text-anchor="middle" font-size="20" font-weight="600">≠</text>
+
+  <line class="edge" x1="630" y1="220" x2="720" y2="220" marker-end="url(#arr2)"/>
+  <rect class="cmp-bad" x="724" y="208" width="84" height="24" rx="12"/>
+  <text class="t-bad" x="766" y="225" text-anchor="middle" font-size="13" font-weight="600">Tampered</text>
+  <text class="t-small t-bad" x="724" y="254">response_level is “allow”,</text>
+  <text class="t-small t-bad" x="724" y="270">was checkpointed as “block”</text>
+</svg>

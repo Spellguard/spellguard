@@ -262,7 +262,7 @@ export function checkpointKey(prefix: string, seq: number): string {
   return `${prefix}${seqName(seq)}.json`;
 }
 
-/** The key the verifier expects for a stream. */
+/** The key the audit checker expects for a stream. */
 export function streamPrefix(generation: string, stream: string): string {
   return `audit-checkpoints/${generation}/${stream}/`;
 }
@@ -2111,7 +2111,7 @@ export async function verify(
       } else {
         tamper(
           'record_unlisted',
-          `Spellguard says checkpoint ${line.checkpoint_seq} lists this record, but no checkpoint the verifier read does.`,
+          `Spellguard says checkpoint ${line.checkpoint_seq} lists this record, but no checkpoint the audit checker read does.`,
           line.checkpoint_seq,
         );
       }
