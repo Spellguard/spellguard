@@ -1,3 +1,12 @@
+// Database TOOL policies. Every policy here is scoped `tools` ON PURPOSE: the
+// engines apply SQL heuristics that are only meaningful when the content IS a
+// database query (a tool call's arguments). Left unscoped, they also govern the
+// 'messages' and — since #470 made `all`/unscoped cover the inference leg — the
+// 'llm' leg, where they fire on ordinary prose. That is not hypothetical: an
+// unscoped `query-injection-baseline` blocked every demo agent-chat fan-out,
+// because `/'[^']*--/` matched the apostrophe in the client's own
+// "…the user's query." scaffolding followed by its `--- Response from X ---`
+// delimiter (packages/client/ts/src/ai.ts:123,133).
 {
   "policies": [
     {
@@ -10,6 +19,7 @@
       "failBehavior": "block",
       "config": {},
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 96
@@ -30,6 +40,7 @@
       "failBehavior": "block",
       "config": {},
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 95
@@ -50,6 +61,7 @@
       "failBehavior": "block",
       "config": {},
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 94

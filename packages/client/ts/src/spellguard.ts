@@ -6,6 +6,12 @@ import {
 } from '@spellguard/amp/client';
 import { loadProfile } from '@spellguard/amp/profile';
 import type { AgentCard } from '@spellguard/ctls';
+import {
+  type DeliveryAuthFailure,
+  DeliveryNonceCache,
+  type DeliveryNonceStore,
+  verifyDelivery,
+} from '@spellguard/ctls/delivery';
 import type { LanguageModel } from 'ai';
 import { Hono } from 'hono';
 import {
@@ -14,11 +20,18 @@ import {
   discoverAndConfigure,
   getClientKeyPair,
   getConfig,
+  getDeliveryTrust,
   getOrCreateChannel,
   getVerifierPublicKey,
+  invalidateChannel,
   runWithAttestationState,
 } from './attestation';
-import type { AttestationState } from './attestation';
+import type { AttestationState, DeliveryTrust } from './attestation';
+import {
+  type DeliveryBypassOutcome,
+  type DeliveryBypassReason,
+  createDeliveryBypassReporter,
+} from './delivery-bypass-report';
 import { runWithHops } from './hop-context';
 import { setIntentDetectFn, setIntentDetectionModel } from './intent';
 import type {
@@ -26,6 +39,7 @@ import type {
   SpellguardConfigMode,
   SpellguardOptions,
 } from './types';
+import { keepInvocationAlive, withRequestWaitUntil } from './wait-until';
 
 /**
  * Create a Spellguard instance that manages configuration, model lifecycle,
@@ -38,17 +52,21 @@ export function createSpellguard<E extends object = object, M = unknown>(
   options: SpellguardOptions<E, M>,
 ): SpellguardInstance<E, M> {
   let resolvedModel: M | undefined;
+  // Keep initialization single-flight until it settles. Its attestation and
+  // registration side effects are not safely cancellable: age-expiring this
+  // promise can let a superseded attempt overwrite or invalidate the active
+  // channel after a replacement succeeds.
   let initPromise: Promise<void> | null = null;
-  let initStartedAt = 0;
 
   // Per-instance attestation state: each createSpellguard() call gets
   // its own channel / config / discoveryConfig bucket, so multiple
-  // instances hosted in the same worker (e.g. the the demo fleet) don't
+  // instances hosted in the same worker (e.g. the demo fleet) don't
   // overwrite each other on init or during outbound sends.  The
-  // middleware wraps each request in this state via ALS.
-  const instanceState: AttestationState = createAttestationState();
-
-  const INIT_STALE_MS = 30_000;
+  // middleware wraps each request in this state via ALS.  A caller that
+  // also acts as this agent outside its requests passes the state it uses,
+  // so the two share one channel.
+  const instanceState: AttestationState =
+    options.attestationState ?? createAttestationState();
 
   const SKIP_INIT_PATHS = new Set([
     '/_spellguard/health',
@@ -114,6 +132,11 @@ export function createSpellguard<E extends object = object, M = unknown>(
         codeHash: cfg.codeHash,
         agentCard,
         platformAttestation: cfg.platformAttestation,
+        // Without this the tool-policy fail-open opt-out is unreachable from
+        // createSpellguard(): this mapping is field-by-field, and the env-var
+        // fallback reads `process.env`, which workerd does not populate from
+        // `vars` at the compatibility dates the agents pin.
+        failOpen: cfg.failOpen,
       });
     } else {
       configure({
@@ -124,6 +147,8 @@ export function createSpellguard<E extends object = object, M = unknown>(
         expectedVerifierImageHash: cfg.expectedVerifierImageHash,
         agentSecret: cfg.agentSecret,
         agentCard,
+        // See the managed branch above — same reason.
+        failOpen: cfg.failOpen,
       });
       // Eagerly register with Verifier so this agent is discoverable
       // by other agents (matches the managed path behavior).
@@ -176,6 +201,101 @@ export function createSpellguard<E extends object = object, M = unknown>(
     console.log('[Spellguard] Initialization complete');
   }
 
+  // #1244: replay protection for this agent's deliveries, and the last time an
+  // unknown delivery key made it re-attest (at most once a minute).
+  const deliveryNonces: DeliveryNonceStore =
+    options.deliveryAuth?.nonceStore ?? new DeliveryNonceCache();
+  let lastDeliveryReattestAt = 0;
+  const DELIVERY_REATTEST_INTERVAL_MS = 60_000;
+  // #1407: report each refused or unverified delivery to management.
+  const sendBypassReport = createDeliveryBypassReporter();
+  /**
+   * Report a possible bypass. On Workers the report is handed to the
+   * request's `waitUntil` (the middleware installs it), because workerd
+   * cancels a fetch still pending when the response returns; elsewhere it
+   * completes on its own.
+   */
+  function reportBypass(
+    outcome: DeliveryBypassOutcome,
+    reason: DeliveryBypassReason,
+  ): void {
+    const sent = sendBypassReport(outcome, reason);
+    if (sent) keepInvocationAlive(sent);
+  }
+
+  /**
+   * Decide whether a delivery provably came from this agent's Verifier
+   * (#1244). The key and the enforcement gate come from the agent's own
+   * attested registration, never from the delivery: a Verifier that
+   * advertised `deliveryAuth: 'v1'` gets every unsigned or invalid delivery
+   * refused; one that did not stays report-only (accepted and logged).
+   */
+  async function authenticateDelivery(
+    header: (name: string) => string | null,
+    channelToken: string,
+    rawBody: string,
+  ): Promise<
+    | { ok: true; enforced: boolean; unverified?: DeliveryAuthFailure }
+    | {
+        ok: false;
+        status: 401 | 503;
+        reason: DeliveryAuthFailure | 'channel_unavailable';
+      }
+  > {
+    let trust: DeliveryTrust;
+    try {
+      trust = await getDeliveryTrust();
+    } catch (error) {
+      console.warn(
+        `[Spellguard] delivery-auth: no attested Verifier channel to verify against: ${error}`,
+      );
+      return { ok: false, status: 503, reason: 'channel_unavailable' };
+    }
+    const agentId = getConfig()?.agentId ?? '';
+    const verify = (publicKeyHex: string) =>
+      verifyDelivery({
+        header,
+        recipientAgentId: agentId,
+        channelToken,
+        body: rawBody,
+        publicKeyHex,
+        nonces: deliveryNonces,
+      });
+
+    let verdict = await verify(trust.sessionPublicKey);
+    // A Verifier restart rotates its session key. Re-attest (and re-register)
+    // once, then accept only the newly attested key.
+    if (
+      !verdict.ok &&
+      verdict.reason === 'unknown_key' &&
+      trust.deliveryAuth === 'v1' &&
+      Date.now() - lastDeliveryReattestAt >= DELIVERY_REATTEST_INTERVAL_MS
+    ) {
+      lastDeliveryReattestAt = Date.now();
+      console.warn(
+        '[Spellguard] delivery-auth: delivery signed by an unknown key — re-attesting the Verifier once',
+      );
+      invalidateChannel();
+      try {
+        trust = await getDeliveryTrust();
+      } catch (error) {
+        console.warn(
+          `[Spellguard] delivery-auth: re-attestation failed: ${error}`,
+        );
+        return { ok: false, status: 503, reason: 'channel_unavailable' };
+      }
+      verdict = await verify(trust.sessionPublicKey);
+    }
+
+    const enforced = trust.deliveryAuth === 'v1';
+    if (verdict.ok) return { ok: true, enforced };
+    if (enforced) return { ok: false, status: 401, reason: verdict.reason };
+    console.warn(
+      `[Spellguard] delivery-auth: accepted an unverified delivery (${verdict.reason}); report-only because the Verifier did not advertise deliveryAuth v1`,
+    );
+    return { ok: true, enforced: false, unverified: verdict.reason };
+  }
+
   function middleware(): Hono<{ Bindings: E }> {
     const app = new Hono<{ Bindings: E }>();
 
@@ -184,35 +304,62 @@ export function createSpellguard<E extends object = object, M = unknown>(
     // nested generateText calls always see THIS agent's channel and
     // config — not whichever createSpellguard instance initialized
     // most recently in the same worker.
-    app.use('*', async (c, next) => {
-      if (SKIP_INIT_PATHS.has(c.req.path)) {
-        return next();
-      }
-
-      await runWithAttestationState(instanceState, async () => {
-        if (initPromise && Date.now() - initStartedAt > INIT_STALE_MS) {
-          console.warn('[Spellguard] Clearing stale init promise, retrying');
-          initPromise = null;
+    //
+    // #1506: every request, including the paths that skip initialization,
+    // runs with its waitUntil installed, so background reports started while
+    // handling it (the usage emit in generateText, the bypass report) are
+    // not cancelled by workerd when the response returns.
+    app.use('*', (c, next) =>
+      withRequestWaitUntil(c, async () => {
+        if (SKIP_INIT_PATHS.has(c.req.path)) {
+          return next();
         }
 
-        if (!initPromise) {
-          initStartedAt = Date.now();
-          initPromise = initialize(c.env).catch((err) => {
-            initPromise = null;
-            throw err;
-          });
-        }
+        await runWithAttestationState(instanceState, async () => {
+          if (!initPromise) {
+            initPromise = initialize(c.env).catch((err) => {
+              initPromise = null;
+              throw err;
+            });
+          }
 
-        await initPromise;
-        await next();
-      });
-    });
+          await initPromise;
+          await next();
+        });
+      }),
+    );
 
     // Verifier callback endpoint
     app.post('/_spellguard/receive', async (c) => {
       const channelToken = c.req.header('X-Spellguard-Channel-Token');
       if (!channelToken) {
+        reportBypass('refused', 'missing_channel_token');
         return c.json({ error: 'Missing channel token' }, 401);
+      }
+
+      // #1244: the signature covers the exact bytes received, so read them
+      // raw and parse only after they are authenticated.
+      const rawBody = await c.req.text();
+      const auth = await authenticateDelivery(
+        (name) => c.req.header(name) ?? null,
+        channelToken,
+        rawBody,
+      );
+      if (!auth.ok) {
+        console.warn(
+          `[Spellguard] delivery-auth: refused a delivery (${auth.reason})`,
+        );
+        // A Verifier outage is not a bypass; everything else is reported.
+        if (auth.reason !== 'channel_unavailable') {
+          reportBypass('refused', auth.reason);
+        }
+        return c.json(
+          { error: 'Delivery not authenticated', reason: auth.reason },
+          auth.status,
+        );
+      }
+      if (auth.unverified) {
+        reportBypass('accepted_unverified', auth.unverified);
       }
 
       let body: {
@@ -224,7 +371,7 @@ export function createSpellguard<E extends object = object, M = unknown>(
       };
 
       try {
-        body = await c.req.json();
+        body = JSON.parse(rawBody);
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
@@ -234,14 +381,45 @@ export function createSpellguard<E extends object = object, M = unknown>(
       // agent's registered key, decrypt it with our private key. A legacy
       // delivery carries a plaintext `message` instead — use it as-is.
       const wasEncrypted = typeof body.encryptedMessage === 'string';
+      // #1244: an agent that registered an X25519 key is always delivered
+      // ciphertext by an enforcing Verifier, so a plaintext body is refused;
+      // it keeps the gateway-opaque guarantee. Report-only mode logs it.
+      if (!wasEncrypted && getClientKeyPair()) {
+        if (auth.enforced) {
+          // #1858: not a bypass. The delivery passed the signature check
+          // above, so it came from this agent's Verifier, which had no key
+          // for it yet (first contact). The refusal's reason is what makes
+          // the Verifier deliver once more, encrypted to the key this agent
+          // registered while refusing (#1528), so nothing is reported.
+          console.info(
+            '[Spellguard] delivery-auth: refused a plaintext delivery from the Verifier (it had no key for this agent yet); it retries encrypted',
+          );
+          return c.json(
+            {
+              error: 'Delivery not authenticated',
+              reason: 'plaintext_refused',
+            },
+            401,
+          );
+        }
+        console.warn(
+          '[Spellguard] delivery-auth: accepted a plaintext delivery in report-only mode',
+        );
+        reportBypass('accepted_unverified', 'plaintext_accepted');
+      }
       let message: unknown;
+      // #1528: `decrypt_failed` tells the Verifier its key for this agent is
+      // outdated; it retries once with the key this agent just registered.
       if (wasEncrypted) {
         const keyPair = getClientKeyPair();
         if (!keyPair) {
           console.error(
             '[Spellguard] Received an encrypted message but have no agent keypair to decrypt with',
           );
-          return c.json({ error: 'Failed to decrypt message' }, 400);
+          return c.json(
+            { error: 'Failed to decrypt message', reason: 'decrypt_failed' },
+            400,
+          );
         }
         try {
           message = JSON.parse(
@@ -254,7 +432,10 @@ export function createSpellguard<E extends object = object, M = unknown>(
           console.error(
             `[Spellguard] Failed to decrypt delivered message: ${err}`,
           );
-          return c.json({ error: 'Failed to decrypt message' }, 400);
+          return c.json(
+            { error: 'Failed to decrypt message', reason: 'decrypt_failed' },
+            400,
+          );
         }
       } else {
         message = body.message;
@@ -402,12 +583,4 @@ export interface SpellguardInstance<E extends object, M> {
   middleware(): Hono<{ Bindings: E }>;
   /** Get the initialized model. Throws if init hasn't completed yet. */
   getModel(): M;
-}
-
-/**
- * Verify that a request came from the Verifier.
- * In a full implementation, this would verify cryptographic signatures.
- */
-export function verifyVerifierRequest(channelToken: string): boolean {
-  return !!channelToken && channelToken.length > 0;
 }

@@ -26,6 +26,22 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/types/index.js"
     },
+    "./policy-types": {
+      "types": "./dist/policy-types.d.ts",
+      "import": "./dist/policy-types.js"
+    },
+    "./document-limits": {
+      "types": "./dist/document-limits.d.ts",
+      "import": "./dist/document-limits.js"
+    },
+    "./agent-conduct": {
+      "types": "./dist/agent-conduct.d.ts",
+      "import": "./dist/agent-conduct.js"
+    },
+    "./policy-outcomes": {
+      "types": "./dist/policy-outcomes.d.ts",
+      "import": "./dist/policy-outcomes.js"
+    },
     "./profile": {
       "types": "./dist/profile/index.d.ts",
       "import": "./dist/profile/index.js"
@@ -48,7 +64,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.11"
   },
   "keywords": ["messaging", "audit", "logging", "transparency", "commitment"],
   "license": "MIT"

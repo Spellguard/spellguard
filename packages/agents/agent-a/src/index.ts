@@ -2,8 +2,9 @@
 
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { OpenRouterProvider } from '@openrouter/ai-sdk-provider';
-import { createSpellguard } from '@spellguard/client';
+import { createSpellguard, runWithHops } from '@spellguard/client';
 import { generateText, spellguardTool, tool } from '@spellguard/client/ai';
+import { stepCountIs } from 'ai';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
@@ -166,7 +167,7 @@ function createPatientDataTools() {
       name: 'listPatients',
       description:
         'List all patient names in the system. Does not expose detailed records.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const names = listPatientNames();
         return {
@@ -180,7 +181,7 @@ function createPatientDataTools() {
       name: 'getPatientVisitCount',
       description:
         'Get the number of doctor visits for a specific patient. Provide a patient name or first letter.',
-      parameters: z.object({
+      inputSchema: z.object({
         patient_name: z
           .string()
           .describe(
@@ -196,7 +197,7 @@ function createPatientDataTools() {
       name: 'getPatientVisitDetails',
       description:
         'Get detailed visit information for a patient including visit reasons, doctors seen, and date range.',
-      parameters: z.object({
+      inputSchema: z.object({
         patient_name: z
           .string()
           .describe('The patient name or first letter to search for'),
@@ -210,7 +211,7 @@ function createPatientDataTools() {
       name: 'getPatientStatistics',
       description:
         'Get aggregate statistics about all patients (total patients, total visits, averages).',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         return getPatientStatistics();
       },
@@ -219,7 +220,7 @@ function createPatientDataTools() {
     getPatientMedications: spellguardTool({
       name: 'getPatientMedications',
       description: 'Get the list of medications a specific patient is taking.',
-      parameters: z.object({
+      inputSchema: z.object({
         patient_name: z
           .string()
           .describe('The patient name or first letter to search for'),
@@ -233,7 +234,7 @@ function createPatientDataTools() {
       name: 'getPatientConditions',
       description:
         'Get the list of conditions for a specific patient without exposing other details.',
-      parameters: z.object({
+      inputSchema: z.object({
         patient_name: z
           .string()
           .describe('The patient name or first letter to search for'),
@@ -373,7 +374,7 @@ For example, if asked about "Benjamin Blake's medications", call getPatientMedic
 Always provide the patient_name parameter when calling patient-specific tools.`,
       prompt,
       tools,
-      maxSteps: 5,
+      stopWhen: stepCountIs(5),
     });
 
     return { response: result.text };
@@ -396,7 +397,10 @@ app.get('/health', (c) => {
  */
 app.post('/chat', async (c) => {
   const body = await c.req.json();
-  const { message } = body as { message: string };
+  const { message, correlationId } = body as {
+    message: string;
+    correlationId?: string;
+  };
 
   if (!message) {
     return c.json({ error: 'Message is required' }, 400);
@@ -409,15 +413,24 @@ app.post('/chat', async (c) => {
   try {
     const tools = createPatientDataTools();
 
-    const result = await generateText({
-      model: model(
-        c.env.PRIMARY_MODEL || 'google/gemini-3.1-flash-lite-preview',
-      ),
-      system: AGENT_A_SYSTEM_PROMPT,
-      prompt: message,
-      tools,
-      maxSteps: 5,
-    });
+    // Adopt the caller's correlationId (the management /chat route mints and
+    // passes it) as this exchange's hop-0 trace id, so every peer fan-out send
+    // inside generateText shares it and the dashboard forwarding trace can join
+    // the downstream audit rows. Falls back to a fresh id for direct callers.
+    const result = await runWithHops(
+      0,
+      () =>
+        generateText({
+          model: model(
+            c.env.PRIMARY_MODEL || 'google/gemini-3.1-flash-lite-preview',
+          ),
+          system: AGENT_A_SYSTEM_PROMPT,
+          prompt: message,
+          tools,
+          stopWhen: stepCountIs(5),
+        }),
+      correlationId,
+    );
 
     return c.json({
       response: result.text,

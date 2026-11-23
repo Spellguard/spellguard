@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { runPostToolUse } from '../src/hooks/post-tool-use-observation';
+import { reconcileDaemonForActiveHook } from '../src/lib/daemon-hook-reconcile';
 import { adaptHookPayload } from '../src/lib/hook-payload-adapter';
 
 async function main() {
@@ -23,6 +24,20 @@ async function main() {
       process.stderr.write(
         `[trace] adapted: toolName=${adapted.toolName} cwd=${adapted.cwd} agent=${adapted.agentId.slice(0, 8)} endpoint=${adapted.endpoint} remoteUrl=${adapted.remoteUrl}\n`,
       );
+    }
+    try {
+      const daemon = await reconcileDaemonForActiveHook({ cwd: adapted.cwd });
+      if (process.env.SPELLGUARD_HOOK_TRACE) {
+        process.stderr.write(
+          `[trace] post-tool daemon reconciliation: ${JSON.stringify(daemon)}\n`,
+        );
+      }
+    } catch (error) {
+      if (process.env.SPELLGUARD_HOOK_TRACE) {
+        process.stderr.write(
+          `[trace] post-tool daemon reconciliation failed: ${String(error)}\n`,
+        );
+      }
     }
     const result = await runPostToolUse(adapted);
     if (process.env.SPELLGUARD_HOOK_TRACE) {

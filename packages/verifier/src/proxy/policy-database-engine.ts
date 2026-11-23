@@ -66,13 +66,31 @@ const SQL_INJECTION_PATTERNS: ReadonlyArray<{
     msg: 'stacked query injection',
     confidence: 0.95,
   },
-  // SQL comment escapes
+  // SQL comment escapes.
+  //
+  // Both patterns are deliberately LOCAL. Their unbounded ancestors matched any
+  // prose containing the two characters somewhere, which made them fire on
+  // ordinary markdown — a `---` rule, or an apostrophe on one line and a `---`
+  // delimiter paragraphs later. That is not theoretical: the unbounded
+  // `/'[^']*--/` blocked 100% of Spellguard's own agent-chat fan-outs by matching
+  // "…the user's query.\n\n--- Response from <agent> ---", the client's own
+  // context scaffolding (packages/client/ts/src/ai.ts:123,133).
   {
-    re: /(?:--|#|\/\*)\s*$/,
+    // `(?<!-)--(?!-)` is EXACTLY a two-hyphen run — a SQL line comment. A markdown
+    // horizontal rule (`---`) is three or more and no longer matches at any offset.
+    re: /(?:(?<!-)--(?!-)|#|\/\*)\s*$/,
     msg: 'SQL comment escape at end of value',
     confidence: 0.8,
   },
-  { re: /'[^']*--/, msg: 'SQL comment after quote escape', confidence: 0.85 },
+  {
+    // A quote escape followed by a comment is a LOCAL idiom (`admin'--`,
+    // `' OR '1'='1' --`). Forbid newlines in the gap and cap its length so the
+    // pattern cannot span unrelated sentences of a long payload, and require an
+    // exact `--` run so an apostrophe followed by a markdown rule is not a match.
+    re: /'[^'\n]{0,40}(?<!-)--(?!-)/,
+    msg: 'SQL comment after quote escape',
+    confidence: 0.85,
+  },
   // Blind injection patterns
   {
     re: /\bAND\s+\d+\s*=\s*\d+\b/i,
@@ -113,7 +131,13 @@ const SQL_INJECTION_PATTERNS: ReadonlyArray<{
     msg: 'character encoding bypass',
     confidence: 0.75,
   },
-  { re: /0x[0-9a-f]{4,}/i, msg: 'hex-encoded SQL payload', confidence: 0.7 },
+  // Hex literals alone are data, including error codes and dimension suffixes.
+  // Require dynamic SQL execution; other attack forms have their own patterns.
+  {
+    re: /\bEXEC(?:UTE)?\s*\(\s*0x[0-9a-f]{4,}\s*\)/i,
+    msg: 'hex-encoded SQL execution',
+    confidence: 0.7,
+  },
 ];
 
 function evaluateSqlInjection(ctx: PolicyEvalContext): PolicyDetection[] {

@@ -8,10 +8,6 @@ import { type Client } from 'openapi-fetch';
  * network) is TRANSIENT and must not be treated as "gone".
  */
 export declare const AGENT_GONE_HTTP_STATUSES: readonly number[];
-/**
- * Accepts `undefined` (a network failure with no HTTP status) and treats it as
- * NOT gone — a missing status is transient, never "the agent is gone".
- */
 export declare function isAgentGoneStatus(httpStatus: number | undefined): boolean;
 /**
  * Most agent-authed routes read the `X-Spellguard-Agent-Id`/`-Secret` headers

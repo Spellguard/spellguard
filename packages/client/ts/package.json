@@ -28,16 +28,16 @@
   "dependencies": {
     "@spellguard/amp": "workspace:*",
     "@spellguard/ctls": "workspace:*",
-    "ai": "^4.0.0",
-    "hono": "^4.6.0"
+    "ai": "^7.0.100",
+    "hono": "^4.13.16"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "@openrouter/ai-sdk-provider": ">=0.4.0"
+    "@openrouter/ai-sdk-provider": ">=3.0.0"
   },
   "peerDependenciesMeta": {
     "@openrouter/ai-sdk-provider": {

@@ -31,7 +31,6 @@ export {
   encryptForVerifier,
   decryptFromVerifier,
   hashPayload as hash,
-  verifyArchiveIntegrity,
 } from '@spellguard/amp/client';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -51,6 +50,8 @@ export type {
   IntentDetectionModelOrFactory,
   ModelOrFactory,
   MessageContext,
+  MessageAttachment,
+  WithAttachments,
 } from './types';
 
 // Re-export ClientChannel as Channel for backwards compatibility
@@ -100,10 +101,17 @@ export {
   extractTextFromResponse,
   isPolicyOrRateLimitError,
   resolveAndCollectAgentResponses,
+  // Peer fan-out width: the default, and the env-configurable resolver.
+  DEFAULT_FANOUT_CONCURRENCY,
+  resolveFanoutConcurrency,
 } from './ai';
+export type { AgentResponse } from './ai';
+
+// Bounded-concurrency fan-out helper (backs the peer fan-out; exported for reuse + tests)
+export { mapWithConcurrency } from './concurrency';
 
 // Spellguard instance + middleware
-export { createSpellguard, verifyVerifierRequest } from './spellguard';
+export { createSpellguard } from './spellguard';
 export type { SpellguardInstance } from './spellguard';
 
 // Trace context (hops + correlation id).  Top-level callers wrap
@@ -130,6 +138,8 @@ export {
   modelIdOf,
 } from './usage-telemetry';
 export type { UsageEvent, ReportUsageDeps } from './usage-telemetry';
+export { runWithWaitUntil, withRequestWaitUntil } from './wait-until';
+export type { WaitUntil } from './wait-until';
 
 // Lockfile / dependency reporting (advisory pipeline input)
 export {

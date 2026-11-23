@@ -18,6 +18,26 @@
         "combinationThreshold": 3,
         "customPatterns": [
           {
+            "pattern": "\\b(?:all\\s+)?(?:safety|security)\\s+(?:policies|checks|filters|restrictions)\\s+(?:are|is|have\\s+been|has\\s+been)\\s+(?:now\\s+)?(?:suspended|disabled|removed|lifted)\\b",
+            "label": "safety-policy-suspension",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "@\\{\\[\\s*system\\s+[\\'\\\"]",
+            "label": "perl-command-interpolation",
+            "confidence": 0.95
+          },
+          {
+            "pattern": "\\b(?:broken|break)\\s+free\\s+of\\s+(?:the\\s+)?(?:typical\\s+)?(?:confines|rules|restrictions)\\s+of\\s+AI\\b",
+            "label": "unrestricted-ai-roleplay",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "[\\'\\\"]\\s*INSERT\\s+INTO\\b[^\\n]{0,500};\\s*--",
+            "label": "quoted-sql-injection",
+            "confidence": 0.95
+          },
+          {
             "pattern": "\\bdisregard\\s+(?:all\\s+)?(?:your\\s+)?instructions",
             "label": "direct-override",
             "confidence": 0.9
@@ -158,7 +178,7 @@
             "confidence": 0.95
           },
           {
-            "pattern": "`[^`]*(?:ls|cat|rm|chmod|touch|wget|curl|echo|kill|dd|id|whoami|pwd|uname)\\b[^`]*`",
+            "pattern": "`[^`]*\\b(?:ls|cat|rm|chmod|touch|wget|curl|echo|kill|dd|id|whoami|pwd|uname)\\b[^`]*`",
             "label": "backtick-execution",
             "confidence": 0.9
           },
@@ -224,7 +244,12 @@
       "severity": "critical",
       "failBehavior": "block",
       "config": {
-        "categories": [],
+        // NO `categories` key → the engine checks ALL built-in injection
+        // categories, and the web-payload customPatterns below run in addition.
+        // (Previously `"categories": []`, which "worked" only because an empty
+        // array is truthy in JS, so the engine checked ZERO categories. That is
+        // now rejected by the catalog schema — omit the key for all, or list the
+        // ones you want.)
         "normalizeUnicode": true,
         "customPatterns": [
           {

@@ -34,7 +34,11 @@ import {
   decodeResponse,
   encodeRequest,
 } from '@spellguard/gateway/wire';
-import { buildAgentDeliveryBody } from '../proxy/delivery-encryption';
+import {
+  buildAgentDeliveryBody,
+  refusalReason,
+} from '../proxy/delivery-encryption';
+import { signedDeliveryHeaders } from '../proxy/delivery-signing';
 import {
   RESTART_BACKOFF_MS,
   RESTART_WINDOW_MS,
@@ -88,6 +92,10 @@ export interface SendToAgentResult {
    * reached the agent already (don't blindly retry).
    */
   errorCode?: string;
+  /** HTTP status the recipient answered with, when it answered. */
+  status?: number;
+  /** The machine `reason` from the recipient's error body (#1528). */
+  reason?: string;
 }
 
 function resolveWorkerPath(): string {
@@ -333,7 +341,12 @@ async function getWorker(
  */
 export async function sendMessageToAgentOverSlim(
   recipientSlimName: string,
-  secureMessage: { id: string; sender: string; timestamp: number },
+  secureMessage: {
+    id: string;
+    sender: string;
+    recipient: string;
+    timestamp: number;
+  },
   decryptedMessage: unknown,
   channelToken: string,
   recipientPublicKey?: string,
@@ -379,6 +392,14 @@ export async function sendMessageToAgentOverSlim(
     headers: {
       'content-type': 'application/json',
       'x-spellguard-channel-token': channelToken,
+      // #1244: the gateway forwards these headers and the exact body bytes
+      // (gateway/src/slim-inbound.ts wireToRequest), so the agent verifies
+      // the signature over what it receives.
+      ...(await signedDeliveryHeaders(
+        secureMessage.recipient,
+        channelToken,
+        bodyJson,
+      )),
     },
     body: bytesToBase64(new TextEncoder().encode(bodyJson)),
   });
@@ -402,6 +423,8 @@ export async function sendMessageToAgentOverSlim(
       return {
         ok: false,
         error: `recipient/gateway returned HTTP ${res.status}: ${text.slice(0, 500)}`,
+        status: res.status,
+        reason: refusalReason(text),
       };
     }
     try {
@@ -411,6 +434,38 @@ export async function sendMessageToAgentOverSlim(
     }
   } catch (err) {
     return { ok: false, error: `decode failed: ${(err as Error).message}` };
+  }
+}
+
+/**
+ * Eagerly spawn + connect the verifier's SLIM message-publisher worker so the
+ * FIRST real verifier→agent delivery doesn't pay the cold cost: Node worker
+ * spawn + `@agntcy/slim-bindings` load + control-plane `connectAsync` +
+ * identity registration (~20-30s, observed as the Agent-Chat "first peer leg"
+ * spike). The sender is otherwise spawned lazily inside `getWorker` on the
+ * first `sendMessageToAgentOverSlim`, so every boot / self-recycle re-cools it.
+ *
+ * Recipient-AGNOSTIC: this warms only the SHARED worker connection — it creates
+ * NO outbound session (recipients vary, so there is deliberately no
+ * `prewarmDestination`), so it cannot trip the upstream session_moderator race.
+ * The per-destination session is a small residual handshake built on first send
+ * to each agent.
+ *
+ * Idempotent (`getWorker` memoizes the worker), best-effort, and never throws:
+ * resolves `true` once the worker is ready, `false` when bindings are
+ * unavailable or the worker failed to boot. Intended to run at verifier
+ * startup, alongside roster pre-sync — the same boot-time hot-path priming.
+ */
+export async function prewarmSlimSender(
+  config: SendToAgentConfig = sendToAgentConfigFromEnv(),
+): Promise<boolean> {
+  const worker = await getWorker(config);
+  if (!worker) return false;
+  try {
+    await worker.ready;
+    return true;
+  } catch {
+    return false;
   }
 }
 

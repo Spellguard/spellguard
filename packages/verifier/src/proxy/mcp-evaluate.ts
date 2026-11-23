@@ -14,21 +14,21 @@ import type { Context } from 'hono';
 
 import { verifyAndExtractAgentPublicKey } from '../auth/management-jwt';
 import { getAgentPolicies } from '../management/policy-cache';
-import { resolveResponseLevel } from './effect-handlers';
-import type { ResponseLevel } from './effect-handlers';
-import { evaluatePolicies, filterByScope } from './policy-evaluator';
+import { readCorrelationId } from '../session/keys';
+import { mapResponseLevel, resolveResponseLevel } from './effect-handlers';
+import {
+  evaluatePolicies,
+  evaluateToolCallPolicies,
+  filterByScope,
+} from './policy-evaluator';
 import type { PolicyCheckResult } from './policy-evaluator';
 import type {
+  ContentPart,
   NormalizedIdentityClaims,
   ResolvedPolicyBinding,
 } from './policy-evaluator-types';
 
 // ── Request / Response Types ──────────────────────────────────────────
-
-interface ContentPart {
-  type: string;
-  value: string;
-}
 
 interface McpEvaluateRequestSingle {
   agentId: string;
@@ -37,6 +37,11 @@ interface McpEvaluateRequestSingle {
   tool?: string;
   context?: Record<string, unknown>;
   content: ContentPart[];
+  /**
+   * Optional conversation id, validated like the tool check's and passed to
+   * the engines. This leg has no session ledger (design §4.3).
+   */
+  correlationId?: unknown;
 }
 
 interface McpBatchMessage {
@@ -51,6 +56,8 @@ interface McpEvaluateRequestBatch {
   direction: 'inbound' | 'outbound';
   batch: true;
   messages: McpBatchMessage[];
+  /** As on a single request; applies to every message in the batch. */
+  correlationId?: unknown;
 }
 
 type McpEvaluateRequest = McpEvaluateRequestSingle | McpEvaluateRequestBatch;
@@ -85,28 +92,6 @@ interface McpEvaluateResultWithId extends McpEvaluateResult {
  */
 function flattenContent(content: ContentPart[]): string {
   return content.map((c) => c.value).join('\n');
-}
-
-/**
- * Map the 6-level ResponseLevel to the 3-level MCP result.
- * block/quarantine/rate_limit -> 'block'
- * flag/redact -> 'flag'
- * allow -> 'allow'
- */
-function mapResponseLevel(level: ResponseLevel): 'allow' | 'block' | 'flag' {
-  switch (level) {
-    case 'block':
-    case 'quarantine':
-    case 'rate_limit':
-      return 'block';
-    case 'flag':
-    case 'redact':
-      return 'flag';
-    case 'allow':
-      return 'allow';
-    default:
-      return 'allow';
-  }
 }
 
 /**
@@ -172,9 +157,51 @@ async function resolveBindings(
   const directionBindings =
     direction === 'inbound' ? agentPolicies.inbound : agentPolicies.outbound;
   return {
-    bindings: filterByScope(directionBindings, 'tools'),
+    bindings: directionBindings,
     identity: agentPolicies.identityContext,
   };
+}
+
+/**
+ * Infer which policy leg an MCP evaluation represents from its structured
+ * context. Channel traffic is a message unless the caller explicitly names a
+ * tool. Treating every MCP evaluation as a tool call made tool-only shell
+ * policies scan ordinary Slack Markdown.
+ */
+function evaluationScope(
+  context?: Record<string, unknown>,
+  tool?: string,
+): 'messages' | 'tools' {
+  return tool || typeof context?.tool === 'string' ? 'tools' : 'messages';
+}
+
+/**
+ * A tool evaluation's arguments. The tool guards send one content part holding
+ * the arguments as a JSON object; anything else carries no structured
+ * arguments, and a parameter constraint then has nothing to check.
+ */
+function toolArguments(
+  content: ContentPart[],
+): Record<string, unknown> | undefined {
+  if (content.length !== 1) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(content[0].value);
+    return parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function evaluationToolName(
+  context?: Record<string, unknown>,
+  tool?: string,
+): string | undefined {
+  if (tool) return tool;
+  return typeof context?.tool === 'string' ? context.tool : undefined;
 }
 
 /**
@@ -185,19 +212,29 @@ async function evaluateSingle(
   direction: 'inbound' | 'outbound',
   content: ContentPart[],
   bindings: ResolvedPolicyBinding[],
+  scope: 'messages' | 'tools',
+  toolName?: string,
   identity?: NormalizedIdentityClaims[],
+  correlationId?: string,
 ): Promise<McpEvaluateResult> {
   const flatContent = flattenContent(content);
+  const scopedBindings = filterByScope(bindings, scope);
 
-  if (bindings.length === 0) {
+  if (scopedBindings.length === 0) {
     return { result: 'allow', detections: [], redactions: [] };
   }
 
-  const checks = await evaluatePolicies(bindings, flatContent, {
-    agentId,
-    direction,
-    identity,
-  });
+  const options = { agentId, direction, toolName, identity, correlationId };
+  const checks =
+    scope === 'tools'
+      ? await evaluateToolCallPolicies(scopedBindings, flatContent, {
+          ...options,
+          // Outbound content is the call's arguments. Inbound content is the
+          // tool's result, which is not a set of parameters.
+          toolParams:
+            direction === 'outbound' ? toolArguments(content) : undefined,
+        })
+      : await evaluatePolicies(scopedBindings, flatContent, options);
 
   const responseLevel = resolveResponseLevel(
     checks.map((c) => c.responseLevel),
@@ -283,6 +320,12 @@ function validateContentArray(content: unknown): content is ContentPart[] {
 
 // ── Traffic Reporting ────────────────────────────────────────────────
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200
+    ? value
+    : undefined;
+}
+
 /**
  * Fire-and-forget traffic report to the management server.
  * The Verifier is the authoritative evaluator, so reporting from here
@@ -296,6 +339,7 @@ function reportTraffic(
   platform?: string,
   context?: Record<string, unknown>,
   contentPreview?: string,
+  tool?: string,
 ): void {
   const managementUrl = process.env.MANAGEMENT_URL?.replace(/\/v1\/?$/, '');
   if (!managementUrl) return;
@@ -312,7 +356,12 @@ function reportTraffic(
       detections: result.detections,
       platform,
       channel: context?.channel,
-      tool: context?.tool,
+      // Optional extras an MCP Guard sends, so the record lands on its own
+      // connection with the channel's name (#1501). Management checks the
+      // connection belongs to the token's agent.
+      channelName: optionalString(context?.channelName),
+      connectionId: optionalString(context?.connectionId),
+      tool: tool ?? context?.tool,
       contentPreview:
         typeof contentPreview === 'string'
           ? contentPreview.slice(0, 200)
@@ -332,7 +381,7 @@ function reportTraffic(
  * Evaluates MCP proxy traffic against the agent's policies.
  * Supports single and batch evaluation modes.
  */
-export async function handleMcpEvaluate(c: Context) {
+export async function handleMcpEvaluate(c: Context): Promise<Response> {
   // 1. Auth
   const authResult = await validateAuth(c);
   if (!authResult.valid) {
@@ -381,6 +430,15 @@ export async function handleMcpEvaluate(c: Context) {
       400,
     );
   }
+
+  const correlation = readCorrelationId(body.correlationId);
+  if (!correlation.ok) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: correlation.error } },
+      400,
+    );
+  }
+  const correlationId = correlation.value;
 
   // Extract bearer token for traffic reporting
   const bearerToken = c.req.header('Authorization')?.split(' ')[1] ?? '';
@@ -460,7 +518,10 @@ export async function handleMcpEvaluate(c: Context) {
         body.direction,
         msg.content,
         bindings,
+        evaluationScope(msg.context),
+        evaluationToolName(msg.context),
         identity,
+        correlationId,
       );
 
       reportTraffic(
@@ -500,7 +561,10 @@ export async function handleMcpEvaluate(c: Context) {
     body.direction,
     body.content,
     bindings,
+    evaluationScope(body.context, body.tool),
+    evaluationToolName(body.context, body.tool),
     identity,
+    correlationId,
   );
 
   reportTraffic(
@@ -511,7 +575,135 @@ export async function handleMcpEvaluate(c: Context) {
     body.platform,
     body.context,
     flattenContent(body.content),
+    typeof body.tool === 'string' ? body.tool : undefined,
   );
 
   return c.json(evalResult);
+}
+
+// ── Approved tools (POST /v1/mcp/tools) ──────────────────────────────
+
+const MAX_TOOL_NAMES = 500;
+const MAX_TOOL_NAME_LENGTH = 200;
+
+/**
+ * Which of these tool names the agent's approved-tools policies let it call.
+ *
+ * An approved-tools policy is an `action-allowlist` binding on the outbound
+ * tool leg. A name is withheld only when those bindings, run through the same
+ * engine and response-level mapping a call goes through, would block a call
+ * by that name. Parameter rules are left out: they depend on a call's
+ * arguments, and every call is still checked on `/v1/mcp/evaluate` when it is
+ * made. So this never shows a tool a call couldn't use, and never hides one a
+ * flag-only (monitoring) allowlist would let through.
+ */
+export async function allowedToolNames(
+  agentId: string,
+  names: string[],
+  bindings: ResolvedPolicyBinding[],
+  identity?: NormalizedIdentityClaims[],
+): Promise<string[]> {
+  const allowlists = filterByScope(bindings, 'tools')
+    .filter((b) => b.policyType === 'action-allowlist')
+    .map((b) => ({
+      ...b,
+      config: { ...(b.config ?? {}), actionConstraints: {} },
+    }));
+  if (allowlists.length === 0) return names;
+
+  const allowed: string[] = [];
+  for (const name of names) {
+    const checks = await evaluatePolicies(allowlists, '', {
+      agentId,
+      direction: 'outbound',
+      toolName: name,
+      toolParams: {},
+      identity,
+    });
+    const verdict = mapResponseLevel(
+      resolveResponseLevel(checks.map((check) => check.responseLevel)),
+    );
+    if (verdict !== 'block') allowed.push(name);
+  }
+  return allowed;
+}
+
+/**
+ * POST /v1/mcp/tools
+ *
+ * Body `{ agentId, tools: string[] }`, answer `{ allowed: string[] }`: the
+ * names an MCP Guard may show its client. Same auth as `/v1/mcp/evaluate`.
+ */
+export async function handleMcpTools(c: Context): Promise<Response> {
+  const authResult = await validateAuth(c);
+  if (!authResult.valid) {
+    return c.json(
+      { error: { code: 'INVALID_TOKEN', message: authResult.error } },
+      authResult.status as 401,
+    );
+  }
+
+  let body: { agentId?: unknown; tools?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } },
+      400,
+    );
+  }
+
+  if (typeof body.agentId !== 'string' || !body.agentId) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'Missing or invalid agentId' } },
+      400,
+    );
+  }
+  if (authResult.claims && authResult.claims.agentId !== body.agentId) {
+    return c.json(
+      { error: { code: 'FORBIDDEN', message: 'agentId does not match token' } },
+      403,
+    );
+  }
+  const tools = body.tools;
+  if (
+    !Array.isArray(tools) ||
+    tools.length > MAX_TOOL_NAMES ||
+    !tools.every(
+      (name) =>
+        typeof name === 'string' &&
+        name.length > 0 &&
+        name.length <= MAX_TOOL_NAME_LENGTH,
+    )
+  ) {
+    return c.json(
+      {
+        error: {
+          code: 'BAD_REQUEST',
+          message: `tools must be an array of at most ${MAX_TOOL_NAMES} non-empty names`,
+        },
+      },
+      400,
+    );
+  }
+
+  const { bindings, identity, error } = await resolveBindings(
+    body.agentId,
+    'outbound',
+  );
+  if (error) {
+    return c.json(
+      { error: { code: 'BINDINGS_UNAVAILABLE', message: error } },
+      503,
+    );
+  }
+
+  const names = [...new Set(tools as string[])];
+  const allowed = await allowedToolNames(
+    body.agentId,
+    names,
+    bindings,
+    identity,
+  );
+  return c.json({ allowed });
 }

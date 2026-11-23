@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { captureSessionStart } from '@spellguard/agent-control';
 import { runSessionStart } from '../src/hooks/session-start';
 import { drainRenderedMessages } from '../src/lib/render-message';
 import { sessionStartAdditionalContext } from '../src/lib/session-start-hook-output';
@@ -7,7 +8,11 @@ import { sessionStartAdditionalContext } from '../src/lib/session-start-hook-out
 async function main() {
   let stdin = '';
   for await (const chunk of process.stdin) stdin += chunk;
-  void stdin;
+  // REQ-011.1: SessionStart is the only point that knows this session's
+  // NATIVE, resumable id, so capture it into the box-local registry here.
+  // Best-effort and bounded: a workstation with no box daemon is the
+  // documented common case, and a failed capture must never block a session.
+  const sessionCapture = captureSessionStart(stdin, 'claude_code');
 
   try {
     // runSessionStart renders its banner to stderr via renderMessage, but
@@ -21,6 +26,7 @@ async function main() {
     // hard-stop (prints the same message to stderr when git needs the token).
     // ALWAYS exit 0 — exit 2 would discard this stdout.
     await runSessionStart();
+    await sessionCapture;
     const additionalContext = sessionStartAdditionalContext(
       drainRenderedMessages(),
     );

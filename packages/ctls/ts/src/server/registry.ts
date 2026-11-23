@@ -25,8 +25,8 @@ export interface RegisterResult {
  */
 export interface RegisterAgentOptions {
   /**
-   * When true, accept a re-registration whose endpoint differs from the
-   * existing record and update the registry to match.  Pass this only
+   * When true, accept a re-registration and replace the existing record,
+   * including its channel token. Pass this only
    * after the caller has independently verified that the registering
    * party owns the agent identity (e.g. a successful evidence-signature
    * check against the management-tracked agent public key).
@@ -49,20 +49,31 @@ export function registerAgent(
   agent: RegisteredAgent,
   options?: RegisterAgentOptions,
 ): RegisterResult {
-  const existing = registry.get(agent.agentId);
+  // Evict first, then decide. An EXPIRED record blocks nothing: its channel
+  // token is already invalid everywhere else in this module (getAgent,
+  // getAgentByToken, and verifyChannelToken all treat an expired record as
+  // gone), so blocking a re-registration on it protects no live token and is
+  // pure lockout. Both the read path (getAgent) and this registration path
+  // funnel through evictIfExpired so their expiry semantics cannot drift.
+  const existing = evictIfExpired(agent.agentId);
 
-  // Block re-registration with a different endpoint unless the caller
-  // has explicitly proven ownership upstream (e.g. via a verified
-  // evidence signature).  Without that proof, an actor that learns an
-  // agentId could otherwise hijack traffic by re-registering with a
-  // malicious callback URL.
+  // Invariant: an ACTIVE (unexpired) record blocks unverified re-registration;
+  // an EXPIRED one never does (it was evicted above). Block re-registration
+  // over a live record unless the caller has explicitly proven ownership
+  // upstream (allowEndpointUpdate). Protecting only endpoint changes is
+  // insufficient: an actor that learns an agent ID and its public endpoint
+  // could submit the same endpoint and silently replace the legitimate channel
+  // token. Because an expired record is evicted here, a restarted agent in
+  // standalone / fail-open mode is not permanently locked out — its lockout is
+  // bounded by the previous registration's expiresAt.
+  if (existing && !options?.allowEndpointUpdate) {
+    return {
+      success: false,
+      error: `Agent ${agent.agentId} already registered`,
+    };
+  }
+
   if (existing && existing.endpoint !== agent.endpoint) {
-    if (!options?.allowEndpointUpdate) {
-      return {
-        success: false,
-        error: `Agent ${agent.agentId} already registered with different endpoint`,
-      };
-    }
     console.log(
       `[cTLS] Updating endpoint for agent ${agent.agentId}: ${existing.endpoint} → ${agent.endpoint}`,
     );
@@ -82,20 +93,34 @@ export function registerAgent(
 }
 
 /**
- * Get an agent by ID.
+ * Return the live record for an agent, evicting it (record + token index) first
+ * if its registration has expired.
+ *
+ * This is the SINGLE source of expiry semantics for the module: any expired
+ * registration is treated as gone and its channel token is removed from the
+ * index. Both {@link getAgent} (read path) and {@link registerAgent}
+ * (registration path) call this so they can never disagree about whether a
+ * record still exists — the drift that once let an expired record permanently
+ * block re-registration while every reader considered it gone.
  */
-export function getAgent(agentId: string): RegisteredAgent | undefined {
+function evictIfExpired(agentId: string): RegisteredAgent | undefined {
   const agent = registry.get(agentId);
+  if (!agent) return undefined;
 
-  // Check if expired
-  if (agent && agent.expiresAt < Date.now()) {
-    // Remove expired agent
+  if (agent.expiresAt < Date.now()) {
     registry.delete(agentId);
     tokenIndex.delete(agent.channelToken);
     return undefined;
   }
 
   return agent;
+}
+
+/**
+ * Get an agent by ID.
+ */
+export function getAgent(agentId: string): RegisteredAgent | undefined {
+  return evictIfExpired(agentId);
 }
 
 /**

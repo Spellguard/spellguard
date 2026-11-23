@@ -8,6 +8,7 @@ import {
 import type { GenerateTextResult, LanguageModel } from 'ai';
 import { checkToolPolicy, getConfig, getOrCreateChannel } from './attestation';
 import type { ToolCheckResult } from './attestation';
+import { mapWithConcurrency } from './concurrency';
 import { discoverAgents } from './discovery';
 import { getCurrentHops, getCurrentSenderId } from './hop-context';
 import { detectAgentReferences, mightContainAgentReference } from './intent';
@@ -15,7 +16,68 @@ import type { ClientChannel, ResolvedAgent } from './types';
 import { modelIdOf, reportAiSdkUsage } from './usage-telemetry';
 
 // biome-ignore lint/suspicious/noExplicitAny: ai-sdk types require flexible generics
-type AnyGenerateTextResult = GenerateTextResult<any, any>;
+type AnyGenerateTextResult = GenerateTextResult<any, any, any>;
+
+/**
+ * Default peer fan-out width: 1, i.e. SEQUENTIAL. Chosen while the AGNTCY SLIM
+ * control plane is flaky: concurrent dispatch fires N `createSession` calls at
+ * once, and during a plane wedge that reaches the verifier sender worker's "5
+ * consecutive create-session failures → recycle" threshold faster, aggravating
+ * the wedge/recycle churn. One-at-a-time keeps create-session load minimal. The
+ * partial-tolerance below applies either way (a failed peer is dropped, not
+ * fatal).
+ *
+ * This is the DEFAULT, not a hard-coded ceiling — see
+ * {@link resolveFanoutConcurrency}.
+ */
+export const DEFAULT_FANOUT_CONCURRENCY = 1;
+
+/** Environment variable that overrides the fan-out width. */
+const FANOUT_CONCURRENCY_ENV = 'SPELLGUARD_FANOUT_CONCURRENCY';
+
+/**
+ * How many peer fan-out sends may run at once.
+ *
+ * Read per fan-out (not captured at module load) so a host can raise it without
+ * a rebuild once its SLIM plane is stable, reclaiming the `max(leg)` latency win
+ * — a 2-peer turn then pays `max(legA,legB)` instead of `legA + legB`. Anything
+ * that is not a positive integer (absent, blank, junk, `0`, negative) falls back
+ * to {@link DEFAULT_FANOUT_CONCURRENCY}, so a typo degrades to today's
+ * sequential behaviour rather than to an unbounded fan-out.
+ */
+export function resolveFanoutConcurrency(): number {
+  let raw: string | undefined;
+  try {
+    raw =
+      typeof process !== 'undefined'
+        ? process.env?.[FANOUT_CONCURRENCY_ENV]
+        : undefined;
+  } catch {
+    raw = undefined;
+  }
+  const trimmed = raw?.trim() ?? '';
+  if (!/^\d+$/.test(trimmed)) return DEFAULT_FANOUT_CONCURRENCY;
+  const parsed = Number.parseInt(trimmed, 10);
+  return parsed >= 1 ? parsed : DEFAULT_FANOUT_CONCURRENCY;
+}
+
+/**
+ * Total wall-clock budget for the whole peer fan-out. The management proxy's
+ * POST /chat has a 60s timeout (core-chat.ts `chatWithAgent`); a fan-out that
+ * blows past it is aborted mid-flight and surfaces to the user as a bare 502
+ * instead of a (degraded) answer. Capping the fan-out well under 60s means it
+ * always returns whatever peers replied — or falls back to the direct LLM —
+ * BEFORE the proxy gives up. During a SLIM wedge (create-session hangs
+ * ~10s/attempt) this turns a 60s 502 into a graceful fallback.
+ */
+const FANOUT_BUDGET_MS = 45_000;
+
+/**
+ * Per-peer send ceiling. A single bilateral round-trip (incl. the peer's own
+ * LLM) runs ~5-18s; cap at 25s so one wedged/hung send can't eat the whole
+ * budget. The effective per-send timeout is `min(this, remaining budget)`.
+ */
+const FANOUT_PEER_TIMEOUT_MS = 25_000;
 
 /**
  * Options for generateText - extends ai-sdk's options.
@@ -28,7 +90,7 @@ export interface GenerateTextOptions {
     content: string;
   }>;
   system?: string;
-  maxTokens?: number;
+  maxOutputTokens?: number;
   temperature?: number;
   [key: string]: unknown;
 }
@@ -54,23 +116,62 @@ async function callOriginalGenerateText<T extends GenerateTextOptions>(
 }
 
 /**
+ * One agent's contribution to a fan-out turn: its reply, or — when the agent
+ * was referenced but could NOT be reached (discovery miss, offline peer, or a
+ * transient send failure) — an `unreachable` marker.
+ *
+ * The marker exists so a referenced-but-unreachable agent is surfaced to the
+ * model as an explicit "could not reach" note rather than being dropped to an
+ * empty result. Dropping to empty is what let the unguarded LLM answer with NO
+ * signal that the peer was unreachable, so it would confidently fabricate a
+ * reply on the agent's behalf ("I reached out to agent-a and agent-b…") — a
+ * correctness/trust bug independent of latency.
+ */
+export interface AgentResponse {
+  agent: string;
+  response: string;
+  unreachable?: boolean;
+}
+
+/**
  * Format a list of agent responses into a context block string.
  * Shared between the ai-sdk and LangChain integrations.
+ *
+ * Reached agents render their reply; unreachable agents render an explicit
+ * "could not be reached" block plus a directive not to fabricate an answer on
+ * their behalf, so the model tells the user the truth instead of confabulating.
  */
 export function buildAgentContextBlock(
-  agentResponses: Array<{ agent: string; response: string }>,
+  agentResponses: Array<AgentResponse>,
 ): string {
-  const agentContext = agentResponses
-    .map(
+  const reached = agentResponses.filter((r) => !r.unreachable);
+  const unreached = agentResponses.filter((r) => r.unreachable);
+
+  const blocks = [
+    ...reached.map(
       (r) =>
         `--- Response from ${r.agent} ---\n${r.response}\n--- End response from ${r.agent} ---`,
-    )
-    .join('\n\n');
+    ),
+    ...unreached.map(
+      (r) =>
+        `--- ${r.agent}: UNREACHABLE ---\nSpellguard could not reach ${r.agent} — it is offline or did not respond, so NO answer was received from it.\n--- End ${r.agent} ---`,
+    ),
+  ];
 
   const instruction =
-    "You have received responses from other agents. Use this information along with your own data to provide a comprehensive answer to the user's query.";
+    reached.length > 0
+      ? "You have received responses from other agents. Use this information along with your own data to provide a comprehensive answer to the user's query."
+      : "You attempted to reach other agents on the user's behalf but received no responses.";
+  const truthGuard =
+    unreached.length > 0
+      ? ` The following agent(s) could NOT be reached: ${unreached
+          .map((r) => r.agent)
+          .join(
+            ', ',
+          )}. Do NOT invent, guess, or paraphrase an answer on their behalf — tell the user plainly that you were unable to reach them.`
+      : '';
 
-  return `${instruction}\n\n${agentContext}`;
+  return `${instruction}${truthGuard}\n\n${blocks.join('\n\n')}`;
 }
 
 /**
@@ -78,7 +179,7 @@ export function buildAgentContextBlock(
  */
 function buildAugmentedSystem(
   originalSystem: string | undefined,
-  agentResponses: Array<{ agent: string; response: string }>,
+  agentResponses: Array<AgentResponse>,
 ): string {
   const block = buildAgentContextBlock(agentResponses);
   return originalSystem ? `${originalSystem}\n\n${block}` : block;
@@ -109,16 +210,21 @@ async function sendToAgent(
   agent: ResolvedAgent,
   prompt: string,
   fromAgentId: string,
+  timeoutMs?: number,
 ): Promise<string> {
   if (isSpellguardAgent(agent)) {
     // Bilateral: both agents are Spellguard-attested
-    const response = await channel.send(agent.name, {
-      type: 'agent-request',
-      prompt,
-      from: fromAgentId,
-      context: { targetAgents: [agent.name] },
-      _spellguardHops: getCurrentHops(),
-    });
+    const response = await channel.send(
+      agent.name,
+      {
+        type: 'agent-request',
+        prompt,
+        from: fromAgentId,
+        context: { targetAgents: [agent.name] },
+        _spellguardHops: getCurrentHops(),
+      },
+      timeoutMs !== undefined ? { timeoutMs } : undefined,
+    );
     return extractTextFromResponse(response);
   }
 
@@ -163,33 +269,6 @@ export function isPolicyOrRateLimitError(errorMessage: string): boolean {
   );
 }
 
-/**
- * Collect responses from all target agents via the Verifier channel.
- */
-async function collectAgentResponses(
-  resolvedAgents: ResolvedAgent[],
-  prompt: string,
-): Promise<Array<{ agent: string; response: string }>> {
-  const channel = await getOrCreateChannel();
-  const config = getConfig();
-  const responses: Array<{ agent: string; response: string }> = [];
-
-  for (const agent of resolvedAgents) {
-    const text = await sendToAgent(
-      channel,
-      agent,
-      prompt,
-      config?.agentId || 'unknown',
-    );
-    responses.push({ agent: agent.name, response: text });
-    console.log(
-      `[Spellguard] Received response from ${agent.name}: ${text.substring(0, 100)}...`,
-    );
-  }
-
-  return responses;
-}
-
 function isTransientError(msg: string): boolean {
   const lower = msg.toLowerCase();
   return (
@@ -203,62 +282,133 @@ function isTransientError(msg: string): boolean {
 }
 
 /**
- * Collect agent responses with retry support for transient errors.
- *
- * Error handling priority:
- * 1. Transient errors (including Verifier fail-closed) → retry up to 3 times.
- * 2. Policy/rate-limit errors → re-thrown immediately (never retry or fallback).
- * 3. All other errors → re-thrown so the caller can decide on fallback.
- *
- * Transient errors are checked BEFORE policy errors because a Verifier fail-closed
- * response ("Blocked: policy data unavailable") is both policy-relevant AND
- * transient — management may respond on the next attempt.
+ * Send to ONE peer with transient-error retry, bounded by a shared fan-out
+ * `deadline` (absolute epoch-ms). Each attempt's send is capped at
+ * `min(FANOUT_PEER_TIMEOUT_MS, remaining budget)`, and once the budget is spent
+ * no further attempt/retry runs — so a wedged plane (create-session hangs
+ * ~10s/attempt) can't drag the turn past the management proxy's 60s /chat
+ * timeout (→ a bare 502). Backoff is short and never exceeds the remaining
+ * budget. Only transient/infra failures are retried; a genuine policy/rate-limit
+ * block propagates immediately, unretried.
  */
-async function collectAgentResponsesWithRetry(
-  resolvedAgents: ResolvedAgent[],
+async function sendToAgentWithRetry(
+  channel: ClientChannel,
+  agent: ResolvedAgent,
   prompt: string,
-): Promise<Array<{ agent: string; response: string }>> {
+  fromAgentId: string,
+  deadline: number,
+): Promise<string> {
   const maxRetries = 3;
   let lastError: Error | undefined;
-
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw (
+        lastError ??
+        new Error(`[Spellguard] ${agent.name}: fan-out time budget exhausted`)
+      );
+    }
     try {
-      return await collectAgentResponses(resolvedAgents, prompt);
+      return await sendToAgent(
+        channel,
+        agent,
+        prompt,
+        fromAgentId,
+        Math.min(FANOUT_PEER_TIMEOUT_MS, remaining),
+      );
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       lastError = error instanceof Error ? error : new Error(msg);
-
-      // Transient errors (channel expired, fail-closed, delivery failure) get
-      // retried — checked first because fail-closed errors are both transient
-      // AND policy-relevant, and we want the retry to have a chance.
-      const transient = isTransientError(msg);
-      if (transient && attempt < maxRetries) {
-        const delay = attempt * 5000;
+      // Retry only a transient error, and only with meaningful budget left.
+      // Backoff is short (the budget is tight) and capped to what remains.
+      const budgetLeft = deadline - Date.now();
+      if (isTransientError(msg) && attempt < maxRetries && budgetLeft > 3000) {
+        const delay = Math.min(attempt * 1500, budgetLeft);
         console.log(
-          `[Spellguard] Retrying after transient error (attempt ${attempt + 1}/${maxRetries}, waiting ${delay / 1000}s): ${msg.substring(0, 120)}`,
+          `[Spellguard] Retrying ${agent.name} after transient error (attempt ${attempt + 1}/${maxRetries}, waiting ${delay / 1000}s): ${msg.substring(0, 120)}`,
         );
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
-
-      // Policy/rate-limit errors are terminal — never fallback to direct LLM.
-      // Skip this check when the error was already classified as transient
-      // (e.g. "Blocked: policy data unavailable (fail-closed)" matches both
-      // isTransientError and isPolicyOrRateLimitError). After retries are
-      // exhausted the error should propagate as a non-policy failure so the
-      // caller can fall back to the direct LLM path.
-      if (!transient && isPolicyOrRateLimitError(msg)) throw error;
-
-      // All retries exhausted or unrecognized error — propagate so the
-      // caller has full visibility into what went wrong.
-      console.error(
-        `[Spellguard] Agent routing failed after ${attempt} attempt(s): ${msg}`,
-      );
       throw lastError;
     }
   }
+  throw lastError ?? new Error(`[Spellguard] ${agent.name} send failed`);
+}
 
-  throw lastError || new Error('[Spellguard] Agent routing failed');
+/**
+ * Collect responses from the target agents via the Verifier channel, tolerant
+ * of PARTIAL failure: each peer settles independently (bounded concurrency), so
+ * one peer's transient failure — a wedged SLIM plane, a timeout, a cold peer —
+ * no longer discards another peer's successful reply. EVERY resolved agent is
+ * represented in the result: a reply when it answered, or an `unreachable`
+ * marker when it failed transiently — so the caller never silently drops a
+ * referenced agent (which would let the model fabricate a reply for it).
+ *
+ * The ONE exception is a genuine policy / rate-limit BLOCK: it is terminal and
+ * must never be silently dropped (that would answer from the unguarded path),
+ * so it is re-thrown to abort the whole fan-out (fail-fast via
+ * `mapWithConcurrency`) and propagate to the caller. Fail-closed
+ * ("policy data unavailable") is transient infra, tolerated like any other
+ * failure. `mapWithConcurrency` preserves input order, so the responses feed
+ * `buildAgentContextBlock` deterministically.
+ */
+async function collectAgentResponses(
+  resolvedAgents: ResolvedAgent[],
+  prompt: string,
+): Promise<AgentResponse[]> {
+  const channel = await getOrCreateChannel();
+  const fromAgentId = getConfig()?.agentId || 'unknown';
+  // Shared budget for the whole fan-out — each peer send is bounded by the
+  // slice that remains, so the turn degrades to a fallback before the 60s
+  // proxy timeout instead of surfacing a bare 502 during a SLIM wedge.
+  const deadline = Date.now() + FANOUT_BUDGET_MS;
+
+  type Settled =
+    | { ok: true; agent: string; response: string }
+    | { ok: false; agent: string };
+
+  const settled = await mapWithConcurrency<ResolvedAgent, Settled>(
+    resolvedAgents,
+    resolveFanoutConcurrency(),
+    async (agent) => {
+      try {
+        const text = await sendToAgentWithRetry(
+          channel,
+          agent,
+          prompt,
+          fromAgentId,
+          deadline,
+        );
+        console.log(
+          `[Spellguard] Received response from ${agent.name}: ${text.substring(0, 100)}...`,
+        );
+        return { ok: true, agent: agent.name, response: text };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        // A genuine policy/rate-limit block is terminal — rethrow so
+        // mapWithConcurrency aborts the fan-out and the caller propagates it
+        // (never bypass enforcement). Fail-closed + every transient/infra
+        // failure is swallowed so this peer simply drops out of the results.
+        if (
+          isPolicyOrRateLimitError(msg) &&
+          !msg.includes('policy data unavailable')
+        ) {
+          throw error;
+        }
+        console.warn(
+          `[Spellguard] Peer ${agent.name} dropped from fan-out (transient): ${msg.substring(0, 120)}`,
+        );
+        return { ok: false, agent: agent.name };
+      }
+    },
+  );
+
+  return settled.map((r) =>
+    r.ok
+      ? { agent: r.agent, response: r.response }
+      : { agent: r.agent, response: '', unreachable: true },
+  );
 }
 
 /**
@@ -271,13 +421,15 @@ async function collectAgentResponsesWithRetry(
  * @param prompt      The user prompt to scan for agent references.
  * @param detectFn    Optional custom detection function (defaults to the
  *                    client's `detectAgentReferences`).
- * @returns           Collected agent responses, or `[]` when no agents are
- *                    found / all fail. Throws on policy or rate-limit errors.
+ * @returns           One entry per referenced agent — its reply, or an
+ *                    `unreachable` marker when it could not be reached. Returns
+ *                    `[]` ONLY when the prompt referenced no other agents (so
+ *                    the caller runs the plain LLM). Throws on policy/rate-limit.
  */
 export async function resolveAndCollectAgentResponses(
   prompt: string,
   detectFn: (prompt: string) => Promise<string[]> = detectAgentReferences,
-): Promise<Array<{ agent: string; response: string }>> {
+): Promise<AgentResponse[]> {
   if (!mightContainAgentReference(prompt)) return [];
 
   const agentRefs = await detectFn(prompt);
@@ -306,8 +458,18 @@ export async function resolveAndCollectAgentResponses(
 
   const resolvedAgents = await discoverAgents(filteredRefs);
   if (resolvedAgents.length === 0) {
-    console.warn('[Spellguard] No agents could be discovered');
-    return [];
+    // Referenced agents the directory can't resolve are UNREACHABLE, not "no
+    // agents" — surface them so the model reports it couldn't reach them
+    // instead of fabricating replies. (A prompt with NO agent references
+    // already returned [] above → the plain-LLM path.)
+    console.warn(
+      `[Spellguard] No agents could be discovered for: ${filteredRefs.join(', ')}`,
+    );
+    return filteredRefs.map((agent) => ({
+      agent,
+      response: '',
+      unreachable: true,
+    }));
   }
 
   console.log(
@@ -315,7 +477,7 @@ export async function resolveAndCollectAgentResponses(
   );
 
   try {
-    return await collectAgentResponsesWithRetry(resolvedAgents, prompt);
+    return await collectAgentResponses(resolvedAgents, prompt);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
 
@@ -325,14 +487,19 @@ export async function resolveAndCollectAgentResponses(
     const isFailClosed = msg.includes('policy data unavailable');
     if (isPolicyOrRateLimitError(msg) && !isFailClosed) throw error;
 
-    // Non-policy routing failures: fall back to direct LLM with an explicit
-    // warning so the caller (and logs) can see that routing was attempted
-    // but failed. This preserves user-facing availability at the cost of
-    // skipping Verifier-mediated audit logging for this request.
+    // Non-policy routing failure (the whole fan-out threw before any peer
+    // settled — e.g. the channel could not be created). Every referenced agent
+    // is unreachable; surface that so the model says so, rather than returning
+    // [] (which would let the plain LLM fabricate replies on their behalf).
+    // Verifier-mediated audit logging is necessarily skipped for this request.
     console.warn(
-      `[Spellguard] Agent routing unavailable, falling back to direct LLM: ${msg}`,
+      `[Spellguard] Agent routing unavailable, marking peers unreachable: ${msg}`,
     );
-    return [];
+    return resolvedAgents.map((a) => ({
+      agent: a.name,
+      response: '',
+      unreachable: true,
+    }));
   }
 }
 
@@ -428,7 +595,6 @@ function _wrapResponse(response: unknown): AnyGenerateTextResult {
     },
     warnings: [],
     request: {},
-    experimental_providerMetadata: undefined,
     providerMetadata: undefined,
     logprobs: undefined,
     steps: [],
@@ -452,7 +618,10 @@ function _wrapResponse(response: unknown): AnyGenerateTextResult {
  * On input phase: block and redact both prevent execution.
  * On output phase: block prevents returning the result, redact returns null.
  * Flag and allow pass through normally.
- * Fails open on network errors (tool executes normally).
+ * Fails closed: a check that cannot complete blocks the call, unless
+ * `failOpen` is configured (see `checkToolPolicy`, which never throws). There
+ * is deliberately no catch here (#1418): one that "continued" ran the tool,
+ * or returned its output, with no policy decision.
  */
 // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool() has complex generics
 export function spellguardTool(options: any): any {
@@ -464,36 +633,26 @@ export function spellguardTool(options: any): any {
   return tool({
     ...rest,
     execute: async (args: unknown, toolOpts: unknown) => {
-      try {
-        // Input phase
-        const inp: ToolCheckResult = await checkToolPolicy(
-          'input',
-          toolName,
-          args,
-        );
-        if (inp.effect === 'block') return inp.message ?? '[BLOCKED]';
-        if (inp.effect === 'redact') return inp.message ?? '[BLOCKED]';
-      } catch (e) {
-        // Fail open — let the tool execute normally
-        console.warn(`[Spellguard] Tool input check failed, continuing: ${e}`);
-      }
+      // Input phase
+      const inp: ToolCheckResult = await checkToolPolicy(
+        'input',
+        toolName,
+        args,
+      );
+      if (inp.effect === 'block') return inp.message ?? '[BLOCKED]';
+      if (inp.effect === 'redact') return inp.message ?? '[BLOCKED]';
 
       const result = await execute(args, toolOpts);
 
-      try {
-        // Output phase
-        const out: ToolCheckResult = await checkToolPolicy(
-          'output',
-          toolName,
-          args,
-          result,
-        );
-        if (out.effect === 'block') return out.message ?? '[BLOCKED]';
-        if (out.effect === 'redact') return out.data ?? null;
-      } catch (e) {
-        // Fail open — return the original result
-        console.warn(`[Spellguard] Tool output check failed, continuing: ${e}`);
-      }
+      // Output phase
+      const out: ToolCheckResult = await checkToolPolicy(
+        'output',
+        toolName,
+        args,
+        result,
+      );
+      if (out.effect === 'block') return out.message ?? '[BLOCKED]';
+      if (out.effect === 'redact') return out.data ?? null;
 
       return result;
     },
@@ -518,7 +677,8 @@ export function streamText(
 ): ReturnType<typeof originalStreamText> {
   const result = originalStreamText(options);
   try {
-    const usagePromise = (result as { usage?: Promise<unknown> }).usage;
+    const usagePromise = (result as unknown as { usage?: Promise<unknown> })
+      .usage;
     // Handle fulfilment AND rejection in the SAME reaction (onFulfilled,
     // onRejected) so the usage promise is settled directly — a stream that
     // errors must never surface as an unhandled rejection. The trailing .catch
@@ -530,6 +690,8 @@ export function streamText(
           reportAiSdkUsage(
             usage as
               | {
+                  inputTokens?: number;
+                  outputTokens?: number;
                   promptTokens?: number;
                   completionTokens?: number;
                   totalTokens?: number;

@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "streams": {
+    "spellguard-audit-checkpoints-test/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0": {
+      "bucket": "spellguard-audit-checkpoints-test",
+      "generation": "00000000-0000-4000-8000-0000000000a0",
+      "stream": "00000000-0000-4000-8000-0000000000b0",
+      "checkpoints": {
+        "1": "5bb2f49f37fd48443be8664bc21352853728a373bffd97f64575d2634bee38f1",
+        "7": "676035c962ba2561209f7607f0a53013011cb4d054f785ce763516e360e997ed"
+      },
+      "verified_at": "2026-11-09T05:17:04.000Z"
+    }
+  }
+}

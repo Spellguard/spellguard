@@ -1,4 +1,4 @@
-import type { SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { type AgentControlClientOptions, type CredentialDescriptor, type GithubCredentialDescriptor } from '@spellguard/agent-control';
 import { type DaemonResult } from '../lib/daemon-spawn';
 import { ensureSqliteBackend } from '../lib/sqlite-self-install';
@@ -27,6 +27,10 @@ export declare function pollChannelToken(apiBaseUrl: string, nonce: string, opts
     orgId: string;
     agentName: string;
     reason?: string;
+    /** C9: on a select-existing reattach, the bound EXISTING agent's UUID —
+     *  the id the channel MUST be opened with (the lobby's attach-upgrade
+     *  rejects a URL/bound id mismatch with a 401). Absent on create-new. */
+    agentId?: string;
 }>;
 /**
  * Record this plugin's initiating framework on the freshly-minted nonce so the
@@ -128,12 +132,22 @@ export interface SetupArgs {
      * Test seam — forwarded to `ensureCredentialDaemonRunning`. Production
      * callers leave this undefined (detached `child_process.spawn` + unref).
      */
-    spawnDaemon?: (execPath: string, args: string[], opts: SpawnOptions) => void;
+    spawnDaemon?: (execPath: string, args: string[], opts: SpawnOptions) => ChildProcess | undefined;
     /**
      * Test seam — PID-file directory for the daemon spawn. Defaults to the
      * real config dir.
      */
     daemonConfigDir?: string;
+    /**
+     * Stage 4 Gap B gate — positive managed-mode detection. Defaults to the real
+     * R3-1 marker reader (`isManagedBox()` from `@spellguard/agent-control`).
+     * TRUE ⇒ a genuinely Spellguard-provisioned managed box, where the Go
+     * box-daemon owns the agent-control socket + credential placement, so setup
+     * must NOT spawn the per-session Node credential daemon (two daemons contend
+     * on the DO's single socket). Injected so tests can pin a value without
+     * touching the real `~/.config/spellguard`.
+     */
+    isManagedBox?: () => boolean;
     /**
      * How long to wait (ms) for the GitHub credential to land on disk after
      * the daemon is started. The dashboard wizard's "Connect GitHub" step

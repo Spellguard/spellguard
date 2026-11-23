@@ -20,16 +20,87 @@ done
 
 # Per-framework config dir (B1 isolation): the daemon writes git-tokens +
 # config.json under <root>/<framework> so Codex and Claude Code don't collide.
-# Resolve that dir; fall back to the legacy shared root for a pre-isolation
-# machine whose state has not yet been migrated. <root> mirrors config-store's
-# spellguardRootDir() exactly (XDG_CONFIG_HOME or ~/.config, then /spellguard).
+# <root> mirrors config-store's spellguardRootDir() exactly (XDG_CONFIG_HOME or
+# ~/.config, then /spellguard).
 SG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/spellguard"
-CFG_DIR="$SG_ROOT/codex"
-if [ ! -r "$CFG_DIR/git-tokens" ] && [ ! -r "$CFG_DIR/config.json" ]; then
-  CFG_DIR="$SG_ROOT"
+FW_DIR="$SG_ROOT/codex"
+
+# config.json is identity state, not a rotating token, so it keeps the simple
+# per-framework-first order with the legacy shared-root fallback for a
+# pre-isolation machine whose state has not yet been migrated.
+CFG="$FW_DIR/config.json"
+[ -r "$CFG" ] || CFG="$SG_ROOT/config.json"
+
+# A revoked config serves nothing (#1282), whatever a git-tokens file or a V5
+# grant generation still holds: a quarantine or deletion must not leave git a
+# usable token. The canonical writer emits JSON.stringify(config, null, 2), so
+# a TOP-LEVEL key sits at exactly two spaces of indentation and a nested
+# per-org entry's "revoked" never matches.
+if [ -r "$CFG" ] && grep -q '^  "revoked": true' "$CFG"; then
+  printf 'Spellguard: this credential has been revoked. Run `@spellguard-setup` to provision a new one.\n' >&2
+  exit 0
 fi
-TOKENS="$CFG_DIR/git-tokens"
-CFG="$CFG_DIR/config.json"
+
+# V5 authoritative generations use one current pointer for both the non-secret
+# routing manifest and the token files. If current exists it is the sole
+# authority: never fall through to V4 and accidentally serve a sibling token.
+V5_CURRENT="$FW_DIR/github-grants/current"
+if [ ! -e "$V5_CURRENT" ] && [ ! -L "$V5_CURRENT" ]; then
+  V5_CURRENT="$SG_ROOT/github-grants/current"
+fi
+if [ -e "$V5_CURRENT" ] || [ -L "$V5_CURRENT" ]; then
+  # A present pointer is authoritative even when dangling or incomplete. Never
+  # reopen V4 fallback merely because its manifest cannot be read.
+  [ -r "$V5_CURRENT/manifest.tsv" ] || exit 0
+  OWNER="$(printf '%s' "$REQ_PATH" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')"
+  REPO="$(printf '%s' "$REQ_PATH" | cut -d/ -f2 | sed 's/\.git$//' | tr '[:upper:]' '[:lower:]')"
+  FULL_REPO="$OWNER/$REPO"
+  TOKEN_REL="$(
+    awk -F'\t' -v owner="$OWNER" -v repo="$FULL_REPO" '
+      $1 != owner { next }
+      $4 == "all" { print $3; exit }
+      $4 == "selected" {
+        n=split($5, names, ",")
+        for (i=1; i<=n; i++) if (names[i] == repo) { print $3; exit }
+      }
+    ' "$V5_CURRENT/manifest.tsv"
+  )"
+  if [ -n "$TOKEN_REL" ] && [ -r "$V5_CURRENT/$TOKEN_REL" ]; then
+    TOKEN="$(sed -n '1p' "$V5_CURRENT/$TOKEN_REL")"
+    [ -n "$TOKEN" ] || exit 0
+    printf 'username=x-access-token\npassword=%s\n\n' "$TOKEN"
+  fi
+  exit 0
+fi
+
+# TSV selection is NEWEST-WINS across the readable candidates, NOT a fixed
+# per-framework-then-root precedence.
+#
+# Why: a managed box carries BOTH files — the per-framework one and the box-wide
+# shared-root one that ambient (systemd, non-login) processes need. With a fixed
+# precedence, ANY writer that updated only one of them left the other able to
+# permanently shadow it. That is exactly what happened on 2026-08-04 (dogfooding
+# finding #18): provisioning wrote the per-framework file once, delivery wrote
+# only the shared-root file, and every managed box served its fossilized
+# provisioning-time token forever — git auth died ~8h in and no rotation could
+# repair it. The delivery path now writes both, and ordering by mtime here makes
+# stale-shadowing impossible in either direction.
+#
+# `ls -t` is POSIX (newest first, ties broken by filename ascending), so when one
+# delivery wrote both files the per-framework path still wins the tie — the
+# documented preference is preserved.
+TOKENS=""
+set --
+for _cand in "$FW_DIR/git-tokens" "$SG_ROOT/git-tokens"; do
+  if [ -r "$_cand" ]; then set -- "$@" "$_cand"; fi
+done
+if [ "$#" -gt 0 ]; then
+  TOKENS="$(ls -t -- "$@" 2>/dev/null | head -n 1)"
+  [ -n "$TOKENS" ] || TOKENS="$1"
+fi
+# No readable TSV anywhere: keep the conventional per-framework path so the
+# "not a Spellguard machine" silence check and the notices below are unchanged.
+[ -n "$TOKENS" ] || TOKENS="$FW_DIR/git-tokens"
 
 # Not a Spellguard machine at all: neither the daemon-maintained token file nor
 # a legacy config exists. Stay SILENT (exit 0, no stderr) — the SessionStart

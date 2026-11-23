@@ -15,11 +15,6 @@
         "actionConstraints": {},
         "strictMode": true
       },
-      "defaultBinding": {
-        "direction": "outbound",
-        "effect": "block",
-        "priority": 95
-      },
       "provenance": {
         "source": "extracted:builtin-engine",
         "dateAdded": "2026-03-09",

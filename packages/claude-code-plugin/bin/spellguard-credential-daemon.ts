@@ -48,34 +48,53 @@ import {
   writeSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { AgentControlClient } from '@spellguard/agent-control';
-import type { LoginCodeFrame } from '@spellguard/agent-control';
+import { dirname, join } from 'node:path';
+import { AgentControlClient, isManagedBox } from '@spellguard/agent-control';
+import type {
+  GithubGrantsBundleFrame,
+  LoginCodeFrame,
+} from '@spellguard/agent-control';
 import { emitCommitObservation } from '../src/lib/commit-observation-emitter';
 import {
   type SpellguardConfig,
   defaultConfigDir,
   markConfigRevoked,
+  markConfigSuspended,
   readConfig,
   writeConfig,
   writeGitTokensFile,
 } from '../src/lib/config-store';
 import {
+  type CredentialHandlerDeps,
   handleAuthFailedClose,
   handleConfigUpdate,
   handleCredentialRevoked,
   handleCredentialUpdate,
+  handleSuspended,
   isHandshakeAuthRejection,
 } from '../src/lib/credential-handlers';
-import { openEditStore } from '../src/lib/edit-store';
-import { ensureStableHelper } from '../src/lib/env-file-writer';
 import {
+  type DaemonCredentialState,
+  daemonArtifactId,
+  startDaemonHealthReporter,
+} from '../src/lib/daemon-spawn';
+import { openEditStore } from '../src/lib/edit-store';
+import {
+  ensureStableHelper,
+  writeGitConfigEnv,
+} from '../src/lib/env-file-writer';
+import {
+  clearGhSessionConfig,
   ghConfigDirPath,
   writeGhSessionConfig,
 } from '../src/lib/gh-config-dir';
-import { ghTokenFilePath, writeGhTokenFile } from '../src/lib/gh-token-file';
 import { resolveGitRoot } from '../src/lib/git-root';
 import { parseShowDiff } from '../src/lib/git-show-parser';
+import {
+  applyGithubGrantBundle,
+  readActiveGithubGrantExpiryEntries,
+  readActiveGithubGrantPrimaryToken,
+} from '../src/lib/github-grant-generation';
 import { checkLogAllRefUpdates } from '../src/lib/log-all-ref-updates-probe';
 import type {
   LoginRelayUpdate,
@@ -87,6 +106,7 @@ import {
   makeNodePtySpawner,
   runLoginRelay,
 } from '../src/lib/login-relay-handler';
+import { FRAMEWORK } from '../src/lib/plugin-sync';
 import { resolveSshRewriteRepo } from '../src/lib/ssh-remote-detect';
 import { startCommitWatcher } from '../src/monitors/commit-watcher';
 import { wipeSupersededCredentials } from '../src/skills/spellguard-reset';
@@ -106,6 +126,9 @@ function parseArgs(argv: string[]): {
   agentId: string;
   configDir: string;
   cwd: string | null;
+  instanceId: string;
+  artifactId: string;
+  scriptPath: string;
 } {
   // argv = ['node', 'script', agentId, ...flags]
   const args = argv.slice(2);
@@ -131,7 +154,18 @@ function parseArgs(argv: string[]): {
   if (cwdIdx !== -1 && args[cwdIdx + 1]) {
     cwd = args[cwdIdx + 1] as string;
   }
-  return { agentId, configDir, cwd };
+  const instanceIdIdx = args.indexOf('--instance-id');
+  const instanceId =
+    instanceIdIdx !== -1 && args[instanceIdIdx + 1]
+      ? (args[instanceIdIdx + 1] as string)
+      : randomUUID();
+  const scriptPath = process.argv[1] ?? fileURLToPath(import.meta.url);
+  const artifactIdIdx = args.indexOf('--artifact-id');
+  const artifactId =
+    artifactIdIdx !== -1 && args[artifactIdIdx + 1]
+      ? (args[artifactIdIdx + 1] as string)
+      : daemonArtifactId(scriptPath);
+  return { agentId, configDir, cwd, instanceId, artifactId, scriptPath };
 }
 
 // ── PID / log file path helpers (exported for tests) ─────────────────────────
@@ -430,14 +464,28 @@ export function captureGitShowDiff(params: {
 // ── Expiry watcher ──────────────────────────────────────────────────
 
 /**
- * Collect the (scopedTokenId, expiresAt) entries the expiry watcher should
- * monitor: the Phase C org-keyed map (unrevoked entries only) when present,
- * else the legacy single-slot top-level fields. Identity-only configs (no
- * github credential yet) yield an empty list — the watcher stays idle.
+ * Collect the non-secret (scopedTokenId, expiresAt) entries the expiry watcher
+ * should monitor. A present V5 current generation is authoritative (including
+ * tombstone/unavailable states); only a truly absent V5 store falls back to the
+ * Phase C keyed map or legacy single-slot config fields.
  */
 function collectExpiryEntries(
   config: SpellguardConfig,
+  configDir: string,
 ): Array<{ scopedTokenId: string; expiresAt: string }> {
+  const activeV5 = readActiveGithubGrantExpiryEntries(
+    configDir,
+    config.agentId,
+  );
+  if (activeV5.state === 'unavailable') return [];
+  if (activeV5.state === 'available') {
+    return [
+      ...new Map(
+        activeV5.entries.map((entry) => [entry.scopedTokenId, entry]),
+      ).values(),
+    ];
+  }
+
   const keyed = config.githubCredentials;
   if (keyed && Object.keys(keyed).length > 0) {
     const out: Array<{ scopedTokenId: string; expiresAt: string }> = [];
@@ -466,56 +514,189 @@ function collectExpiryEntries(
  * `Set<string>`) so one slow refresh never blocks a sibling org's refresh and
  * a single token never has two refreshes outstanding. When the keyed map is
  * absent the legacy top-level `{expiresAt, scopedTokenId}` fields are used
- * (single-org back-compat). Exit-on-revoked fires only when ALL entries are
- * revoked.
+ * (single-org back-compat).
  *
  * @param clientRef - The running AgentControlClient.
  * @param cfgPath   - Path to config.json on disk.
  * @param inFlight  - The set of scopedTokenIds with a refresh outstanding.
  * @param logFn     - Logger (defaults to the module-level `log` function).
+ * @param shutdownFn - Graceful-shutdown hook, used only when the config carries
+ *   no usable agent identity (nothing to recover). Optional for backwards
+ *   compat with unit tests that don't construct the daemon's shutdown plumbing.
  * @returns true if at least one refresh was triggered, false otherwise.
  */
+export const GITHUB_REISSUE_BACKOFF_INITIAL_MS = 60_000;
+export const GITHUB_REISSUE_BACKOFF_MAX_MS = 30 * 60_000;
+
+export interface GithubReissueRetryState {
+  inFlight: boolean;
+  nextAttemptAtMs: number;
+  backoffMs: number;
+}
+
+export function makeGithubReissueRetryState(): GithubReissueRetryState {
+  return {
+    inFlight: false,
+    nextAttemptAtMs: 0,
+    backoffMs: GITHUB_REISSUE_BACKOFF_INITIAL_MS,
+  };
+}
+
+export function resetGithubReissueRetryState(
+  state: GithubReissueRetryState,
+): void {
+  state.inFlight = false;
+  state.nextAttemptAtMs = 0;
+  state.backoffMs = GITHUB_REISSUE_BACKOFF_INITIAL_MS;
+}
+
+/**
+ * Commit a V5 GitHub grant generation before declaring reissue recovery.
+ * `applyGithubGrantBundle` flips the helper-consumed `current` pointer first;
+ * only a secret-bearing applied set may then clear the durable retry marker and
+ * reset this process's retry budget.
+ */
+export async function handleGithubGrantBundle(
+  frame: GithubGrantsBundleFrame,
+  configDir: string,
+  state: GithubReissueRetryState,
+  deps: CredentialHandlerDeps,
+): Promise<boolean> {
+  await applyGithubGrantBundle(configDir, frame);
+
+  // The V5 generation remains the only git-token authority. Custom Claude Code
+  // installs still need the framework projections that Claude and gh read.
+  // Managed boxes skip them because the Go box daemon owns global placement.
+  const localConfig = deps.readConfigImpl();
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+  if (localConfig.config && !managed) {
+    if (deps.envFilePath) {
+      writeGitConfigEnv({
+        envFilePath: deps.envFilePath,
+        gitAuthorName: localConfig.config.gitAuthorName,
+        gitAuthorEmail: localConfig.config.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo,
+      });
+    }
+    const primary = frame.credentials[0];
+    if (deps.ghConfigDir) {
+      if (primary) {
+        writeGhSessionConfig({
+          dir: deps.ghConfigDir,
+          token: primary.scoped_token,
+        });
+      } else {
+        clearGhSessionConfig(deps.ghConfigDir);
+      }
+    }
+  }
+  if (!frame.credentials.some((credential) => credential.scoped_token)) {
+    return false;
+  }
+
+  const configPath = join(configDir, 'config.json');
+  const current = readConfig(configPath);
+  if (current.config?.githubReissue?.pending) {
+    writeConfig({ ...current.config, githubReissue: undefined }, configPath);
+  }
+  resetGithubReissueRetryState(state);
+  return true;
+}
+
+/**
+ * Ask for fresh GitHub issuance after a recoverable final revoke removed the
+ * last local credential. The durable config marker is the source of truth;
+ * this process-local state only budgets retries. A daemon restart therefore
+ * retries immediately (which is how doctor --repair heals), then backs off
+ * from one minute to a capped thirty minutes while the marker remains.
+ */
+export function checkGithubReissue(
+  clientRef: AgentControlClient,
+  cfgPath: string,
+  state: GithubReissueRetryState,
+  logFn: (msg: string) => void = log,
+): boolean {
+  const cur = readConfig(cfgPath);
+  if (!cur.config?.githubReissue?.pending || cur.config.revoked) {
+    resetGithubReissueRetryState(state);
+    return false;
+  }
+  const now = Date.now();
+  if (state.inFlight || now < state.nextAttemptAtMs) return false;
+
+  const retryDelay = state.backoffMs;
+  state.inFlight = true;
+  state.nextAttemptAtMs = now + retryDelay;
+  state.backoffMs = Math.min(retryDelay * 2, GITHUB_REISSUE_BACKOFF_MAX_MS);
+  logFn(
+    `requesting fresh GitHub credential issuance (next retry in ${Math.round(retryDelay / 1000)}s)`,
+  );
+  void clientRef
+    .requestRefresh({ reason: 'manual', provider: 'github' })
+    .catch((err: unknown) => {
+      if (err instanceof Error && err.message !== 'client_closed') {
+        logFn(`GitHub credential issuance request failed: ${err.message}`);
+      }
+    })
+    .finally(() => {
+      state.inFlight = false;
+    });
+  return true;
+}
+
 export function checkExpiryAndRefresh(
   clientRef: AgentControlClient,
   cfgPath: string,
   inFlight: Set<string>,
   logFn: (msg: string) => void = log,
-  /**
-   * Graceful-shutdown hook. When the watcher observes that the whole config
-   * is revoked (all entries dead), it calls this instead of bare
-   * `process.exit(0)` so the PID file is unlinked, the WebSocket is closed
-   * cleanly, and the expiry interval is cleared. Optional for backwards compat
-   * with unit tests that don't construct the daemon's full shutdown plumbing.
-   */
   shutdownFn?: () => void,
+  githubReissueState: GithubReissueRetryState = makeGithubReissueRetryState(),
 ): boolean {
   const cur = readConfig(cfgPath);
   if (!cur.config) return false;
   // A whole-config revoke will never refresh — the server rejects
-  // requestRefresh with credential_revoked. Without this guard the daemon
-  // re-fires every 60s, blocks the refresh chain on the resulting error
-  // frame's 30s timeout (until the short-circuit fires), and wakes the
-  // channel for nothing. Exit so the dead daemon is reaped instead of
-  // sitting on a permanently revoked credential. (Whole-config revoked is
-  // only set once the LAST github entry dies — see handleCredentialRevoked.)
+  // requestRefresh with credential_revoked. Skip the refresh so the daemon
+  // doesn't re-fire every 60 s and block the refresh chain on the resulting
+  // error frame's 30 s timeout.
+  //
+  // The daemon does NOT exit here while a usable agent identity remains.
+  // `revoked` now only comes from a 4401 (`handleAuthFailedClose`) or from a
+  // config latched by an older build, and exiting on it was the last step of
+  // the permanent brick: SessionStart refused to spawn the daemon on a revoked
+  // config and the daemon killed itself on boot, so the machine could never
+  // receive the replacement credential the backend had already minted. A
+  // genuinely disowned agent is still reaped — its reconnect is rejected 4401
+  // and `onFatalClose` exits nonzero. Staying connected is what lets an agent
+  // upgraded out of that state heal itself.
   if (cur.config.revoked) {
-    logFn('credential is revoked; daemon exiting (re-run /spellguard-setup)');
-    if (shutdownFn) {
-      shutdownFn();
-      return false;
+    if (!cur.config.agentId || !cur.config.agentSecret) {
+      logFn('credential is revoked and no agent identity remains; exiting');
+      if (shutdownFn) {
+        shutdownFn();
+        return false;
+      }
+      process.exit(0);
     }
-    process.exit(0);
+    logFn(
+      'credential is revoked; skipping refresh and staying connected for a replacement credential',
+    );
+    return false;
   }
 
-  // Build the list of (scopedTokenId, expiresAt) entries to monitor: the
-  // keyed map (Phase C) when present, else the legacy single-slot fields.
-  // Identity-only configs (bootstrap complete, no GitHub credential yet
-  // through the channel) yield an empty list — the daemon stays running and
-  // idle until a `credential_delivered` frame writes the scoped fields.
-  const entries = collectExpiryEntries(cur.config);
+  // Reread the authoritative V5 current generation on every tick. A valid V5
+  // set shadows legacy config; truly pre-V5 installs retain the keyed/scalar
+  // fallback inside collectExpiryEntries.
+  const entries = collectExpiryEntries(cur.config, dirname(cfgPath));
 
   const nearExpiryMs = 10 * 60 * 1000; // 10 minutes — matches near_expiry threshold
-  let triggeredAny = false;
+  let triggeredAny = checkGithubReissue(
+    clientRef,
+    cfgPath,
+    githubReissueState,
+    logFn,
+  );
   for (const entry of entries) {
     // One refresh per token at a time (per-credential in-flight guard).
     if (inFlight.has(entry.scopedTokenId)) continue;
@@ -628,10 +809,59 @@ export async function startLoginRelay(deps: {
   }
 }
 
+/**
+ * R2-10 (FIX 1) — the steady-state SECRET-mode agent-control connect credentials
+ * for THIS plugin's daemon. Threads the plugin's OWN `framework` slug
+ * (`FRAMEWORK`, the wire/DB slug — same value plugin-sync + the bootstrap frame
+ * send) so the control plane's lobby forwards it into the DO's per-connection
+ * `ChannelIdentity` and attributes every `login_relay_update` sent over this
+ * connection to the box's matching per-framework `frameworks_installed` row.
+ * Without it, on a multi-framework box (`claude_code`+`codex`)
+ * `resolveAttributedFramework` returns null → the per-framework login columns are
+ * never written → the box never reaches ready. The `framework` rides the URL
+ * query (a non-secret discriminator); the `login_relay_update` FRAME shape is
+ * UNCHANGED. Exported so the daemon's REAL accessor is unit-testable.
+ */
+export function buildSecretModeCredentials(cfg: {
+  agentId: string;
+  agentSecret: string;
+}): {
+  mode: 'secret';
+  agentId: string;
+  agentSecret: string;
+  framework: string;
+} {
+  return {
+    mode: 'secret',
+    agentId: cfg.agentId,
+    agentSecret: cfg.agentSecret,
+    framework: FRAMEWORK,
+  };
+}
+
+export function credentialState(
+  config: SpellguardConfig,
+  configDir: string,
+): DaemonCredentialState {
+  if (config.revoked) return 'revoked';
+  // Use the same authority as renewal: V5, then the keyed store, then legacy.
+  // A stale legacy slot must not override an active generation or tombstone.
+  const entries = collectExpiryEntries(config, configDir);
+  if (entries.length === 0) return 'missing';
+  const now = Date.now();
+  const expiries = entries.map((entry) => Date.parse(entry.expiresAt));
+  if (expiries.some((expiry) => !Number.isFinite(expiry) || expiry <= now))
+    return 'expired';
+  if (expiries.some((expiry) => expiry - now <= 10 * 60_000))
+    return 'near_expiry';
+  return 'valid';
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { agentId, configDir, cwd } = parseArgs(process.argv);
+  const { agentId, configDir, cwd, instanceId, artifactId, scriptPath } =
+    parseArgs(process.argv);
 
   mkdirSync(agentsDir(configDir), { recursive: true });
   const pidPath = pidFilePath(configDir, agentId);
@@ -654,6 +884,15 @@ async function main() {
 
   const configPath = join(configDir, 'config.json');
   const config = loadConfig(configPath, pidPath);
+  const managedBox = isManagedBox();
+  const health = startDaemonHealthReporter({
+    agentId,
+    configDir,
+    scriptPath,
+    artifactId,
+    instanceId,
+    credentialState: credentialState(config, configDir),
+  });
 
   // PR #338 review R2-008: regenerate the git-tokens companion from the
   // persisted config on boot. If a previous daemon crashed mid-write (or the
@@ -667,31 +906,28 @@ async function main() {
     log(`startup git-tokens regeneration failed: ${String(err)}`);
   }
 
-  // Pin the gh CLI to the scoped token: refresh the per-agent gh `hosts.yml`
-  // from the persisted config on boot (mirrors the git-tokens self-heal above).
-  // gh re-reads it on every invocation, so this plus the handler's per-update
-  // refresh keep it current across rotations. Never touches ~/.config/gh.
+  // Rebuild gh's custom-install projections from the authoritative V5
+  // generation. Only an absent V5 authority permits legacy V4 fallback; a
+  // malformed or wrong-agent generation clears them fail-closed. Managed boxes
+  // stand down because the Go daemon owns global placement.
   const ghConfigDir = ghConfigDirPath(configDir, agentId);
-  const ghTokenPath = ghTokenFilePath(configDir);
-  try {
-    if (config?.scopedToken) {
-      writeGhSessionConfig({ dir: ghConfigDir, token: config.scopedToken });
+  if (!managedBox) {
+    try {
+      const activeV5 = readActiveGithubGrantPrimaryToken(configDir, agentId);
+      const token =
+        activeV5.state === 'available'
+          ? activeV5.token
+          : activeV5.state === 'absent'
+            ? config.scopedToken
+            : null;
+      if (token) {
+        writeGhSessionConfig({ dir: ghConfigDir, token });
+      } else {
+        clearGhSessionConfig(ghConfigDir);
+      }
+    } catch (err) {
+      log(`startup GitHub projection regeneration failed: ${String(err)}`);
     }
-  } catch (err) {
-    log(`startup gh hosts.yml regeneration failed: ${String(err)}`);
-  }
-
-  // Self-heal the GH_TOKEN file from the persisted config on boot (mirrors the
-  // git-tokens + gh hosts.yml self-heals above). The managed login-shell snippet
-  // exports it for Claude Code's startup plugin-marketplace auto-update; rebuilding
-  // it here keeps it current after a daemon restart that missed a frame. The token
-  // is never logged (only a generic error string is, on failure).
-  try {
-    if (config?.scopedToken) {
-      writeGhTokenFile(ghTokenPath, config.scopedToken);
-    }
-  } catch (err) {
-    log(`startup gh-token regeneration failed: ${String(err)}`);
   }
 
   // CLAUDE_ENV_FILE is inherited from the hook's environment. If absent,
@@ -719,12 +955,12 @@ async function main() {
     envFilePath,
     writeConfigImpl: writeCfg,
     markConfigRevokedImpl: () => markConfigRevoked(configPath),
+    markConfigSuspendedImpl: () => markConfigSuspended(configPath),
     readConfigImpl: readCfg,
     ghConfigDir,
-    // GH_TOKEN file kept in lockstep with the agent's scoped token (write on
-    // delivery/rotation, clear on revoke) for Claude Code's startup
-    // plugin-marketplace auto-update (see gh-token-file.ts).
-    ghTokenPath,
+    // Legacy-cleanup only: the revoke / 4401 paths unlink a pre-#767 plaintext
+    // `<configDir>/gh-token` an older plugin version left behind.
+    configDir,
     helperPath: ensureStableHelper(configDir),
     sshRewriteRepo,
   };
@@ -749,6 +985,7 @@ async function main() {
   // queued, while distinct orgs refresh independently. The client's
   // #refreshChain still serializes the actual socket sends.
   const expiryInFlight = new Set<string>();
+  const githubReissueState = makeGithubReissueRetryState();
 
   // Forward-declare so the AgentControlClient onCredentialRevoked
   // closure can reference `shutdown` defined below (after the client +
@@ -855,36 +1092,73 @@ async function main() {
     // daemon refresh), so it advertises the github_multi_org capability. The
     // server relaxes Phase B's single-org-per-agent restriction only for
     // capable agents.
-    capabilities: ['github_multi_org'],
+    capabilities: ['github_multi_org', 'github_grant_bundle_v1'],
     initialLastServerSeq: config.lastServerSeq,
     // Replay the cached projection so the first Resume after restart
     // matches the server's live row set and divergence detection stays quiet.
     initialKnownCredentials: config.knownCredentials,
-    credentials: () => ({
-      mode: 'secret' as const,
-      agentId: config.agentId,
-      agentSecret: config.agentSecret,
-    }),
-    onCredentialDelivered: (frame) =>
-      handleCredentialUpdate(frame, handlerDeps),
-    onCredentialRotated: (frame) => handleCredentialUpdate(frame, handlerDeps),
+    // R2-10: the accessor threads THIS daemon's own `framework` onto the
+    // secret-mode connect (see buildSecretModeCredentials) so per-framework
+    // login attribution works on a multi-framework box.
+    credentials: () => buildSecretModeCredentials(config),
+    onCredentialDelivered: (frame) => {
+      if (handleCredentialUpdate(frame, handlerDeps)) {
+        resetGithubReissueRetryState(githubReissueState);
+        const current = readCfg();
+        if (current.config)
+          health.setCredentialState(credentialState(current.config, configDir));
+      }
+    },
+    onCredentialRotated: (frame) => {
+      if (handleCredentialUpdate(frame, handlerDeps)) {
+        resetGithubReissueRetryState(githubReissueState);
+        const current = readCfg();
+        if (current.config)
+          health.setCredentialState(credentialState(current.config, configDir));
+      }
+    },
+    onGithubGrantsBundle: async (frame) => {
+      await handleGithubGrantBundle(
+        frame,
+        configDir,
+        githubReissueState,
+        handlerDeps,
+      );
+      const current = readCfg();
+      if (current.config)
+        health.setCredentialState(credentialState(current.config, configDir));
+    },
     onCredentialRevoked: (frame) => {
       // Phase C: a revoke targets ONE org entry. Handle the per-entry revoke
       // (marks that entry revoked + regenerates git-tokens, dropping only its
-      // line) and shut down ONLY when no unrevoked github entry remains. While
-      // a sibling org survives, the daemon stays alive so its pushes keep
-      // working — only the revoked org's pushes fail. (Pre-C, every revoke
-      // tore the whole config down; that path still fires when the LAST entry
-      // dies, where handleCredentialRevoked returns false.)
-      const anyRemaining = handleCredentialRevoked(frame, handlerDeps);
-      if (!anyRemaining) {
-        log('credential_revoked received (last entry); shutting down daemon');
-        shutdown();
-      } else {
-        log(
-          'credential_revoked received for one org; sibling credentials remain — daemon staying alive',
-        );
-      }
+      // line). Sibling orgs keep pushing; only the revoked org's pushes fail.
+      //
+      // The daemon NEVER exits from this handler, for two independent reasons:
+      //
+      //  1. Credential revocation removes token material; it does not revoke
+      //     the agent-control identity. Staying connected is what lets a
+      //     replacement credential land — a single-org agent whose token is
+      //     revoked mid-rotation used to die here, before the fresh secret it
+      //     had already requested came back (observed 2026-08-04).
+      //  2. Exiting from inside an awaited frame handler kills the process
+      //     BEFORE the shared client persists the frame's seq and sends its
+      //     Ack, so the server replays the identical revoke on every reconnect
+      //     and the daemon suicides again, forever. If a future change ever
+      //     does need to stop on a revoke, it must do so from
+      //     `onCredentialRevokeSettled` (see agent-control's client.ts), which
+      //     runs only after apply → persist → ack.
+      const recoverable = handleCredentialRevoked(frame, handlerDeps);
+      const current = readCfg();
+      if (current.config)
+        health.setCredentialState(credentialState(current.config, configDir));
+      log(
+        recoverable
+          ? 'credential_revoked handled; daemon staying alive for sibling or replacement credentials'
+          : 'credential_revoked arrived without readable local config; daemon remains connected',
+      );
+    },
+    onCredentialRevokeSettled: () => {
+      checkGithubReissue(client, configPath, githubReissueState, log);
     },
     // Persist config_updated descriptors to the local config-store.
     onConfigUpdated: (frame) => handleConfigUpdate(frame, handlerDeps),
@@ -901,6 +1175,8 @@ async function main() {
     // re-run, per the needsLoginRelay gate). No token → no-op (a real login still
     // pending must not be reported authorized).
     onConnect: () => {
+      health.setTransport('connected');
+      checkGithubReissue(client, configPath, githubReissueState, log);
       // No token == a real login is still pending; must NOT report authorized.
       if (!existsSync(oauthTokenFile)) return;
       // Re-assert authorized with backoff (DA35): onConnect fires on the raw
@@ -938,6 +1214,15 @@ async function main() {
     // SessionStart re-surfaces it (the wipe runs in the background daemon with
     // no interactive session open). Then shut the daemon down cleanly — the
     // client has already closed the socket.
+    // #1348: the agent is quarantined. Drop what this daemon placed and keep
+    // running: the client keeps the identity and reconnects on its suspended
+    // backoff, and the reconnect a release lets through resumes normally.
+    onSuspended: ({ reason, retryInMs }) => {
+      log(
+        `agent suspended (reason=${reason}); credentials dropped, retrying in ${Math.round(retryInMs / 1000)}s`,
+      );
+      handleSuspended(handlerDeps);
+    },
     onCredentialSuperseded: (cause) => {
       log(`credential superseded (cause=${cause}); wiping local credentials`);
       try {
@@ -946,7 +1231,7 @@ async function main() {
           configPath,
           envFilePath,
           ghConfigDir,
-          ghTokenFile: ghTokenPath,
+          legacyGhTokenFile: join(configDir, 'gh-token'),
         });
       } catch (err) {
         log(`self-wipe failed: ${(err as Error)?.message ?? String(err)}`);
@@ -1028,6 +1313,7 @@ async function main() {
       });
     },
     onError: (err) => {
+      health.setTransport('error', err.message);
       log(`error: ${err.message}`);
       // Leg-B finding (2026-06-11 deployed acceptance): a DELETED agent's
       // reconnect is rejected by the HTTP lobby with a plain 401 BEFORE the
@@ -1052,11 +1338,20 @@ async function main() {
     },
   });
 
-  const expiryInterval = setInterval(
-    () =>
-      checkExpiryAndRefresh(client, configPath, expiryInFlight, log, shutdown),
-    60_000,
-  );
+  const expiryInterval = setInterval(() => {
+    const current = readCfg();
+    if (current.config) {
+      health.setCredentialState(credentialState(current.config, configDir));
+    }
+    checkExpiryAndRefresh(
+      client,
+      configPath,
+      expiryInFlight,
+      log,
+      shutdown,
+      githubReissueState,
+    );
+  }, 60_000);
 
   // Host the long-running commit watcher in the daemon so it survives the
   // hook process exit. The watcher tails .git/logs/HEAD via fs.watch with
@@ -1096,6 +1391,7 @@ async function main() {
       });
     }
     client.close();
+    health.close();
     try {
       unlinkSync(pidPath);
     } catch {
@@ -1107,6 +1403,7 @@ async function main() {
   process.on('SIGINT', shutdown);
 
   client.start();
+  health.markReady();
 
   // REQ-003: AUTO-START the login relay flow when gated (=1 auto-start mode,
   // box not already authorized). The relay drives `claude auth login
@@ -1165,7 +1462,14 @@ async function main() {
   }
 
   // Run an immediate expiry check in case the daemon restarted near expiry.
-  checkExpiryAndRefresh(client, configPath, expiryInFlight, log, shutdown);
+  checkExpiryAndRefresh(
+    client,
+    configPath,
+    expiryInFlight,
+    log,
+    shutdown,
+    githubReissueState,
+  );
   // The event loop stays alive while the WebSocket is open.
 }
 

@@ -24,11 +24,6 @@
         "mode": "partial",
         "label": "schema-violation"
       },
-      "defaultBinding": {
-        "direction": "both",
-        "effect": "block",
-        "priority": 80
-      },
       "provenance": {
         "source": "adversarial-corpus",
         "dateAdded": "2026-03-11",

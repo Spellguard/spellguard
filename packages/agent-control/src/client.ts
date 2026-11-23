@@ -43,6 +43,7 @@ import { PartySocket } from 'partysocket';
 import WebSocket from 'ws';
 import {
   AGENT_CONTROL_CLOSE_CODES,
+  AGENT_SUSPEND_CAPABILITY,
   AUTH_SUPERSEDED_CLOSE_REASONS,
   type AuthSupersededCloseReason,
   type ConfigUpdatedFrame,
@@ -52,12 +53,32 @@ import {
   type CredentialRequestFrame,
   type CredentialRevokedFrame,
   type CredentialRotatedFrame,
+  type GithubGrantsBundleFrame,
+  type GithubGrantsCommitConfirmedFrame,
   type LoginCodeFrame,
   type LoginRelayUpdateFrame,
   type LoginRestartFrame,
   type ServerFrame,
+  type SlackEventBlockedFrame,
+  type SlackEventFrame,
+  type TeamsActivityBlockedFrame,
+  type TeamsActivityFrame,
   parseServerFrame,
 } from './protocol';
+
+/**
+ * The transient relay frames (server → client). They ride the SAME
+ * agent-control socket as the reliable credential/lifecycle frames but carry NO
+ * `seq` (they extend `TransientServerFrameBase`): never sequenced, never
+ * ring-buffered, never replayed on resume, never acked. Consolidated agent
+ * socket (T7): the OpenClaw plugin routes these into its local Slack/Teams bot
+ * via `AgentControlClientOptions.onRelayEvent`.
+ */
+export type RelayServerFrame =
+  | SlackEventFrame
+  | SlackEventBlockedFrame
+  | TeamsActivityFrame
+  | TeamsActivityBlockedFrame;
 
 // Subprotocol values used for secret-mode auth on the WebSocket upgrade.
 // The server reads `agent-secret.<plaintext>` from the
@@ -76,6 +97,22 @@ export type StartCredentials =
       mode: 'secret';
       agentId: string;
       agentSecret: string;
+      /**
+       * R2-10 — the daemon's OWN framework slug ('claude_code' | 'codex' | …),
+       * threaded onto the secret-mode connect so the control plane can attribute
+       * each `login_relay_update` (sent over this same secret-mode connection) to
+       * the matching per-framework `frameworks_installed` row. Additive + optional
+       * for back-compat: a legacy daemon that omits it is resolved by the DO's
+       * sole-managed-login-row fallback (NEG-3). It rides the URL query (a
+       * non-secret discriminator).
+       *
+       * T4.3 note: for a MULTIPLEXED box daemon that carries BOTH managed-login
+       * frameworks over ONE connection, this connection-level slug can no longer
+       * disambiguate — the per-frame `LoginRelayUpdateFrame.framework` field is
+       * the primary discriminator and this connection value is the back-compat
+       * fallback the DO uses only when the frame omits it.
+       */
+      framework?: string;
     }
   | {
       mode: 'nonce';
@@ -146,7 +183,46 @@ export interface AgentControlClientOptions {
     frame: CredentialDeliveredFrame,
   ) => void | Promise<void>;
   onCredentialRotated?: (frame: CredentialRotatedFrame) => void | Promise<void>;
+  onGithubGrantsBundle?: (
+    frame: GithubGrantsBundleFrame,
+  ) => void | Promise<void>;
+  onGithubGrantsCommitConfirmed?: (
+    frame: GithubGrantsCommitConfirmedFrame,
+  ) => void | Promise<void>;
+  /**
+   * Apply a `credential_revoked` frame to local disk state.
+   *
+   * **This handler MUST NOT terminate the process** (no `process.exit`, no
+   * `shutdown()` that exits). It runs BEFORE the client persists the frame's
+   * seq and sends its Ack, so a handler that exits leaves the cursor stuck one
+   * frame behind forever: the server replays the identical revoke on every
+   * subsequent connect and the consumer kills itself again — a permanent,
+   * self-reinforcing brick with no in-product exit (observed on a live agent
+   * 2026-08-04; the daemon died in 1.9 s with `lastServerSeq` unchanged).
+   *
+   * A consumer that genuinely needs to stop after a revoke sets a flag here and
+   * exits from {@link AgentControlClientOptions.onCredentialRevokeSettled},
+   * which runs only AFTER apply → persist → ack. Never the other way round:
+   * acking before applying would trade the brick for a window where a
+   * server-revoked token stays live on disk.
+   */
   onCredentialRevoked?: (frame: CredentialRevokedFrame) => void | Promise<void>;
+
+  /**
+   * Called after a `credential_revoked` frame has been fully SETTLED: the
+   * revoke was applied to disk by {@link
+   * AgentControlClientOptions.onCredentialRevoked}, the cached
+   * `knownCredentials` projection was updated and persisted, the frame's seq
+   * was persisted via `onSeqAdvanced`, and the Ack was written to the socket.
+   *
+   * This is the ONLY sanctioned point at which a consumer may terminate the
+   * process in response to a revoke — by the time it runs, the durable cursor
+   * has already moved past the frame, so the next connect resumes AFTER the
+   * revoke instead of replaying it.
+   */
+  onCredentialRevokeSettled?: (
+    frame: CredentialRevokedFrame,
+  ) => void | Promise<void>;
 
   /** Called after every successfully-applied seq-counted frame. The
    *  caller persists `last_server_seq` to disk in this hook so a crash
@@ -189,6 +265,19 @@ export interface AgentControlClientOptions {
   ) => void;
 
   /**
+   * Called when the server closes with AGENT_SUSPENDED (4423, #1348): the
+   * agent is quarantined. The plugin drops every credential it placed and
+   * KEEPS its identity. The client keeps reconnecting on its own backoff (30 s,
+   * doubling to 5 min, `retryInMs` is the next wait), and the reconnect a
+   * release lets through resumes normally, so the server re-delivers what is
+   * still granted. Fires on every suspended close, never with `onFatalClose`.
+   */
+  onSuspended?: (event: {
+    reason: string;
+    retryInMs: number;
+  }) => void | Promise<void>;
+
+  /**
    * Called when the server pushes a `config_updated` frame.
    * The handler should persist the new descriptor to the local config-store.
    * If `frame.triggers_rotation === true`, a follow-up `credential_rotated`
@@ -212,6 +301,22 @@ export interface AgentControlClientOptions {
    * Optional — only wired by the Claude Code daemon.
    */
   onLoginRestart?: (frame: LoginRestartFrame) => void | Promise<void>;
+
+  /**
+   * Consolidated agent socket (T7) — called for each inbound transient relay
+   * frame (`slack_event`, `slack_event_blocked`, `teams_activity`,
+   * `teams_activity_blocked`) the control plane forwards down the SAME
+   * agent-control socket the box already holds for credentials.
+   *
+   * Invoked FIRE-AND-FORGET: the dispatcher never `await`s it (R5 — a slow
+   * local Slack/Teams forward must not head-of-line-block the reliable
+   * credential frames sharing this socket) and swallows+logs any throw/rejection
+   * so a faulty handler can never disturb the socket or the seq/ack cursor.
+   * Relay frames carry no `seq`, so handling one advances NO cursor and sends
+   * NO ack. Optional — only the OpenClaw plugin wires it; other plugins leave it
+   * undefined and relay frames are silently ignored.
+   */
+  onRelayEvent?: (frame: RelayServerFrame) => void | Promise<void>;
 
   /** Called on each non-fatal error. Logging hook. */
   onError?: (err: Error) => void;
@@ -257,6 +362,8 @@ export interface AgentControlClientOptions {
   upgradeHeaders?: Record<string, string>;
   /** Cap reconnect backoff (default 30 s). */
   maxReconnectionDelayMs?: number;
+  /** The suspended (4423) backoff. Default 30 s, doubling to 5 min. */
+  suspendedBackoffMs?: { initial: number; max: number };
   /**
    * FIND-DA24 — how long PartySocket waits for a connection to OPEN before it
    * aborts the attempt and retries. partysocket's default is 4000ms, which is
@@ -333,9 +440,13 @@ const FATAL_CLOSE_CODES = new Set<number>([
 
 export class AgentControlClient {
   #ps: PartySocket | null = null;
+  /** Preserve wire order across async receiver durability hooks. */
+  #messageChain: Promise<void> = Promise.resolve();
   #closed = false;
   #lastServerSeq: string;
   #knownCredentials: Array<{ provider: string; scoped_token_id: string }>;
+  /** True only for a connection whose query advertised `resume=always`. */
+  #resumeAlwaysConnection = false;
   #firstConnect = true;
   #pendingRequests = new Map<
     string,
@@ -350,6 +461,8 @@ export class AgentControlClient {
       // on the next reconnect then triggers another rotation.
       supersededProvider?: string;
       supersededScopedTokenId?: string;
+      requestedProvider: string;
+      requestedReason: CredentialRequestFrame['reason'];
     }
   >();
   // Serializes refresh requests because `credential_delivered` carries no
@@ -357,6 +470,11 @@ export class AgentControlClient {
   // would resolve them out-of-order. This serialization can be dropped if the
   // protocol later grows an `in_response_to` correlation field.
   #refreshChain: Promise<unknown> = Promise.resolve();
+  // Redacted replay and the following divergence pass can announce the same
+  // issued identity before its first refresh completes. Keep one refresh per
+  // identity in flight so the second notice cannot rotate it again after the
+  // first response settles.
+  #redactedRefreshesInFlight = new Set<string>();
   // Rotation-fallback timers. Key = seq of the config_updated frame.
   // Cleared when a credential_rotated arrives before the 10s window expires.
   #rotationTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -365,6 +483,15 @@ export class AgentControlClient {
   // value, via the injectable #now()) so the timer can detect a zombie socket.
   #heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   #lastPongAt = 0;
+  /** Consecutive HTTP-upgrade auth failures seen before a socket opens. */
+  #consecutiveUpgradeAuthFailures = 0;
+  /**
+   * #1348: the last suspended (4423) wait, or null while the session is
+   * healthy. A suspended reconnect still opens (hello, then 4423), so this
+   * resets only on a frame past the hello, never on `open`.
+   */
+  #suspendedDelayMs: number | null = null;
+  #suspendedTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly opts: AgentControlClientOptions) {
     this.#lastServerSeq = opts.initialLastServerSeq ?? '0';
@@ -381,7 +508,11 @@ export class AgentControlClient {
     // where an unhandled `'error'` event crashes the process and would kill a
     // managed-bootstrap claim before PartySocket can reconnect. See
     // `makeErrorSafeWebSocket`.
-    const Impl = makeErrorSafeWebSocket(BaseImpl, this.opts.upgradeHeaders);
+    const Impl = makeErrorSafeWebSocket(
+      BaseImpl,
+      this.opts.upgradeHeaders,
+      (err) => this.#observeUpgradeError(err),
+    );
     const apiBaseUrl = this.opts.apiBaseUrl.replace(/^https?:\/\//, '');
     const tls = this.opts.apiBaseUrl.startsWith('https://');
 
@@ -419,11 +550,14 @@ export class AgentControlClient {
     this.#ps = ps;
 
     ps.addEventListener('open', () => {
+      this.#consecutiveUpgradeAuthFailures = 0;
       void this.#onOpen();
     });
 
     ps.addEventListener('message', (e) => {
-      void this.#handleMessage(e as MessageEvent);
+      this.#messageChain = this.#messageChain.then(() =>
+        this.#handleMessage(e as MessageEvent),
+      );
     });
 
     ps.addEventListener('close', (event) => {
@@ -454,6 +588,10 @@ export class AgentControlClient {
           : undefined;
         this.opts.onCredentialSuperseded?.(cause);
         this.close();
+        return;
+      }
+      if (code === AGENT_CONTROL_CLOSE_CODES.AGENT_SUSPENDED) {
+        this.#suspend(reason);
         return;
       }
       if (FATAL_CLOSE_CODES.has(code)) {
@@ -491,8 +629,62 @@ export class AgentControlClient {
     });
   }
 
-  /** Send a CredentialRequest and resolve to the delivered descriptors.
-   *  Times out if no `credential_delivered` arrives within `timeoutMs`. */
+  /**
+   * #1348: the agent is quarantined. PartySocket has already queued its own
+   * quick retry (its close handler reconnects before listeners run), so stop
+   * it and reconnect on the suspended backoff instead. Identity stays.
+   */
+  #suspend(reason: string): void {
+    const ps = this.#ps;
+    if (this.#closed || !ps) return;
+    ps.close();
+    const { initial, max } = this.opts.suspendedBackoffMs ?? {
+      initial: 30_000,
+      max: 300_000,
+    };
+    const retryInMs =
+      this.#suspendedDelayMs === null
+        ? initial
+        : Math.min(this.#suspendedDelayMs * 2, max);
+    this.#suspendedDelayMs = retryInMs;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = setTimeout(() => {
+      this.#suspendedTimer = null;
+      if (!this.#closed && this.#ps === ps) ps.reconnect();
+    }, retryInMs);
+    // The plugin drops everything it placed, so the client must stop claiming
+    // to hold it: the Resume a release lets through then carries no known
+    // credentials, and the server's divergence check re-delivers what is still
+    // granted (the same reset `resume_window_exceeded` relies on).
+    this.#knownCredentials = [];
+    void Promise.resolve()
+      .then(() => this.opts.onKnownCredentialsChanged?.([]))
+      .then(() => this.opts.onSuspended?.({ reason, retryInMs }))
+      .catch((err) =>
+        this.opts.onError?.(
+          err instanceof Error ? err : new Error(String(err)),
+        ),
+      );
+  }
+
+  #observeUpgradeError(err: Error): void {
+    if (isUpgradeUnauthorized(err)) {
+      this.#consecutiveUpgradeAuthFailures += 1;
+      if (this.#consecutiveUpgradeAuthFailures >= 3) {
+        this.opts.onFatalClose(
+          AGENT_CONTROL_CLOSE_CODES.AUTH_FAILED,
+          'http_upgrade_unauthorized',
+        );
+        this.close();
+      }
+      return;
+    }
+    this.#consecutiveUpgradeAuthFailures = 0;
+  }
+
+  /** Send a CredentialRequest and resolve after the durable response apply.
+   *  V4 returns delivered descriptors; V5 resolves `[]` after its bundle hook
+   *  commits. Times out if no matching response arrives within `timeoutMs`. */
   async requestRefresh(
     args: Pick<
       CredentialRequestFrame,
@@ -529,6 +721,8 @@ export class AgentControlClient {
         resolve,
         reject,
         timer,
+        requestedProvider: args.provider,
+        requestedReason: args.reason,
         // Carry the superseded id so the resolution path can prune it from
         // knownCredentials when the new credential is delivered.
         supersededProvider: args.provider,
@@ -599,7 +793,10 @@ export class AgentControlClient {
    * socket is mid-reconnect).
    */
   sendLoginRelayUpdate(
-    update: Pick<LoginRelayUpdateFrame, 'state' | 'login_url' | 'message'>,
+    update: Pick<
+      LoginRelayUpdateFrame,
+      'state' | 'login_url' | 'message' | 'framework'
+    >,
   ): void {
     if (this.#closed || !this.#ps) return;
     try {
@@ -610,6 +807,10 @@ export class AgentControlClient {
           state: update.state,
           ...(update.login_url ? { login_url: update.login_url } : {}),
           ...(update.message ? { message: update.message } : {}),
+          // T4.3 — carry the per-frame framework discriminator when the caller
+          // (the multiplexed Go box daemon) supplies it. Omitted for the
+          // single-framework Node daemon path so its frame stays byte-identical.
+          ...(update.framework ? { framework: update.framework } : {}),
         }),
       );
     } catch {
@@ -620,6 +821,8 @@ export class AgentControlClient {
   /** Close the socket and stop reconnecting. */
   close(): void {
     this.#closed = true;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = null;
     // FIND-DA22 — stop the keepalive heartbeat on terminal close so no further
     // pings are sent after the client is shut down.
     this.#stopHeartbeat();
@@ -719,9 +922,20 @@ export class AgentControlClient {
     }
   }
 
+  /**
+   * #1348: the Resume capabilities. AGENT_SUSPEND_CAPABILITY is added only
+   * when the plugin wired `onSuspended`, since only then does a suspension
+   * drop what it placed; a client that can't must keep getting 4401.
+   */
+  #resumeCapabilities(): string[] | undefined {
+    if (!this.opts.onSuspended) return this.opts.capabilities;
+    return [...(this.opts.capabilities ?? []), AGENT_SUSPEND_CAPABILITY];
+  }
+
   async #buildQuery(): Promise<Record<string, string>> {
     const creds = await this.opts.credentials();
     if (creds.mode === 'secret') {
+      this.#resumeAlwaysConnection = true;
       // The canonical auth path is Sec-WebSocket-Protocol (set by
       // `#buildProtocols`). We ALSO send agent_secret in the URL query as a
       // transitional fallback for two reasons:
@@ -737,8 +951,22 @@ export class AgentControlClient {
       // the URL-redaction guarantee still holds), and `redactQuery` strips
       // `agent_secret` from every log site that prints a URL — so this is
       // not a regression to the leak risk the subprotocol path addresses.
-      return { agent_secret: creds.agentSecret };
+      //
+      // R2-10: thread the daemon's framework slug (non-secret discriminator) so
+      // the lobby can forward it into the DO's per-connection ChannelIdentity and
+      // attribute this connection's `login_relay_update`s to the right
+      // per-framework row. Omitted when absent (byte-identical legacy connect).
+      // #1348: `suspend=1` (AGENT_SUSPEND_CAPABILITY) asks the server for
+      // AGENT_SUSPENDED instead of 4401 on a quarantine; the upgrade answer is
+      // decided before any Resume, so it rides on the URL.
+      return {
+        agent_secret: creds.agentSecret,
+        resume: 'always',
+        ...(creds.framework ? { framework: creds.framework } : {}),
+        ...(this.opts.onSuspended ? { suspend: '1' } : {}),
+      };
     }
+    this.#resumeAlwaysConnection = false;
     if (creds.mode === 'managed-bootstrap') {
       // Managed-provisioning bootstrap carries the nonce only. The server
       // resolves the agent_id, org_id, and credential bindings from the
@@ -826,8 +1054,8 @@ export class AgentControlClient {
     // record has `kind='managed-provisioning'` — the agent row already
     // exists from provision time, so there is nothing to claim and no
     // `bootstrap_request` is sent. The Hello dispatcher's
-    // `#sendResumeIfApplicable` short-circuits because state is fresh
-    // (`lastServerSeq='0' && knownCredentials=[]`).
+    // Managed bootstrap does not advertise `resume=always`; the Hello
+    // dispatcher therefore does not send a Resume in this mode.
     if (creds.mode === 'managed-bootstrap') {
       this.#firstConnect = false;
       return;
@@ -898,20 +1126,14 @@ export class AgentControlClient {
    * `case 'hello'`.
    */
   #sendResumeIfApplicable(): void {
-    if (!this.#ps) return;
-    const noStateYet =
-      this.#lastServerSeq === '0' && this.#knownCredentials.length === 0;
-    // First secret-mode connect with no state: server's Hello carries
-    // current_seq and the bootstrap delivery is seq=1; nothing for us to
-    // resume from.
-    if (noStateYet) return;
+    if (!this.#ps || !this.#resumeAlwaysConnection) return;
     this.#ps.send(
       JSON.stringify({
         type: 'resume',
         client_msg_id: crypto.randomUUID(),
         last_server_seq: this.#lastServerSeq,
         known_credentials: this.#knownCredentials,
-        capabilities: this.opts.capabilities,
+        capabilities: this.#resumeCapabilities(),
       }),
     );
   }
@@ -944,11 +1166,50 @@ export class AgentControlClient {
       );
       return;
     }
+    // #1348: a suspended reconnect gets only a hello before its 4423, so any
+    // later frame means the session is healthy again.
+    if (frame.type !== 'hello') this.#suspendedDelayMs = null;
 
     try {
       await this.#dispatch(frame);
     } catch (err) {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  /**
+   * A V5 bundle is a complete authoritative GitHub set but carries no request
+   * correlation id. Refresh requests are serialized, so at most one pending
+   * request can match. A scoped refresh is satisfied only when the full set no
+   * longer contains the superseded id; an unscoped manual issuance is
+   * satisfied only by a secret-bearing set. The caller invokes this strictly
+   * after the receiver's durable apply hook succeeds.
+   */
+  #settlePendingGithubGrantBundle(frame: GithubGrantsBundleFrame): void {
+    const activeIds = new Set(
+      frame.credentials.map((credential) => credential.scoped_token_id),
+    );
+    for (const [id, pending] of this.#pendingRequests) {
+      if (pending.requestedProvider !== 'github') continue;
+      const matches = pending.supersededScopedTokenId
+        ? !activeIds.has(pending.supersededScopedTokenId)
+        : pending.requestedReason === 'manual' && frame.credentials.length > 0;
+      if (!matches) continue;
+
+      clearTimeout(pending.timer);
+      if (pending.supersededScopedTokenId) {
+        this.#dropKnownCredential(
+          pending.supersededProvider,
+          pending.supersededScopedTokenId,
+        );
+      }
+      // The V5 receiver already consumed and durably placed the complete set.
+      // `requestRefresh`'s legacy return type is V4 CredentialDescriptor[], so
+      // settle without re-projecting the V5 secret-bearing members through a
+      // second API surface.
+      pending.resolve([]);
+      this.#pendingRequests.delete(id);
+      break;
     }
   }
 
@@ -985,21 +1246,20 @@ export class AgentControlClient {
           // is sent as '0' to match the cursor we've just reset to; the
           // server's replay range becomes empty (no replay) and only the
           // divergence path runs. #sendResumeIfApplicable() is skipped here
-          // because we issue the Resume inline with the captured projection;
-          // the helper would short-circuit anyway once local state is zeroed.
+          // because we issue the Resume inline with the captured projection.
           const preResetKnown = this.#knownCredentials;
           this.#lastServerSeq = '0';
           this.#knownCredentials = [];
           await this.opts.onSeqAdvanced('0');
           await this.opts.onKnownCredentialsChanged?.([]);
-          if (this.#ps && preResetKnown.length > 0) {
+          if (this.#ps && this.#resumeAlwaysConnection) {
             this.#ps.send(
               JSON.stringify({
                 type: 'resume',
                 client_msg_id: crypto.randomUUID(),
                 last_server_seq: '0',
                 known_credentials: preResetKnown,
-                capabilities: this.opts.capabilities,
+                capabilities: this.#resumeCapabilities(),
               }),
             );
           }
@@ -1008,6 +1268,48 @@ export class AgentControlClient {
         this.#sendResumeIfApplicable();
         return;
       }
+
+      case 'github_grants_bundle': {
+        try {
+          if (!this.opts.onGithubGrantsBundle) {
+            throw new Error('github_grant_bundle_v1 handler is unavailable');
+          }
+          // The receiver hook is the durability boundary. Never acknowledge
+          // the exact set revision until it has returned successfully.
+          await this.opts.onGithubGrantsBundle(frame);
+          this.#settlePendingGithubGrantBundle(frame);
+          this.#ps?.send(
+            JSON.stringify({
+              type: 'github_grants_applied',
+              protocol_version: '5',
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: true,
+            }),
+          );
+          await this.#advanceSeq(frame.seq);
+        } catch (error) {
+          this.#ps?.send(
+            JSON.stringify({
+              type: 'github_grants_applied',
+              protocol_version: '5',
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: false,
+              error_code: 'durable_apply_failed',
+            }),
+          );
+          throw error;
+        }
+        return;
+      }
+
+      case 'github_grants_commit_confirmed':
+        await this.opts.onGithubGrantsCommitConfirmed?.(frame);
+        await this.#advanceSeq(frame.seq);
+        return;
 
       case 'credential_delivered': {
         // C11: a bootstrap / re_bootstrap delivery's PRIMARY payload is the
@@ -1025,9 +1327,10 @@ export class AgentControlClient {
         // issued credential.
         const isBootstrapCause =
           frame.cause === 'bootstrap' || frame.cause === 're_bootstrap';
+        const incomplete = this.#incompleteCredentials(frame.credentials);
         if (
           !isBootstrapCause &&
-          (await this.#handleIfRedacted(
+          (await this.#handleIfIncomplete(
             frame.credentials,
             frame.seq,
             `credential_delivered{cause:'${frame.cause}'}`,
@@ -1035,8 +1338,25 @@ export class AgentControlClient {
         ) {
           return;
         }
-        await this.opts.onCredentialDelivered(frame);
-        this.#trackKnownCredentials(frame.credentials);
+        // A live bootstrap may intentionally include a bare GitHub descriptor
+        // alongside the top-level agent_secret. Preserve delivery of the
+        // identity payload, but never pass an incomplete credential to the
+        // consuming configuration handler and never project it as known.
+        if (isBootstrapCause && incomplete.length > 0) {
+          await this.#dropIncompleteKnownCredentials(incomplete);
+        }
+        const usableCredentials =
+          incomplete.length > 0
+            ? frame.credentials.filter((credential) =>
+                this.#credentialCarriesUsableSecret(credential),
+              )
+            : frame.credentials;
+        await this.opts.onCredentialDelivered(
+          usableCredentials === frame.credentials
+            ? frame
+            : { ...frame, credentials: usableCredentials },
+        );
+        this.#trackKnownCredentials(usableCredentials);
         await this.#advanceSeq(frame.seq);
         if (isBootstrapCause) {
           // The github descriptor on a bootstrap/re_bootstrap is bare by design;
@@ -1045,6 +1365,13 @@ export class AgentControlClient {
           // already closed after settling (the daemon recovers the token via
           // the steady-state divergence/admin_reissue path on its next connect).
           this.#queueRefreshForBareIssued(frame.credentials);
+          if (
+            incomplete.some((credential) => credential.provider !== 'github')
+          ) {
+            this.#reportIncomplete(
+              `credential_delivered{cause:'${frame.cause}'}`,
+            );
+          }
         }
         // If this delivery resolves a pending refresh request, fire the
         // promise (we accept refresh_response and admin_reissue here;
@@ -1088,7 +1415,7 @@ export class AgentControlClient {
         }
         const superseded = frame.superseded_scoped_token_id;
         if (
-          await this.#handleIfRedacted(
+          await this.#handleIfIncomplete(
             frame.credentials,
             frame.seq,
             'credential_rotated',
@@ -1138,6 +1465,20 @@ export class AgentControlClient {
       }
 
       case 'credential_revoked': {
+        // ORDER IS LOAD-BEARING: apply → persist → ack → (only then) allow the
+        // consumer to stop. `credential_revoked` is the only frame whose
+        // handler has ever terminated the host process (the Claude Code daemon
+        // used to `process.exit(0)` from inside `onCredentialRevoked`), which
+        // killed the process one statement before `#advanceSeq` persisted the
+        // cursor. The server then replayed the same revoke on every reconnect
+        // and the consumer suicided again — a permanent brick. Terminating is
+        // now only sanctioned from `onCredentialRevokeSettled`, below, which
+        // runs after the cursor is durable and the Ack is on the wire.
+        //
+        // Do NOT "fix" this by advancing the seq first: acking before applying
+        // trades the brick for a window where a crash leaves a server-revoked
+        // token live on disk.
+        //
         // Snapshot before mutation so we can detect changes and
         // notify the persistence callback only on real removals.
         await this.opts.onCredentialRevoked?.(frame);
@@ -1153,6 +1494,9 @@ export class AgentControlClient {
           await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
         }
         await this.#advanceSeq(frame.seq);
+        // Cursor is durable and the Ack has been written — safe for the
+        // consumer to tear itself down now if it wants to.
+        await this.opts.onCredentialRevokeSettled?.(frame);
         return;
       }
 
@@ -1288,64 +1632,71 @@ export class AgentControlClient {
         await this.opts.onLoginRestart?.(frame);
         return;
       }
+
+      case 'slack_event':
+      case 'slack_event_blocked':
+      case 'teams_activity':
+      case 'teams_activity_blocked': {
+        // Consolidated agent socket (T7) — transient relay frames. They extend
+        // `TransientServerFrameBase` (no `seq`), so handling one advances NO
+        // cursor and sends NO ack: return WITHOUT `#advanceSeq`. The handler is
+        // invoked FIRE-AND-FORGET (never awaited here — R5 head-of-line
+        // blocking) and its errors are swallowed+logged, so a throwing or slow
+        // consumer can never perturb the reliable credential stream sharing
+        // this socket.
+        this.#dispatchRelayFrame(frame);
+        return;
+      }
     }
   }
 
   /**
-   * Handles a credential frame that has any redacted credential (no
-   * `scoped_token`). See the redacted-replay contract in protocol.ts.
-   *
-   * Returns `true` if any credential was redacted (caller should return
-   * early, skipping `onCredentialDelivered`/`onCredentialRotated`).
-   * Returns `false` when all credentials carry a `scoped_token`.
-   *
-   * When redacted: advances seq, logs via `onError` (informational), and
-   * queues a fire-and-forget `requestRefresh` for each bare credential.
-   * `client_closed` rejections on teardown are swallowed silently.
+   * Fire-and-forget invocation of the relay-event handler. NEVER awaited on the
+   * dispatch path (R5): a synchronous throw is caught, and a returned rejecting
+   * promise gets a `.catch` — both route to `onError`, never to the socket or
+   * the seq cursor. No-op when `onRelayEvent` is unwired (relay frame ignored).
    */
-  async #handleIfRedacted(
+  #dispatchRelayFrame(frame: RelayServerFrame): void {
+    const handler = this.opts.onRelayEvent;
+    if (!handler) return;
+    try {
+      const r = handler(frame);
+      if (r && typeof (r as Promise<void>).catch === 'function') {
+        (r as Promise<void>).catch((err: unknown) => {
+          this.opts.onError?.(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        });
+      }
+    } catch (err) {
+      this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  /**
+   * Settle a frame containing a provider-incomplete descriptor. Ring replay
+   * strips GitHub `scoped_token`, Slack/Discord `botToken`, Teams `password`,
+   * and OpenRouter `api_key`. Remove any prior projection entry durably, leave
+   * the consuming destination untouched, advance the replay cursor, and queue
+   * refresh only for the issued GitHub path.
+   */
+  async #handleIfIncomplete(
     creds: CredentialDescriptor[],
     seq: string,
     logLabel: string,
     supersededId?: string,
   ): Promise<boolean> {
-    // Only `issued` (GitHub) credentials participate in the redacted-replay
-    // contract — manual providers (slack/discord/teams) always carry their
-    // full secrets on every push frame.
-    //
-    // Rollout-robustness: an older backend may omit `kind` on github frames.
-    // Treat a github credential whose `kind` is absent as 'issued' so
-    // redaction-suppression and scoped_token_id tracking work correctly
-    // during a mixed-version rollout window.
-    const issuedCreds = creds.filter(
-      (c): c is Extract<CredentialDescriptor, { kind: 'issued' }> => {
-        const effKind: CredentialKind =
-          (c as { kind?: CredentialKind }).kind ??
-          (c.provider === 'github' ? 'issued' : c.kind);
-        return effKind === 'issued';
-      },
-    );
-    if (!issuedCreds.some((c) => !c.scoped_token)) return false;
+    const incomplete = this.#incompleteCredentials(creds);
+    if (incomplete.length === 0) return false;
 
-    // Do NOT track redacted credentials in #knownCredentials here.
-    // The redacted frame is a notification that we need to refresh — it does
-    // not carry a real scoped_token. If we add the entry now and the follow-up
-    // requestRefresh fails (refresh_token_expired, installation_revoked,
-    // github_error, etc.), the projection holds an id the server's live set
-    // will never honor, and divergence detection on every subsequent reconnect
-    // triggers another admin_reissue → another failing refresh — an infinite
-    // loop of spurious server work. Tracking happens only when the real
-    // `credential_delivered{cause:'refresh_response'}` arrives (see the
-    // non-redacted branch of case 'credential_delivered').
+    // Remove a previously-known copy BEFORE advancing the cursor. A crash after
+    // the replay Ack must restart with this identity absent from Resume so the
+    // server's divergence/admin hydration path re-delivers the full secret.
+    // The consuming destination is deliberately untouched and retains its last
+    // valid credential until that authoritative delivery arrives.
+    await this.#dropIncompleteKnownCredentials(incomplete);
     await this.#advanceSeq(seq);
-    // Expected protocol behavior (hibernation replay redacts secrets) —
-    // info, not error, when the consumer provides an info hook.
-    const redactedNotice = `agent-control: redacted ${logLabel} — queuing credential_request to obtain fresh secret`;
-    if (this.opts.onInfo) {
-      this.opts.onInfo(redactedNotice);
-    } else {
-      this.opts.onError?.(new Error(redactedNotice));
-    }
+    this.#reportIncomplete(logLabel);
     // Fire-and-forget: resolves when the follow-up refresh_response
     // delivers the real scoped_token. #refreshChain serializes concurrent
     // notices. Swallow client_closed on teardown.
@@ -1353,10 +1704,67 @@ export class AgentControlClient {
     return true;
   }
 
+  #credentialCarriesUsableSecret(credential: CredentialDescriptor): boolean {
+    const raw = credential as unknown as Record<string, unknown>;
+    switch (credential.provider) {
+      case 'github':
+        return (
+          typeof raw.scoped_token === 'string' && raw.scoped_token.length > 0
+        );
+      case 'slack':
+      case 'discord':
+        return typeof raw.botToken === 'string' && raw.botToken.length > 0;
+      case 'teams':
+        return typeof raw.password === 'string' && raw.password.length > 0;
+      case 'openrouter':
+        return typeof raw.api_key === 'string' && raw.api_key.length > 0;
+      default:
+        // Forward-compatible providers retain the pre-existing behavior until
+        // their required-secret contract is added to the typed union.
+        return true;
+    }
+  }
+
+  #incompleteCredentials(
+    credentials: CredentialDescriptor[],
+  ): CredentialDescriptor[] {
+    return credentials.filter(
+      (credential) => !this.#credentialCarriesUsableSecret(credential),
+    );
+  }
+
+  async #dropIncompleteKnownCredentials(
+    credentials: CredentialDescriptor[],
+  ): Promise<void> {
+    const identities = new Set(
+      credentials.map((credential) => {
+        const raw = credential as unknown as Record<string, unknown>;
+        const id = raw.scoped_token_id ?? credential.credential_id;
+        return `${credential.provider}\u0000${String(id)}`;
+      }),
+    );
+    const next = this.#knownCredentials.filter(
+      (known) =>
+        !identities.has(`${known.provider}\u0000${known.scoped_token_id}`),
+    );
+    if (next.length === this.#knownCredentials.length) return;
+    this.#knownCredentials = next;
+    await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
+  }
+
+  #reportIncomplete(logLabel: string): void {
+    const notice = `agent-control: redacted/replay-incomplete ${logLabel} — preserving existing credential and awaiting authoritative hydration`;
+    if (this.opts.onInfo) {
+      this.opts.onInfo(notice);
+    } else {
+      this.opts.onError?.(new Error(notice));
+    }
+  }
+
   /**
    * Queue a fire-and-forget `credential_request` for each ISSUED (github)
    * credential that arrived WITHOUT a `scoped_token`. Shared by the
-   * redacted-replay path (`#handleIfRedacted`) and the bootstrap/re_bootstrap
+   * redacted-replay path (`#handleIfIncomplete`) and the bootstrap/re_bootstrap
    * delivery path (where the descriptor is bare by design — see the C11 note
    * in `case 'credential_delivered'`). #refreshChain serializes concurrent
    * requests; `client_closed` / `client not started` rejections on teardown
@@ -1371,7 +1779,7 @@ export class AgentControlClient {
     // client post-settle) — avoid a spurious `client not started` onError.
     if (this.#closed || !this.#ps) return;
     for (const c of creds) {
-      // Rollout-robustness mirror of #handleIfRedacted: treat a github
+      // Rollout-robustness mirror of #handleIfIncomplete: treat a github
       // credential whose `kind` is absent (older backend) as 'issued'.
       const effKind: CredentialKind =
         (c as { kind?: CredentialKind }).kind ??
@@ -1379,23 +1787,31 @@ export class AgentControlClient {
       if (effKind !== 'issued') continue;
       const issued = c as Extract<CredentialDescriptor, { kind: 'issued' }>;
       if (issued.scoped_token) continue;
+      const identity =
+        supersededId ?? issued.scoped_token_id ?? issued.credential_id;
+      const refreshKey = `${issued.provider}\u0000${identity}`;
+      if (this.#redactedRefreshesInFlight.has(refreshKey)) continue;
+      this.#redactedRefreshesInFlight.add(refreshKey);
       void this.requestRefresh({
         reason: 'expiry',
         provider: issued.provider,
-        superseded_scoped_token_id:
-          supersededId ?? issued.scoped_token_id ?? issued.credential_id,
-      }).catch((err: unknown) => {
-        if (
-          err instanceof Error &&
-          (err.message === 'client_closed' ||
-            err.message === 'client not started')
-        ) {
-          return;
-        }
-        this.opts.onError?.(
-          err instanceof Error ? err : new Error(String(err)),
-        );
-      });
+        superseded_scoped_token_id: identity,
+      })
+        .catch((err: unknown) => {
+          if (
+            err instanceof Error &&
+            (err.message === 'client_closed' ||
+              err.message === 'client not started')
+          ) {
+            return;
+          }
+          this.opts.onError?.(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        })
+        .finally(() => {
+          this.#redactedRefreshesInFlight.delete(refreshKey);
+        });
     }
   }
 
@@ -1498,6 +1914,72 @@ export class AgentControlClient {
 }
 
 /**
+ * Read an HTTP status off a transport error when the implementation exposes one
+ * STRUCTURALLY. `ws` and several wrappers attach the rejected handshake's status
+ * (directly, or on a `response`); browser WebSocket and the test doubles expose
+ * nothing, which is why `isUpgradeUnauthorized` still needs a textual fallback.
+ */
+function upgradeStatusOf(err: unknown): number | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const e = err as {
+    statusCode?: unknown;
+    status?: unknown;
+    response?: { statusCode?: unknown; status?: unknown } | null;
+  };
+  for (const candidate of [
+    e.statusCode,
+    e.status,
+    e.response?.statusCode,
+    e.response?.status,
+  ]) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Does this transport error represent an HTTP 401 on the WebSocket UPGRADE?
+ *
+ * Three consecutive of these are treated as a terminal identity revocation, so a
+ * false positive costs the agent its identity until an operator re-issues one —
+ * fail-closed, but a real availability event. Hence:
+ *
+ *  1. A STRUCTURED status wins outright, in both directions. A transport that
+ *     reports `500` is NOT unauthorized even if the body it quotes happens to
+ *     contain "401", and there is no fall-through to the text for it.
+ *  2. Only when no status is exposed do we read the message, and then the digits
+ *     must sit in an HTTP-STATUS POSITION. A plain substring matched `…:8401`
+ *     (a port) and any byte count ending in 401; a word boundary alone still
+ *     matched `req-401-2f9c` (a request id). Three of those in a row — exactly
+ *     what a box that simply cannot reach its server produces — would have wiped
+ *     a healthy agent's identity.
+ *
+ * Kept in lockstep with `is_upgrade_unauthorized` in
+ * the Hermes plugin's Python client.
+ *
+ * Exported for the unit test; not part of the public client API.
+ */
+export function isUpgradeUnauthorized(err: unknown): boolean {
+  const status = upgradeStatusOf(err);
+  if (status !== undefined) return status === 401;
+  const message =
+    typeof err === 'object' && err !== null && 'message' in err
+      ? String((err as { message?: unknown }).message ?? '')
+      : String(err ?? '');
+  // Covers every phrasing the real transports emit:
+  //   ws (Node)   "Unexpected server response: 401"
+  //   websockets  "server rejected WebSocket connection: HTTP 401"
+  //   partysocket "server rejected upgrade: 401"
+  return (
+    /\b(?:http|status(?:\s+code)?|code|response|upgrade|connection)\b[\s:=]*401\b/i.test(
+      message,
+    ) || /\b401\s+unauthorized\b/i.test(message)
+  );
+}
+
+/**
  * Wrap a WebSocket implementation so its constructor forwards
  * `headers` (and any future ClientOptions) as the third argument expected
  * by the `ws` library.
@@ -1520,6 +2002,7 @@ export class AgentControlClient {
 export function makeErrorSafeWebSocket(
   Base: typeof WebSocket,
   headers?: Record<string, string>,
+  onUpgradeError?: (err: Error) => void,
 ): typeof WebSocket {
   // `Wrapped` is a function DECLARATION (not a `const`-assigned function
   // expression) on purpose. It must be `new`-able — arrow functions cannot be
@@ -1550,8 +2033,24 @@ export function makeErrorSafeWebSocket(
     // (→ `onError`) and its reconnect then drives the claim to completion.
     // Guarded for non-EventEmitter impls (browser WebSocket / test doubles use
     // `addEventListener` and have no `.on`).
+    const observe = (value: unknown): void => {
+      const wrapped = value as { message?: unknown; error?: unknown };
+      const err =
+        value instanceof Error
+          ? value
+          : wrapped.error instanceof Error
+            ? wrapped.error
+            : new Error(
+                typeof wrapped.message === 'string'
+                  ? wrapped.message
+                  : String(value),
+              );
+      onUpgradeError?.(err);
+    };
     if (ws && typeof ws.on === 'function') {
-      ws.on('error', () => {});
+      ws.on('error', observe);
+    } else if (ws && typeof ws.addEventListener === 'function') {
+      ws.addEventListener('error', observe);
     }
     return ws;
   }

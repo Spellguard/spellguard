@@ -19,6 +19,7 @@
  * no-op rather than failing the teardown.
  */
 
+import { rmSync } from 'node:fs';
 import {
   type AuthSupersededCloseReason,
   createManagementClient,
@@ -32,7 +33,6 @@ import {
 } from '../lib/config-store';
 import { clearGitConfigEnv } from '../lib/env-file-writer';
 import { clearGhSessionConfig } from '../lib/gh-config-dir';
-import { clearGhTokenFile } from '../lib/gh-token-file';
 import { renderMessage } from '../lib/render-message';
 import { stopLocalDaemons } from '../lib/stop-daemons';
 
@@ -66,15 +66,20 @@ export interface SupersededWipeArgs {
   envFilePath?: string;
   /** Per-agent gh session dir whose pinned hosts.yml is cleared. */
   ghConfigDir?: string;
-  /** Daemon-maintained GH_TOKEN file (`<configDir>/gh-token`) to clear. */
-  ghTokenFile?: string;
+  /**
+   * LEGACY plaintext token file (`<configDir>/gh-token`) to unlink. Nothing
+   * writes it since #767 — the login-shell export it fed was removed because it
+   * froze `gh` on a start-time token — but a machine set up by an older plugin
+   * still carries one, and a superseded agent must not leave it on disk.
+   */
+  legacyGhTokenFile?: string;
   /** Override the credential-wipe core (tests). */
   markConfigSupersededImpl?: (message: string) => void;
   /** Override the env-file clear (tests). */
   clearGitConfigEnvImpl?: (envFilePath: string) => void;
   /** Override the gh-session clear (tests). */
   clearGhSessionConfigImpl?: (dir: string) => void;
-  /** Override the GH_TOKEN-file clear (tests). */
+  /** Override the legacy token-file unlink (tests). */
   clearGhTokenFileImpl?: (path: string) => void;
 }
 
@@ -120,11 +125,15 @@ export function wipeSupersededCredentials(args: SupersededWipeArgs): void {
       /* best-effort — dir may already be gone */
     }
   }
-  // 4. Drop the GH_TOKEN file so a `claude` startup auto-update can't keep
-  //    exporting the wiped token (mirrors the gh-session clear above).
-  if (args.ghTokenFile) {
+  // 4. Unlink a LEGACY plaintext token file left by an older plugin version, so
+  //    a superseded agent leaves no readable token behind (#767 stopped writing
+  //    it; this is one-shot cleanup, mirroring the gh-session clear above).
+  if (args.legacyGhTokenFile) {
     try {
-      (args.clearGhTokenFileImpl ?? clearGhTokenFile)(args.ghTokenFile);
+      (
+        args.clearGhTokenFileImpl ??
+        ((path: string) => rmSync(path, { force: true }))
+      )(args.legacyGhTokenFile);
     } catch {
       /* best-effort — file may already be gone */
     }

@@ -1,4 +1,5 @@
 import { type GitOp } from '../lib/git-command-parser';
+import type { GithubCredentialState } from '../lib/github-grant-generation';
 import { ObservationQueue } from '../lib/observation-emitter';
 import type { OperationType } from '../lib/observation-emitter';
 import { type ObserveResult } from '../lib/observation-pipeline';
@@ -9,6 +10,23 @@ export interface PreToolUseInput {
     remoteUrl?: string;
     agentId: string;
     scopedTokenId: string;
+    /**
+     * @deprecated Superseded by `githubCredentialState`, which distinguishes the
+     * four ways there is no usable credential. Still honoured when the newer
+     * field is absent. False when config is identity-only, locally revoked, or
+     * V5 is unusable.
+     */
+    localCredentialAvailable?: boolean;
+    /**
+     * The credential answer for this command's GitHub targets. `expired` passes
+     * through: git runs, the Spellguard credential helper refreshes on use, and a
+     * token that cannot be refreshed fails closed at git or at GitHub. Blocking
+     * it here made the dead-daemon recovery path unreachable from a coding-agent
+     * session (#781).
+     */
+    githubCredentialState?: GithubCredentialState;
+    /** Why attribution failed, when `githubCredentialState` is `unattributed`. */
+    githubTargetReason?: string;
     clientSessionId: string;
     endpoint: string;
     agentSecret: string;
@@ -48,6 +66,22 @@ export declare function detectGitOperation(toolName: string, args: string[]): Op
  * Kept exported so tests and legacy callers can exercise observation logic
  * without triggering the status-check probe. New call sites should prefer
  * `runPreToolUse`, which is the runtime entrypoint (see plugin.json).
+ */
+/**
+ * KNOWN ATTRIBUTION GAP (#781, item 4). When `githubCredentialState` is
+ * `expired`, the scoped token id on this observation is the id of the grant the
+ * pull-on-use refresh is about to SUPERSEDE — git runs next, the credential
+ * helper mints a successor, and the push travels on that successor's token. The
+ * observation therefore names the predecessor.
+ *
+ * It is not corrected after the fact. PostToolUse re-reads the V5 generation
+ * from disk in a fresh process, so it would see the successor id, but it emits
+ * an observation only for `commit`; there is no post-push observation to carry
+ * the corrected id, and adding a second push observation would double-count
+ * every push. Recording the predecessor id is also the useful half of the fact:
+ * it is the id the server can follow to the successor it minted. Closing the
+ * gap properly needs a refresh-aware field on the observation contract, which
+ * is a server-side change and out of this plugin's scope.
  */
 export declare function emitPreToolUseObservation(input: PreToolUseInput): Promise<ObserveResult | null>;
 /**

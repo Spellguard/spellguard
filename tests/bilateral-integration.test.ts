@@ -248,7 +248,7 @@ describe.skipIf(!serverCheck.running)('Bilateral Integration Tests', () => {
       expect(stats.backends.commitment).toBeDefined();
       expect(stats.backends.archive).toBeDefined();
 
-      expect(['memory', 'rekor']).toContain(stats.backends.commitment);
+      expect(['memory', 'rekor', 'none']).toContain(stats.backends.commitment);
       expect(['memory', 's3']).toContain(stats.backends.archive);
     });
   });

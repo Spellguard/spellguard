@@ -1,0 +1,140 @@
+{
+  "scheme": "spellguard-delivery-v1",
+  "note": "Test material only. Regenerate with generate-v1-vectors.ts.",
+  "now": 1790668800000,
+  "maxSkewMs": 300000,
+  "verifierPrivateKeyHex": "46c03816a3743c78734d7924f17a8828021dce1dd8e726b1a1ece1caa1f26fbd",
+  "verifierPublicKeyHex": "7ae626572bb876469576e8a24a21615cd11fe1cf58aa5f986b3d740f1b0d3926",
+  "keyId": "dc5f1a4c6bf01a12",
+  "otherPublicKeyHex": "f73508994fa8856b6bf25f3f952526d747754f592b7ddb2c4cfc0d2cec21ffdf",
+  "cases": [
+    {
+      "name": "valid",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "signingString": "spellguard-delivery-v1\nagent-b\n3ce5b83054e23cf8adc79a43749336d3166e30af7fe31501c81eb1c92018fc7b\n1790668798000\n00112233445566778899aabbccddeeff\n48504c2770c87d7fda1ba019a2a31b9e98167b14534b4f5197c7b0850fbf0054",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790668798000",
+        "X-Spellguard-Delivery-Nonce": "00112233445566778899aabbccddeeff",
+        "X-Spellguard-Delivery-Signature": "fee4f84b5a3c6f547af33d14d32f9290e928d59e52fbbd1082985e3b3b59b2ecb7e1b8ffffdfea3f9607bbfd49a96b02aa790b681668222e129e1d694d325501"
+      },
+      "expect": "accept"
+    },
+    {
+      "name": "tampered_body",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"mallory\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790668798000",
+        "X-Spellguard-Delivery-Nonce": "00112233445566778899aabbccddeeff",
+        "X-Spellguard-Delivery-Signature": "fee4f84b5a3c6f547af33d14d32f9290e928d59e52fbbd1082985e3b3b59b2ecb7e1b8ffffdfea3f9607bbfd49a96b02aa790b681668222e129e1d694d325501"
+      },
+      "expect": "bad_signature"
+    },
+    {
+      "name": "other_recipient",
+      "recipient": "agent-c",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790668798000",
+        "X-Spellguard-Delivery-Nonce": "00112233445566778899aabbccddeeff",
+        "X-Spellguard-Delivery-Signature": "fee4f84b5a3c6f547af33d14d32f9290e928d59e52fbbd1082985e3b3b59b2ecb7e1b8ffffdfea3f9607bbfd49a96b02aa790b681668222e129e1d694d325501"
+      },
+      "expect": "bad_signature"
+    },
+    {
+      "name": "other_channel_token",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-c-9",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790668798000",
+        "X-Spellguard-Delivery-Nonce": "00112233445566778899aabbccddeeff",
+        "X-Spellguard-Delivery-Signature": "fee4f84b5a3c6f547af33d14d32f9290e928d59e52fbbd1082985e3b3b59b2ecb7e1b8ffffdfea3f9607bbfd49a96b02aa790b681668222e129e1d694d325501"
+      },
+      "expect": "bad_signature"
+    },
+    {
+      "name": "stale_timestamp",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "signingString": "spellguard-delivery-v1\nagent-b\n3ce5b83054e23cf8adc79a43749336d3166e30af7fe31501c81eb1c92018fc7b\n1790668440000\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n48504c2770c87d7fda1ba019a2a31b9e98167b14534b4f5197c7b0850fbf0054",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790668440000",
+        "X-Spellguard-Delivery-Nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "X-Spellguard-Delivery-Signature": "a098b83165c30e99dacd45f2c1257bd72f3b0dcdf44994f989b478a75b3e2a652fa7227c74105b9c83df901dc915b121875d9b3eb96b629c5180c8cb4a1cbe0c"
+      },
+      "expect": "stale"
+    },
+    {
+      "name": "future_timestamp",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "signingString": "spellguard-delivery-v1\nagent-b\n3ce5b83054e23cf8adc79a43749336d3166e30af7fe31501c81eb1c92018fc7b\n1790669160000\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n48504c2770c87d7fda1ba019a2a31b9e98167b14534b4f5197c7b0850fbf0054",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790669160000",
+        "X-Spellguard-Delivery-Nonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "X-Spellguard-Delivery-Signature": "f4f0487bac4e4a6a77af9ed9ebcf168532f9694962e698d83ca2ccd0d4d9de38095dcbd17a2b4d71e88babbaa83d39856427a4dcd2120a39da3d02499dbb6902"
+      },
+      "expect": "stale"
+    },
+    {
+      "name": "unknown_key",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "signingString": "spellguard-delivery-v1\nagent-b\n3ce5b83054e23cf8adc79a43749336d3166e30af7fe31501c81eb1c92018fc7b\n1790668798000\ncccccccccccccccccccccccccccccccc\n48504c2770c87d7fda1ba019a2a31b9e98167b14534b4f5197c7b0850fbf0054",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v1",
+        "X-Spellguard-Delivery-Key": "240fa64773dbcee5",
+        "X-Spellguard-Delivery-Timestamp": "1790668798000",
+        "X-Spellguard-Delivery-Nonce": "cccccccccccccccccccccccccccccccc",
+        "X-Spellguard-Delivery-Signature": "42b9b3dbf9f71ca8b2f2e2761ca2f9786fa8cc28b38c2523373c0fa8e5d66eb628b0f2045a9ebff30237374e1c4bb480e78ae1bd65b3c45dd48baaf4c696e306"
+      },
+      "expect": "unknown_key"
+    },
+    {
+      "name": "missing_headers",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "headers": {},
+      "expect": "missing"
+    },
+    {
+      "name": "unsupported_version",
+      "recipient": "agent-b",
+      "channelToken": "chan-token-b-1",
+      "body": "{\"encryptedMessage\":\"AQ-test-ciphertext\",\"senderId\":\"agent-a\",\"messageId\":\"msg-1\",\"timestamp\":1790668799000}",
+      "headers": {
+        "X-Spellguard-Delivery-Auth": "v0",
+        "X-Spellguard-Delivery-Key": "dc5f1a4c6bf01a12",
+        "X-Spellguard-Delivery-Timestamp": "1790668798000",
+        "X-Spellguard-Delivery-Nonce": "00112233445566778899aabbccddeeff",
+        "X-Spellguard-Delivery-Signature": "fee4f84b5a3c6f547af33d14d32f9290e928d59e52fbbd1082985e3b3b59b2ecb7e1b8ffffdfea3f9607bbfd49a96b02aa790b681668222e129e1d694d325501"
+      },
+      "expect": "unsupported_version"
+    }
+  ],
+  "agentKeyDerivation": {
+    "agentSecret": "agt_delivery_auth_vector_secret",
+    "x25519PublicKeyHex": "801d783922edbfd5f08cf6761249dd11347c5b4e7174310285d053f7943a0a39"
+  }
+}

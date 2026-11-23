@@ -192,13 +192,29 @@ describe('External Engine', () => {
   // ─── Error handling ─────────────────────────────────────────
 
   describe('error handling', () => {
-    it('should silently permit on HTTP error when failBehavior=allow (default)', async () => {
+    it('should deny on HTTP error by default', async () => {
       handler = async (_req, res) => {
         res.writeHead(500);
         res.end('Internal Server Error');
       };
 
       const binding = makeExternalBinding();
+      const results = await evaluatePolicies([binding], 'Content');
+
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].responseLevel).toBe('block');
+      expect(results[0].detections).toHaveLength(1);
+      expect(results[0].detections[0].type).toBe('external-error');
+      expect(results[0].detections[0].message).toContain('HTTP 500');
+    });
+
+    it('should permit on HTTP error when failBehavior=allow is explicit', async () => {
+      handler = async (_req, res) => {
+        res.writeHead(500);
+        res.end('Internal Server Error');
+      };
+
+      const binding = makeExternalBinding({ failBehavior: 'allow' });
       const results = await evaluatePolicies([binding], 'Content');
 
       expect(results[0].decision).toBe('permit');
@@ -241,15 +257,17 @@ describe('External Engine', () => {
       warnSpy.mockRestore();
     });
 
-    it('should handle missing externalEndpoint gracefully', async () => {
+    it('should deny when externalEndpoint is missing by default', async () => {
       const binding = makeExternalBinding({
         externalEndpoint: undefined,
       });
 
       const results = await evaluatePolicies([binding], 'Content');
-      // Default failBehavior=allow → permit
-      expect(results[0].decision).toBe('permit');
-      expect(results[0].detections).toHaveLength(0);
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].responseLevel).toBe('block');
+      expect(results[0].detections).toHaveLength(1);
+      expect(results[0].detections[0].type).toBe('external-error');
+      expect(results[0].detections[0].message).toContain('No externalEndpoint');
     });
 
     it('should deny with missing endpoint when failBehavior=block', async () => {
@@ -269,7 +287,7 @@ describe('External Engine', () => {
   // ─── Timeout handling ─────────────────────────────────────────
 
   describe('timeout', () => {
-    it('should timeout and permit when failBehavior=allow', async () => {
+    it('should timeout and deny by default', async () => {
       handler = async (_req, _res) => {
         // Never respond — let it timeout
         await new Promise((resolve) => setTimeout(resolve, 10000));
@@ -280,8 +298,11 @@ describe('External Engine', () => {
       });
 
       const results = await evaluatePolicies([binding], 'Content');
-      expect(results[0].decision).toBe('permit');
-      expect(results[0].detections).toHaveLength(0);
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].responseLevel).toBe('block');
+      expect(results[0].detections).toHaveLength(1);
+      expect(results[0].detections[0].type).toBe('external-error');
+      expect(results[0].detections[0].message).toContain('timed out');
     });
 
     it('should timeout and deny when failBehavior=block', async () => {
@@ -304,7 +325,7 @@ describe('External Engine', () => {
   // ─── Malformed response handling ──────────────────────────────
 
   describe('malformed response', () => {
-    it('should silently permit on non-array response', async () => {
+    it('should deny on non-array response by default', async () => {
       handler = async (_req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'not an array' }));
@@ -313,8 +334,11 @@ describe('External Engine', () => {
       const binding = makeExternalBinding();
       const results = await evaluatePolicies([binding], 'Content');
 
-      expect(results[0].decision).toBe('permit');
-      expect(results[0].detections).toHaveLength(0);
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].responseLevel).toBe('block');
+      expect(results[0].detections).toHaveLength(1);
+      expect(results[0].detections[0].type).toBe('external-error');
+      expect(results[0].detections[0].message).toContain('non-array');
     });
 
     it('should filter out malformed detection objects', async () => {
@@ -349,9 +373,11 @@ describe('External Engine', () => {
       const binding = makeExternalBinding();
       const results = await evaluatePolicies([binding], 'Content');
 
-      // Default failBehavior=allow → permit
-      expect(results[0].decision).toBe('permit');
-      expect(results[0].detections).toHaveLength(0);
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].responseLevel).toBe('block');
+      expect(results[0].detections).toHaveLength(1);
+      expect(results[0].detections[0].type).toBe('external-error');
+      expect(results[0].detections[0].message).toContain('request failed');
     });
   });
 

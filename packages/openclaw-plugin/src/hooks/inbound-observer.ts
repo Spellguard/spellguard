@@ -10,7 +10,6 @@ import type { HookConfig } from './types';
  * internal hooks) but currently cannot cancel messages on stock OpenClaw.
  *
  *   PR: https://github.com/openclaw/openclaw/pull/53343
- *   Branch: nickfujita/openclaw#feat/message-received-blocking-opt-in
  *
  * export function createInboundGuard(config: HookConfig) {
  *   return async (event: {

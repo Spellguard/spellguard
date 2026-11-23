@@ -402,7 +402,9 @@ async def chat(request: Request) -> JSONResponse:
     except Exception as exc:
         print(f"[Agent PB] Error: {exc}")
         return JSONResponse(
-            {"error": "Failed to process request", "details": str(exc)},
+            # The exception text stays in the server log above; a client only
+            # gets the generic message (CodeQL py/stack-trace-exposure).
+            {"error": "Failed to process request"},
             status_code=500,
         )
 

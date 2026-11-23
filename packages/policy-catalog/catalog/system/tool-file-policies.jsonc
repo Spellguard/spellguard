@@ -1,3 +1,7 @@
+// File TOOL policies — scoped `tools` ON PURPOSE (see tool-database-policies.jsonc
+// for the full rationale): these engines read filesystem paths out of a tool
+// call's arguments. Unscoped, they also govern 'messages' and 'llm', where a path
+// heuristic fires on ordinary prose.
 {
   "policies": [
     {
@@ -10,6 +14,7 @@
       "failBehavior": "block",
       "config": {},
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 96
@@ -32,6 +37,7 @@
         "sensitivity": "medium"
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 92

@@ -17,7 +17,20 @@
 // on every invocation.
 
 import { execSync } from 'node:child_process';
-import { type SpellguardConfig, readConfig } from './config-store';
+import {
+  type SpellguardConfig,
+  defaultConfigDir,
+  readConfig,
+} from './config-store';
+import {
+  type CommandGithubTargets,
+  attributeCommandGithubTargets,
+} from './github-command-target';
+import {
+  type GithubCredentialState,
+  resolveActiveGithubGrantCredential,
+  resolveLegacyGithubCredential,
+} from './github-grant-generation';
 
 export interface ClaudeCodeHookPayload {
   session_id?: string;
@@ -49,6 +62,21 @@ export interface AdaptedHookInput {
   remoteUrl?: string;
   agentId: string;
   scopedTokenId: string;
+  /**
+   * @deprecated Derived from `githubCredentialState`; kept so callers that
+   * predate the five-state representation keep working. True for `available`
+   * AND `expired` — an expired grant still has a scoped token id, and the
+   * refresh that replaces it only happens if git is allowed to run.
+   */
+  localCredentialAvailable: boolean;
+  /** The authoritative credential answer for this command's GitHub targets. */
+  githubCredentialState: GithubCredentialState;
+  /**
+   * Why attribution failed, when `githubCredentialState` is `unattributed`.
+   * Surfaced verbatim in the hook's block message so the operator is told what
+   * could not be attributed instead of being sent after a phantom credential.
+   */
+  githubTargetReason?: string;
   agentSecret: string;
   clientSessionId: string;
   /** Full `${spellguardBaseUrl}/v1/observations` URL. */
@@ -67,6 +95,71 @@ export interface AdaptHookPayloadOptions {
   readConfigImpl?: typeof readConfig;
   /** Test seam: override the git-remote probe. */
   execImpl?: (cmd: string, opts: { cwd: string; encoding: 'utf8' }) => string;
+  /** Test seam: override the framework credential directory. */
+  configDir?: string;
+}
+
+interface ResolvedGithubCredential {
+  state: GithubCredentialState;
+  scopedTokenId: string;
+}
+
+/** Resolve one GitHub remote: V5 authority first, legacy V4 only when absent. */
+function resolveOneRemote(
+  config: SpellguardConfig,
+  configDir: string,
+  remoteUrl: string,
+): ResolvedGithubCredential {
+  const v5 = resolveActiveGithubGrantCredential(
+    configDir,
+    remoteUrl,
+    config.agentId,
+  );
+  if (v5.state === 'available' || v5.state === 'expired') {
+    return { state: v5.state, scopedTokenId: v5.scopedTokenId };
+  }
+  if (v5.state !== 'absent') return { state: v5.state, scopedTokenId: '' };
+  const v4 = resolveLegacyGithubCredential(config, configDir, remoteUrl);
+  return v4.state === 'available'
+    ? { state: 'available', scopedTokenId: v4.scopedTokenId }
+    : { state: 'absent', scopedTokenId: '' };
+}
+
+function blocks(state: GithubCredentialState): boolean {
+  return (
+    state === 'absent' || state === 'unavailable' || state === 'unattributed'
+  );
+}
+
+/**
+ * Resolve the credential answer for EVERY GitHub target this command mutates.
+ * One unresolvable target blocks the whole command — a chain that pushes to two
+ * repositories needs a grant for both — while the scoped token id reported for
+ * the observation stays the one the observed remote belongs to.
+ */
+function resolveGithubCredential(
+  config: SpellguardConfig,
+  configDir: string,
+  targets: CommandGithubTargets,
+  remoteUrl: string | undefined,
+): ResolvedGithubCredential {
+  if (config.revoked) return { state: 'unavailable', scopedTokenId: '' };
+  if (targets.state === 'unattributed') {
+    return { state: 'unattributed', scopedTokenId: '' };
+  }
+  const remotes =
+    targets.state === 'resolved'
+      ? targets.remoteUrls
+      : remoteUrl
+        ? [remoteUrl]
+        : [];
+  if (remotes.length === 0) return { state: 'unattributed', scopedTokenId: '' };
+  const resolved = remotes.map((url) =>
+    resolveOneRemote(config, configDir, url),
+  );
+  const blocking = resolved.find((entry) => blocks(entry.state));
+  if (blocking) return { state: blocking.state, scopedTokenId: '' };
+  return resolved[0];
 }
 
 /**
@@ -82,15 +175,6 @@ export function adaptHookPayload(
   const reader = opts.readConfigImpl ?? readConfig;
   const { config } = reader();
   if (!config) return null;
-  if (config.revoked) return null;
-  // Identity-only configs (bootstrap done, GitHub not yet connected
-  // through the credential channel) cannot observe — the /v1/observations
-  // route keys evidence by scoped_token_id. Skip silently and let the
-  // operator complete the dashboard's GitHub-App install; the credential
-  // daemon will write `scopedTokenId` to disk once the credential lands,
-  // and the next hook invocation will pick it up.
-  if (!config.scopedTokenId) return null;
-  const scopedTokenIdResolved = config.scopedTokenId;
 
   const toolName = payload.tool_name ?? '';
   const cwd = payload.cwd ?? process.cwd();
@@ -106,16 +190,26 @@ export function adaptHookPayload(
     ((c: string, o: { cwd: string; encoding: 'utf8' }) =>
       execSync(c, o).toString());
 
-  let remoteUrl: string | undefined;
-  try {
-    remoteUrl = exec('git config --get remote.origin.url', {
-      cwd,
-      encoding: 'utf8',
-    }).trim();
-    if (!remoteUrl) remoteUrl = undefined;
-  } catch {
-    // not a git repo / no origin — leave undefined; downstream skips.
-  }
+  const attribution = attributeCommandGithubTargets(
+    toolName,
+    toolArgs,
+    cwd,
+    exec,
+  );
+  const remoteUrl = attribution.remoteUrl;
+
+  const credential = resolveGithubCredential(
+    config,
+    opts.configDir ?? defaultConfigDir(),
+    attribution.targets,
+    remoteUrl,
+  );
+  // Keep readable-but-unusable states flowing to PreToolUse so mutation is
+  // denied locally before an empty scoped token id can reach the server. An
+  // EXPIRED grant is not one of them: it still identifies the credential the
+  // pull-on-use refresh supersedes, and blocking it made that refresh
+  // unreachable from inside a coding-agent session (#781).
+  const localCredentialAvailable = !blocks(credential.state);
 
   const baseUrl = config.spellguardBaseUrl.replace(/\/$/, '');
 
@@ -125,7 +219,13 @@ export function adaptHookPayload(
     cwd,
     remoteUrl,
     agentId: config.agentId,
-    scopedTokenId: scopedTokenIdResolved,
+    scopedTokenId: credential.scopedTokenId,
+    localCredentialAvailable,
+    githubCredentialState: credential.state,
+    githubTargetReason:
+      attribution.targets.state === 'unattributed'
+        ? attribution.targets.reason
+        : undefined,
     agentSecret: config.agentSecret,
     clientSessionId: payload.session_id ?? '',
     endpoint: `${baseUrl}/v1/observations`,

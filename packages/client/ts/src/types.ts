@@ -1,7 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { UnilateralSendResult } from '@spellguard/amp';
-import type { AgentCard } from '@spellguard/ctls';
+import type { AgentCard, DeliveryNonceStore } from '@spellguard/ctls';
+import type { AttestationState } from './attestation';
+
+/**
+ * Platform identity providers the Verifier can attest an agent against.
+ *
+ * Mirrors management's `AttestationProvider`
+ * (closed source) and the
+ * `AttestationProviderSchema` Zod enum it is validated by, member for member.
+ * Every entry has a registered server-side verifier in
+ * `workers/services/identity-verifiers/`, so a member missing here is an agent
+ * that cannot declare an identity the control plane already knows how to check.
+ * Add to both sides together.
+ */
+export type AttestationProvider =
+  | 'aws'
+  | 'azure'
+  | 'azure-maa'
+  | 'clerk'
+  | 'gcp'
+  | 'salesforce'
+  | 'spiffe'
+  | 'verifier'
+  | 'nitro-verifier'
+  | 'aws-agentcore'
+  | 'better-auth'
+  | 'jwk'
+  | 'oidc'
+  | 'vestauth'
+  | 'x509';
 
 /**
  * Configuration for the Spellguard client.
@@ -15,8 +44,25 @@ export interface SpellguardConfig {
   selfUrl: string;
   /** SHA256 hash of this agent's code (for attestation) */
   codeHash: string;
-  /** Expected SHA384 hash of Verifier Docker image (for bidirectional attestation) */
-  expectedVerifierImageHash: string;
+  /**
+   * Expected SHA384 hash of the Verifier Docker image (for bidirectional
+   * attestation).
+   *
+   * OPTIONAL because the management server may not have recorded one yet. It
+   * is then left undefined rather than filled with a placeholder, and channel
+   * creation fails closed with `verifier_image_hash_unconfigured` — absent
+   * attestation config must never read as "attestation passed".
+   */
+  expectedVerifierImageHash?: string;
+  /**
+   * The Verifier session key management attested (#1259), from discovery's
+   * `verifierPublicKey`. When set, the Verifier's attestation document and its
+   * registration response must both carry exactly this key; a mismatch
+   * re-runs discovery once, then fails closed with `verifier_key_mismatch`.
+   * Always set on the managed (discovery) path; optional for a directly
+   * configured agent.
+   */
+  expectedVerifierPublicKey?: string;
   /** Agent secret for Verifier registration authentication (validated by management server) */
   agentSecret?: string;
   /** Ed25519 private key (hex) for signing evidence — from management server */
@@ -32,6 +78,31 @@ export interface SpellguardConfig {
   managementUrl?: string;
   /** Agent card for A2A discovery */
   agentCard: AgentCard;
+  /**
+   * Opt OUT of the fail-closed default for tool policy checks
+   * (`checkToolPolicy`, and every `spellguardTool` / LangChain / OpenAI
+   * wrapper built on it).
+   *
+   * Default (`undefined` / `false`) is fail CLOSED: when the check cannot
+   * complete — Verifier unreachable, request timed out, request refused, no
+   * channel established, or the client was never configured — the check
+   * returns `{ effect: 'block' }` and the wrapped tool does not run.
+   *
+   * **Setting this to `true` means the tool call RUNS UNCHECKED whenever the
+   * policy check cannot complete.** Every policy bound to that tool is
+   * silently skipped for the duration of the outage; there is no other signal
+   * to the caller. Availability is being bought with enforcement.
+   *
+   * It does NOT overrule the Verifier. A response carrying an explicit
+   * `effect` is a decision, and is honoured either way — including the
+   * Verifier's own `503 { effect: 'block' }` when it cannot load policy data.
+   *
+   * Consumers whose config the SDK never sees (`createSpellguard()` callers,
+   * or processes that wrap tools without calling `configure()` at all) can set
+   * `SPELLGUARD_TOOL_POLICY_FAIL_OPEN=true` instead. This field wins when both
+   * are set.
+   */
+  failOpen?: boolean;
 }
 
 /**
@@ -62,24 +133,16 @@ export interface SpellguardDiscoveryConfig {
   /** Platform attestation providers for platform/dual auth mode */
   platformAttestation?: {
     providers: Array<{
-      provider:
-        | 'aws'
-        | 'azure'
-        | 'azure-maa'
-        | 'better-auth'
-        | 'gcp'
-        | 'jwk'
-        | 'nitro-verifier'
-        | 'oidc'
-        | 'salesforce'
-        | 'spiffe'
-        | 'verifier'
-        | 'aws-agentcore'
-        | 'vestauth'
-        | 'x509';
+      provider: AttestationProvider;
       getToken: () => Promise<string>;
     }>;
   };
+  /**
+   * Opt OUT of the fail-closed default for tool policy checks. Carried onto
+   * the resolved `SpellguardConfig` — see `SpellguardConfig.failOpen` for what
+   * enabling it costs.
+   */
+  failOpen?: boolean;
 }
 
 /**
@@ -104,8 +167,15 @@ export interface UnilateralSendOptions {
  * This is the client's view of a channel with methods for sending messages.
  */
 export interface ClientChannel {
-  /** Send a message to another agent through Verifier */
-  send(recipient: string, payload: unknown): Promise<unknown>;
+  /** Send a message to another agent through Verifier.
+   *  `options.timeoutMs` overrides the default 120s send timeout — the peer
+   *  fan-out passes a shorter, budget-derived value so a wedged send can't
+   *  blow the turn past the proxy's /chat timeout. */
+  send(
+    recipient: string,
+    payload: unknown,
+    options?: { timeoutMs?: number },
+  ): Promise<unknown>;
   /** Send a prompt with agent context through Verifier */
   sendWithAgentContext(options: {
     originalPrompt: string;
@@ -195,24 +265,21 @@ export interface ManagedConfig {
   /** Platform attestation providers for platform/dual auth mode */
   platformAttestation?: {
     providers: Array<{
-      provider:
-        | 'aws'
-        | 'azure'
-        | 'azure-maa'
-        | 'better-auth'
-        | 'gcp'
-        | 'jwk'
-        | 'nitro-verifier'
-        | 'oidc'
-        | 'salesforce'
-        | 'spiffe'
-        | 'verifier'
-        | 'aws-agentcore'
-        | 'vestauth'
-        | 'x509';
+      provider: AttestationProvider;
       getToken: () => Promise<string>;
     }>;
   };
+  /**
+   * Opt OUT of the fail-closed default for tool policy checks. Carried onto
+   * the resolved `SpellguardConfig` — see `SpellguardConfig.failOpen` for what
+   * enabling it costs.
+   *
+   * This is the ONLY opt-out a Cloudflare Worker agent has:
+   * `SPELLGUARD_TOOL_POLICY_FAIL_OPEN` is read off `process.env`, which
+   * workerd does not populate from `vars` at the compatibility dates the
+   * agents pin.
+   */
+  failOpen?: boolean;
 }
 
 /**
@@ -232,6 +299,17 @@ export interface DirectConfig {
   expectedVerifierImageHash: string;
   /** Optional agent secret */
   agentSecret?: string;
+  /**
+   * Opt OUT of the fail-closed default for tool policy checks. Carried onto
+   * the resolved `SpellguardConfig` — see `SpellguardConfig.failOpen` for what
+   * enabling it costs.
+   *
+   * This is the ONLY opt-out a Cloudflare Worker agent has:
+   * `SPELLGUARD_TOOL_POLICY_FAIL_OPEN` is read off `process.env`, which
+   * workerd does not populate from `vars` at the compatibility dates the
+   * agents pin.
+   */
+  failOpen?: boolean;
 }
 
 /**
@@ -261,4 +339,47 @@ export interface SpellguardOptions<E extends object = object, M = unknown> {
    * discoverAndConfigure complete).
    */
   onInitialized?: (env: E) => void | Promise<void>;
+  /**
+   * Signed deliveries (#1244). `/_spellguard/receive` verifies every delivery
+   * against the key from this agent's attested registration, and refuses an
+   * unsigned or invalid one when that registration advertised
+   * `deliveryAuth: 'v1'` (report-only otherwise). Replays are caught by an
+   * in-process nonce cache; a deployment that runs several receivers (Workers
+   * isolates, replicas) passes a shared `nonceStore` to make that strict.
+   */
+  deliveryAuth?: {
+    nonceStore?: DeliveryNonceStore;
+  };
+  /**
+   * The attestation state (configuration, discovery, Verifier channel) this
+   * instance runs in. Omitted, the instance owns a fresh one. Pass one when
+   * the same agent also acts outside this instance's requests in the same
+   * process, a scheduled job sending as it, say, and run that code in the same
+   * state with `runWithAttestationState`. Both then share one Verifier
+   * channel. The Verifier keeps one channel token per agent, so two states
+   * for one agent each register and replace the other's token.
+   */
+  attestationState?: AttestationState;
+}
+
+/**
+ * A file sent with an agent-to-agent message, as the `attachments` field of
+ * the payload object passed to `channel.send`. The Verifier reads each one on
+ * the recipient's inbound leg: a PDF's text layer is extracted, checked by the
+ * recipient's inbound message policies, and recorded in the recipient's
+ * session for the session policies. At most 4 per message and 1 MB decoded
+ * each; one over a limit is recorded as unreadable, never extracted.
+ */
+export interface MessageAttachment {
+  /** File name, shown as the document's label. */
+  name: string;
+  /** Media type; `application/pdf` is the one the Verifier reads today. */
+  mediaType: string;
+  /** The file, base64-encoded. */
+  data: string;
+}
+
+/** A payload object that carries attachments. */
+export interface WithAttachments {
+  attachments?: MessageAttachment[];
 }

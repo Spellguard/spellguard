@@ -45,6 +45,25 @@ export interface EnsureDaemonArgs {
      */
     configDir?: string;
 }
+/** Resolve the daemon script path relative to this module's install location. */
+export declare function daemonScriptPath(): string;
+export type DaemonTransportState = 'connecting' | 'connected' | 'error';
+export type DaemonCredentialState = 'missing' | 'valid' | 'near_expiry' | 'refresh_pending' | 'expired' | 'revoked';
+export declare function daemonArtifactId(scriptPath?: string): string;
+export declare function startDaemonHealthReporter(args: {
+    agentId: string;
+    configDir: string;
+    scriptPath: string;
+    artifactId: string;
+    instanceId: string;
+    credentialState: DaemonCredentialState;
+    heartbeatIntervalMs?: number;
+}): {
+    markReady: () => void;
+    setTransport: (state: DaemonTransportState, error?: string) => void;
+    setCredentialState: (state: DaemonCredentialState) => void;
+    close: () => void;
+};
 /**
  * Start the persistent credential daemon for `config.agentId` unless a live
  * one is already registered in the PID file. The daemon is the sole consumer

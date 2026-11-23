@@ -169,14 +169,16 @@ def might_contain_agent_reference(prompt: str) -> bool:
     lower_prompt = prompt.lower()
 
     # Quick checks for common patterns
-    if re.search(r"@[a-z0-9]+-[a-z0-9]", lower_prompt, re.IGNORECASE):
+    # Bounded quantifiers: unbounded `[a-z0-9]+` retried from every offset is
+    # quadratic on long alphanumeric runs (CodeQL py/polynomial-redos).
+    if re.search(r"@[a-z0-9]{1,64}-[a-z0-9]", lower_prompt, re.IGNORECASE):
         return True
     if re.search(r"agent[\s-][a-z0-9]", lower_prompt, re.IGNORECASE):
         return True
-    if re.search(r"[a-z0-9]+-agent", lower_prompt, re.IGNORECASE):
+    if re.search(r"[a-z0-9]{1,64}-agent", lower_prompt, re.IGNORECASE):
         return True
     if re.search(
-        r"(?:from|to|ask|tell|consult)\s+@?[a-z0-9]+-[a-z0-9]",
+        r"(?:from|to|ask|tell|consult)\s{1,20}@?[a-z0-9]{1,64}-[a-z0-9]",
         lower_prompt,
         re.IGNORECASE,
     ):
@@ -206,7 +208,7 @@ def _detect_agent_references_pattern(prompt: str) -> list[str]:
             agents.append(agent_name)
 
     # Pattern: "the X-agent" or "X-agent"
-    suffix_pattern = re.compile(r"(?:the\s+)?([a-z0-9]+)-agent", re.IGNORECASE)
+    suffix_pattern = re.compile(r"(?:the\s+)?([a-z0-9]{1,64})-agent", re.IGNORECASE)
     for match in suffix_pattern.finditer(lower_prompt):
         agent_name = f"{match.group(1).lower()}-agent"
         if agent_name not in agents:

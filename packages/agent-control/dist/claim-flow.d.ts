@@ -39,9 +39,9 @@ export interface RunManagedBootstrapOptions {
      */
     env?: NodeJS.ProcessEnv;
     /**
-     * Override the IMDS fetcher. Defaults to a 1500 ms `fetch` against
-     * `http://169.254.169.254/latest/meta-data/instance-id`. Tests pass a
-     * stub that returns `null` to simulate "not on AWS".
+     * Override the IMDS fetcher. Defaults to {@link defaultFetchInstanceId}
+     * (IMDS v2 with a v1 fallback, 1500 ms per hop). Tests pass a stub that
+     * returns `null` to simulate "not on AWS".
      */
     fetchInstanceId?: () => Promise<string | null>;
     /**
@@ -73,6 +73,29 @@ export interface RunManagedBootstrapOptions {
  * succeeds. Truncates to `INSTANCE_FINGERPRINT_MAX_LEN` characters.
  */
 export declare function resolveInstanceFingerprint(opts?: RunManagedBootstrapOptions): Promise<string>;
+/**
+ * Default IMDS fetcher: **IMDS v2 first, v1 fallback**.
+ *
+ * Lightsail blueprints (proven live on `openclaw_ls_1_0`: the tokenless v1
+ * GET returns 401) and hardened EC2 launch templates set
+ * `HttpTokens=required`, so the instance-id is only readable with a v2
+ * session token. Sequence:
+ *
+ *   1. PUT `/latest/api/token`. A NETWORK failure here (timeout / refused)
+ *      means there is no IMDS endpoint at all (non-AWS host) — return `null`
+ *      immediately so non-AWS startup pays a single 1.5 s timeout, exactly
+ *      as the old v1-only fetcher did.
+ *   2. Token granted → GET the instance-id with the token header.
+ *   3. Token rejected (v1-only IMDS builds) or the v2 read failed → fall back
+ *      to the tokenless v1 GET.
+ *
+ * Returns `null` on any failure. The caller treats `null` the same as a
+ * thrown error: fall through to the next detection method.
+ *
+ * Exported for unit tests (which inject `fetchImpl`); production callers go
+ * through `resolveInstanceFingerprint`.
+ */
+export declare function defaultFetchInstanceId(fetchImpl?: typeof fetch): Promise<string | null>;
 /**
  * Open the agent-control socket on the managed-provisioning bootstrap path
  * and resolve with the `credential_delivered{cause:'bootstrap'}` payload.

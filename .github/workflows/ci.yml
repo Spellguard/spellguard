@@ -1,5 +1,9 @@
 name: CI
 
+# Least-privilege token for every job (CodeQL actions/missing-workflow-permissions).
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:

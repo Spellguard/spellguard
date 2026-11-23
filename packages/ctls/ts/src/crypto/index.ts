@@ -16,3 +16,11 @@ export {
 } from './ephemeral';
 
 export { sign, verify, generateKeyPair, derivePublicKey } from './signing';
+
+export {
+  type EnvelopeSigner,
+  envelopeKeyId,
+  sha256Hex,
+  signEnvelope,
+  verifyEnvelope,
+} from './signed-envelope';

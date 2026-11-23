@@ -1,0 +1,60 @@
+{
+  "format": 1,
+  "exported_at": "2026-11-10T05:12:04.000Z",
+  "bucket": "spellguard-audit-checkpoints-test",
+  "region": "us-west-2",
+  "generation": "00000000-0000-4000-8000-0000000000a0",
+  "stream": "00000000-0000-4000-8000-0000000000b0",
+  "prefix": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/",
+  "urls_expire_at": "2026-11-17T05:12:04.000Z",
+  "listing": [
+    "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/?versions=&prefix=audit-checkpoints%2F00000000-0000-4000-8000-0000000000a0%2F00000000-0000-4000-8000-0000000000b0%2F&max-keys=1000&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=830f9fa5929e72fff821f4490853bdd97dec92edfd9e981b0e939359db339557"
+  ],
+  "checkpoints": [
+    {
+      "seq": 1,
+      "kind": "records",
+      "written_at": "2026-11-10T00:17:00.000Z",
+      "leaf_count": 6,
+      "sha256": "5bb2f49f37fd48443be8664bc21352853728a373bffd97f64575d2634bee38f1",
+      "url": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000001.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=be2ff10779daaad26077dd7e4a0c0b8f745298b32a629e9e7daa1f3ba1a68f86"
+    },
+    {
+      "seq": 2,
+      "kind": "records",
+      "written_at": "2026-11-10T01:17:00.000Z",
+      "leaf_count": 4,
+      "sha256": "d910a531f887ac7fdb941c54c3a3bdc91cdcc5230f899a7e71bc2f89114a7687",
+      "url": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000002.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=2baa51e573ba7292939b4849794d69f2911e0a9538792e9792c6394f8bbb85e5"
+    },
+    {
+      "seq": 3,
+      "kind": "disposal",
+      "written_at": "2026-11-10T02:17:00.000Z",
+      "leaf_count": 2,
+      "sha256": "4e44cf13d24ec7db2209c27f403b6cc679c994ded951b68e70c5472bf13fe8db",
+      "url": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000003.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=d0cfbe3693948ffd0d8aa381ff6ae471074a208fbd584ba76c553e0183cf8c82"
+    },
+    {
+      "seq": 4,
+      "kind": "heartbeat",
+      "written_at": "2026-11-10T03:17:00.000Z",
+      "leaf_count": 0,
+      "sha256": "f6f6d0909a5d453958a2c8ef6ba8eaa0d78bca563c119d830f8f6ce4ae21b8ee",
+      "url": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000004.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=39865b8abb5e9f20855d3f232acc7ece1c30d68c741ea2b7315ea58d26158e52"
+    },
+    {
+      "seq": 5,
+      "kind": "records",
+      "written_at": "2026-11-10T04:17:00.000Z",
+      "leaf_count": 2,
+      "sha256": "39dce114f416d5914e81fe303e0fa1993ed4ac53c54b1c0850b6f2622adc6983",
+      "url": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000005.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=dc0668043c42b2fa840c7c39b6d9ef71a7c10ddb36ab0ad6b558edb19a2013dd"
+    }
+  ],
+  "records": {
+    "from_seq": 1,
+    "to_seq": 5,
+    "pending": true
+  }
+}

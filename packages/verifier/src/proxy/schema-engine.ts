@@ -29,26 +29,37 @@
  *   }
  */
 
-import Ajv from 'ajv';
+import type { OutputUnit } from '@cfworker/json-schema';
 import type {
   PolicyDetection,
   PolicyEngine,
   PolicyEvalContext,
 } from './policy-evaluator-types';
-
-const ajv = new Ajv({ allErrors: true });
+import { createSchemaValidator } from './schema-definition';
 
 const MAX_BLOCK_SIZE = 65_536; // 64 KB
 const MAX_NESTING_DEPTH = 64;
 
-// Cache compiled validators keyed by JSON-stringified schema
-const validatorCache = new Map<string, ReturnType<typeof ajv.compile>>();
+// Cache validators keyed by the original JSON schema representation.
+const validatorCache = new Map<
+  string,
+  ReturnType<typeof createSchemaValidator>
+>();
 
-function getValidator(schema: object) {
-  const key = JSON.stringify(schema);
+function getValidator(schema: unknown) {
+  let key: string | undefined;
+  try {
+    key = JSON.stringify(schema);
+  } catch {
+    throw new Error('Invalid JSON Schema: schema must be JSON data');
+  }
+  if (key === undefined) {
+    throw new Error('Invalid JSON Schema: schema must be JSON data');
+  }
+
   let validator = validatorCache.get(key);
   if (!validator) {
-    validator = ajv.compile(schema);
+    validator = createSchemaValidator(schema);
     validatorCache.set(key, validator);
   }
   return validator;
@@ -122,16 +133,44 @@ function extractJsonBlocks(content: string, extractPattern?: string): string[] {
 }
 
 /**
- * Sanitize AJV instancePath to avoid leaking internal schema structure.
+ * Sanitize validator instance paths to avoid leaking internal schema structure.
  * Converts "/data/nested/secret" → "data.nested.secret" and truncates long paths.
  */
 function sanitizePath(instancePath: string): string {
-  if (!instancePath) return 'root';
-  // Strip leading slash, replace remaining slashes with dots
-  const cleaned = instancePath.replace(/^\//, '').replace(/\//g, '.');
+  if (!instancePath || instancePath === '#') return 'root';
+  const pointer = instancePath.replace(/^#/, '').replace(/^\//, '');
+  const cleaned = pointer
+    .split('/')
+    .map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'))
+    .join('.');
   // Truncate overly long paths
   if (cleaned.length > 60) return `${cleaned.slice(0, 57)}...`;
-  return cleaned;
+  return cleaned || 'root';
+}
+
+function formatValidationError(error: OutputUnit): string {
+  const path = sanitizePath(error.instanceLocation);
+  if (error.keyword === 'required') {
+    const requiredProperty = error.error.match(/required property "([^"]+)"/);
+    return requiredProperty
+      ? `${path} is missing required property "${requiredProperty[1]}"`
+      : `${path} is missing a required property`;
+  }
+  if (error.keyword === 'additionalProperties') {
+    return `${path} has additional properties`;
+  }
+  if (
+    error.keyword === 'enum' ||
+    error.keyword === 'const' ||
+    error.keyword === 'pattern'
+  ) {
+    return `${path} does not satisfy ${error.keyword}`;
+  }
+  return `${path} does not satisfy ${error.keyword || 'the schema'}`;
+}
+
+function formatValidationErrors(errors: OutputUnit[]): string {
+  return errors.map(formatValidationError).join('; ');
 }
 
 export class SchemaEngine implements PolicyEngine {
@@ -140,7 +179,7 @@ export class SchemaEngine implements PolicyEngine {
   evaluate(ctx: PolicyEvalContext): PolicyDetection[] {
     const cfg = ctx.binding.config;
     const schema = cfg?.schema;
-    if (!schema || typeof schema !== 'object') {
+    if (schema === undefined) {
       return [];
     }
 
@@ -164,7 +203,7 @@ export class SchemaEngine implements PolicyEngine {
 
   private evaluateFull(
     content: string,
-    validator: ReturnType<typeof ajv.compile>,
+    validator: ReturnType<typeof createSchemaValidator>,
     label: string,
   ): PolicyDetection[] {
     let parsed: unknown;
@@ -180,23 +219,23 @@ export class SchemaEngine implements PolicyEngine {
       ];
     }
 
-    if (validator(parsed)) {
+    const validation = validator.validate(parsed);
+    if (validation.valid) {
       return [];
     }
 
-    const errors = validator.errors ?? [];
     return [
       {
         type: label,
         confidence: 1.0,
-        message: `JSON validation failed: ${errors.map((e) => `${sanitizePath(e.instancePath || '')}${e.message ? ` ${e.message}` : ''}`).join('; ')}`,
+        message: `JSON validation failed: ${formatValidationErrors(validation.errors)}`,
       },
     ];
   }
 
   private evaluatePartial(
     content: string,
-    validator: ReturnType<typeof ajv.compile>,
+    validator: ReturnType<typeof createSchemaValidator>,
     label: string,
     extractPattern?: string,
   ): PolicyDetection[] {
@@ -219,12 +258,12 @@ export class SchemaEngine implements PolicyEngine {
         continue;
       }
 
-      if (!validator(parsed)) {
-        const errors = validator.errors ?? [];
+      const validation = validator.validate(parsed);
+      if (!validation.valid) {
         detections.push({
           type: label,
           confidence: 1.0,
-          message: `JSON validation failed: ${errors.map((e) => `${sanitizePath(e.instancePath || '')}${e.message ? ` ${e.message}` : ''}`).join('; ')}`,
+          message: `JSON validation failed: ${formatValidationErrors(validation.errors)}`,
         });
       }
     }

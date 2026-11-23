@@ -61,7 +61,12 @@ function gitSlotKeys(): string[] {
 }
 
 /** Every env-var name Spellguard manages inside `shell_environment_policy.set`. */
-const MANAGED_SET_KEYS: readonly string[] = [...gitSlotKeys(), 'GH_CONFIG_DIR'];
+const MANAGED_SET_KEYS: readonly string[] = [
+  ...gitSlotKeys(),
+  'GH_CONFIG_DIR',
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+];
 
 function configTomlPath(codexHome?: string): string {
   const home = codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex');
@@ -234,6 +239,11 @@ export function installCodexShellEnvPolicy(
       args.sshRewrite,
       args.sshRewriteRepo,
     ),
+    // Defense in depth: Codex's default shell policy strips token-shaped env
+    // names, but explicit empties ensure ambient GitHub auth can never outrank
+    // the pinned per-agent GH_CONFIG_DIR if that default changes.
+    GH_TOKEN: '',
+    GITHUB_TOKEN: '',
   };
   if (effectiveGh) nextSet.GH_CONFIG_DIR = effectiveGh;
 

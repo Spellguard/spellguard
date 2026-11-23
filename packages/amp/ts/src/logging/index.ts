@@ -7,14 +7,16 @@
  *
  * Commitment Backends (tamper-evident audit trail):
  * - 'memory': In-memory for testing
- * - 'rekor': Sigstore transparency log (free, public)
+ * - 'rekor': Sigstore transparency log (free, public) — retired from every
+ *   deployed environment on 2026-09-30, kept for local experiments
+ * - 'none': commitment logging switched off (what deployed Verifiers run)
  *
  * Archive Backends (encrypted message storage):
  * - 'memory': In-memory for testing
  * - 's3': AWS S3 (supports S3-compatible services like MinIO)
  *
  * Configuration via environment variables:
- * - COMMITMENT_BACKEND: 'memory' | 'rekor' (default: 'memory')
+ * - COMMITMENT_BACKEND: 'memory' | 'rekor' | 'none' (default: 'memory')
  * - ARCHIVE_BACKEND: 'memory' | 's3' (default: 'memory')
  */
 
@@ -28,6 +30,7 @@ import type {
   SecureMessage,
 } from '../types/index';
 import { memoryArchiveBackend, memoryCommitmentBackend } from './memory';
+import { noneCommitmentBackend } from './none';
 import { rekorBackend } from './rekor';
 import { s3Backend } from './s3';
 
@@ -41,8 +44,15 @@ export type {
 
 // Re-export backend implementations
 export { memoryCommitmentBackend, memoryArchiveBackend } from './memory';
+export { noneCommitmentBackend } from './none';
 export { rekorBackend } from './rekor';
 export { s3Backend } from './s3';
+export {
+  archiveDigestFor,
+  clearArchiveDigests,
+  forgetArchiveDigest,
+  recordArchiveDigest,
+} from './archive-digests';
 
 // Re-export memory backend utilities for testing
 export { clearMemoryBackends, getAllCommitments } from './memory';
@@ -102,6 +112,9 @@ async function initCommitmentBackend(name: string): Promise<CommitmentBackend> {
   switch (name.toLowerCase()) {
     case 'rekor':
       backend = rekorBackend;
+      break;
+    case 'none':
+      backend = noneCommitmentBackend;
       break;
     default:
       backend = memoryCommitmentBackend;

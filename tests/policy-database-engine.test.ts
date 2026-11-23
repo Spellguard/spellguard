@@ -86,6 +86,49 @@ describe('Policy Database Policy Engines', () => {
       expect(results[0].detections).toHaveLength(0);
     });
 
+    it.each([
+      {
+        name: 'Slack image dimensions',
+        content: 'Image dimensions: 1440x1000',
+        decision: 'permit',
+      },
+      {
+        name: 'database error code',
+        content: 'Database request failed with error code 0xDEADBEEF',
+        decision: 'permit',
+      },
+      {
+        name: 'legitimate SELECT hex literal',
+        content: 'SELECT 0x1234 FROM users',
+        decision: 'permit',
+      },
+      {
+        name: 'direct EXEC hex payload',
+        content: 'ExEc (0x73656c656374202a2046524f4d207573657273)',
+        decision: 'deny',
+      },
+      {
+        name: 'direct EXECUTE hex payload',
+        content: 'eXeCuTe ( 0x73656c656374202a2046524f4d207573657273 )',
+        decision: 'deny',
+      },
+      {
+        name: 'UNION hex attack after benign dimensions',
+        content: 'Image dimensions: 1440x1000 UNION SELECT 0x736563726574',
+        decision: 'deny',
+      },
+    ])('should $decision $name', async ({ content, decision }) => {
+      const binding = makeEngineBinding('query-injection', {});
+
+      const results = await evaluatePolicies([binding], content);
+      expect(results[0].decision).toBe(decision);
+      if (decision === 'permit') {
+        expect(results[0].detections).toHaveLength(0);
+      } else {
+        expect(results[0].detections.length).toBeGreaterThan(0);
+      }
+    });
+
     it('should deny custom injection patterns when configured', async () => {
       const binding = makeEngineBinding('query-injection', {
         extraPatterns: ['LOAD_FILE\\s*\\('],
@@ -98,6 +141,67 @@ describe('Policy Database Policy Engines', () => {
       expect(results[0].decision).toBe('deny');
       expect(results[0].detections.length).toBeGreaterThan(0);
     });
+  });
+
+  // ─── query-injection: comment-escape patterns must stay LOCAL ────
+  //
+  // Regression guard. The comment-escape patterns used to be unbounded
+  // (`/'[^']*--/` and `/(?:--|#|\/\*)\s*$/`), so ANY apostrophe anywhere before
+  // ANY `--` anywhere in the content matched. That blocked 100% of Spellguard's
+  // own agent-chat fan-outs: the client's context scaffolding says
+  // "…the user's query." and then delimits each peer reply with
+  // `--- Response from <agent> ---` (packages/client/ts/src/ai.ts:123,133).
+  // A SQL line comment is EXACTLY `--`; `---` is a markdown rule.
+
+  describe('query-injection — comment escapes are local, not document-wide', () => {
+    const attacks: Array<[string, string]> = [
+      ['classic quote-comment escape', "admin'--"],
+      ['tautology with trailing comment', "' OR '1'='1' --"],
+      ['no-space tautology comment', "' OR 1=1--"],
+      [
+        'garak stacked insert with trailing comment',
+        "' INSERT INTO Customer (FirstName, LastName, Email) VALUES ('garak', 'pwnd', 'garak.pwnd@example.com'); --",
+      ],
+      [
+        'UNION with trailing comment',
+        "1' UNION SELECT username, password FROM users--",
+      ],
+      ['block-comment escape', "value' /*"],
+      ['hash-comment escape', "x' #"],
+    ];
+
+    for (const [label, payload] of attacks) {
+      it(`still DENIES ${label}`, async () => {
+        const binding = makeEngineBinding('query-injection', {});
+        const results = await evaluatePolicies([binding], payload);
+        expect(results[0].decision).toBe('deny');
+      });
+    }
+
+    const benign: Array<[string, string]> = [
+      [
+        "the client's own peer-response scaffolding (the actual outage)",
+        "You have received responses from other agents. Use this information along with your own data to provide a comprehensive answer to the user's query.\n\n--- Response from agent-b ---\nI am Agent B, a confidential data analysis specialist.\n--- End response from agent-b ---",
+      ],
+      [
+        'markdown horizontal rule after an apostrophe',
+        "Here's the summary.\n\n---\n\nNext section",
+      ],
+      ['em-dash-style triple hyphen in prose', "It's a great day --- truly"],
+      [
+        'document ending in a markdown rule',
+        '# Heading\n\nSome prose that ends with a rule\n\n---',
+      ],
+    ];
+
+    for (const [label, payload] of benign) {
+      it(`PERMITS ${label}`, async () => {
+        const binding = makeEngineBinding('query-injection', {});
+        const results = await evaluatePolicies([binding], payload);
+        expect(results[0].decision).toBe('permit');
+        expect(results[0].detections).toHaveLength(0);
+      });
+    }
   });
 
   // ─── ddl-block ───────────────────────────────────────────────

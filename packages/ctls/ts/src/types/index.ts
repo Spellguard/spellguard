@@ -25,7 +25,7 @@ export interface VerifierAttestationDocument {
   timestamp: number;
   /** Nonce to prevent replay attacks */
   nonce: string;
-  /** Verifier attestation type: 'nitro' (AWS Nitro Enclave), 'phala' (Intel TDX via Phala), 'internal' (platform-attested, intra-org only), or 'mock' (development) */
+  /** Verifier attestation type: 'nitro' (AWS Nitro Enclave), 'phala' (Intel TDX via Phala), 'internal' (platform-attested, no hardware root of trust), or 'mock' (development) */
   attestationType?: 'nitro' | 'phala' | 'internal' | 'mock';
   /** Supported encryption algorithms */
   supportedAlgorithms?: string[];
@@ -33,6 +33,21 @@ export interface VerifierAttestationDocument {
   eventLog?: string;
   /** Docker compose hash for CVM verification (production only) */
   composeHash?: string;
+  /** The Verifier's id (`VERIFIER_ID`), bound by `attestationKeySignature` */
+  verifierId?: string;
+  /**
+   * Internal mode only (#1259): Ed25519 signature by the Verifier's long-term
+   * attestation key (`VERIFIER_ATTESTATION_KEY`) over
+   * `verifierId|publicKey|imageHash|timestamp|nonce`. Management checks it
+   * against the public half a platform admin registered on the row.
+   */
+  attestationKeySignature?: string;
+  /**
+   * The delivery-authentication scheme this Verifier signs every delivery
+   * with (#1244). Informational here; an agent's enforcement gate is the
+   * value in its own registration result.
+   */
+  deliveryAuth?: 'v1';
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -108,6 +123,12 @@ export interface AttestationResult {
   };
   /** Verifier's own attestation type — lets agents know the trust level */
   verifierAttestationType?: 'nitro' | 'phala' | 'internal' | 'mock';
+  /**
+   * The Verifier signs every delivery to this agent with `sessionPublicKey`
+   * under this scheme (#1244). An agent enforces signatures when its attested
+   * registration advertised it, and stays report-only otherwise.
+   */
+  deliveryAuth?: 'v1';
   /** Error message if verification failed */
   error?: string;
 }

@@ -25,6 +25,8 @@ interface CacheEntry {
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_POLL_INTERVAL_MS = 30_000; // 30 seconds
+/** Pause before the one retry of a policy fetch that failed (#1613). */
+const FETCH_RETRY_DELAY_MS = 250;
 
 const cache = new Map<string, CacheEntry>();
 
@@ -60,16 +62,20 @@ async function fetchPolicies(
   }
 
   // GET request — sign with empty body
-  const headers = await signRequest('');
+  const url = `${managementUrl}/v1/internal/agents/${encodeURIComponent(agentId)}/policies`;
+  const headers = await signRequest('GET', url, '');
 
-  const response = await fetch(
-    `${managementUrl}/v1/internal/agents/${encodeURIComponent(agentId)}/policies`,
-    {
-      headers,
-      signal: AbortSignal.timeout(5000),
-    },
-  );
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(5000),
+  });
 
+  // A 5xx is management failing, not answering: throw it, as a network error
+  // or a timeout already throws, so `getAgentPolicies` can retry it. A 4xx is
+  // management's answer.
+  if (response.status >= 500) {
+    throw new Error(`management answered ${response.status}`);
+  }
   if (!response.ok) {
     console.warn(
       `[PolicyCache] Failed to fetch policies for ${agentId}: ${response.status}`,
@@ -78,6 +84,26 @@ async function fetchPolicies(
   }
 
   return (await response.json()) as ResolvedPolicyConfig;
+}
+
+/**
+ * `fetchPolicies`, tried once more when it fails rather than answers: a
+ * timeout, a network error or a 5xx. The routers block a delivery whose
+ * recipient's policies they can't get, so one momentary management failure
+ * used to cost a delivery (#1613). A second failure is thrown to the caller.
+ */
+async function fetchPoliciesRetryingOnce(
+  agentId: string,
+): Promise<ResolvedPolicyConfig | null> {
+  try {
+    return await fetchPolicies(agentId);
+  } catch (error) {
+    console.warn(
+      `[PolicyCache] Policy fetch for ${agentId} failed (${error}); retrying once`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, FETCH_RETRY_DELAY_MS));
+    return fetchPolicies(agentId);
+  }
 }
 
 async function pollAllAgents(): Promise<void> {
@@ -142,8 +168,9 @@ export function stopPolicyPoller(): void {
 /**
  * Get resolved policies for an agent from the management server.
  *
- * Returns cached result if within TTL. Falls back to null if management
- * server is unreachable (no enforcement rather than blocking).
+ * Returns cached result if within TTL. Returns null when management refuses
+ * the request, or still can't be reached after one retry; the routers treat
+ * null as "policy data unavailable" and block (fail-closed).
  */
 export async function getAgentPolicies(
   agentId: string,
@@ -161,7 +188,7 @@ export async function getAgentPolicies(
   }
 
   try {
-    const config = await fetchPolicies(agentId);
+    const config = await fetchPoliciesRetryingOnce(agentId);
     if (!config) return null;
 
     // Log version transition on TTL-expired re-fetches
@@ -189,6 +216,71 @@ export async function getAgentPolicies(
     );
     return null;
   }
+}
+
+export interface AgentAuditBinding {
+  agentSlug: string;
+  agentBindingToken: string;
+}
+
+function auditBindingFromConfig(
+  config: ResolvedPolicyConfig | null,
+  expectedAgentId: string,
+): AgentAuditBinding | null {
+  if (
+    !config?.agentBindingToken ||
+    !config.agentSlug ||
+    config.agentSlug !== expectedAgentId
+  ) {
+    return null;
+  }
+  return {
+    agentSlug: config.agentSlug,
+    agentBindingToken: config.agentBindingToken,
+  };
+}
+
+/**
+ * Force an authenticated policy refresh and return its server-issued audit
+ * binding. This deliberately does not inspect JWT claims on the Verifier.
+ */
+export async function refreshAgentAuditBinding(
+  agentId: string,
+): Promise<AgentAuditBinding | null> {
+  if (!process.env.MANAGEMENT_URL) return null;
+  try {
+    const config = await fetchPolicies(agentId);
+    const binding = auditBindingFromConfig(config, agentId);
+    if (!config || !binding) return null;
+    cache.set(agentId, {
+      config,
+      fetchedAt: Date.now(),
+      version: config.version,
+      changeKey: buildChangeKey(config),
+    });
+    startPolicyPoller();
+    return binding;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Return only a binding learned from an authenticated Management policy
+ * response. The slug locates the cached response; only the signed compact token
+ * is echoed for attribution.
+ */
+export function getAgentAuditBinding(
+  agentId: string,
+): AgentAuditBinding | null {
+  const direct = cache.get(agentId)?.config;
+  const directBinding = auditBindingFromConfig(direct ?? null, agentId);
+  if (directBinding) return directBinding;
+  for (const entry of cache.values()) {
+    const binding = auditBindingFromConfig(entry.config, agentId);
+    if (binding) return binding;
+  }
+  return null;
 }
 
 /**

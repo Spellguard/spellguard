@@ -15,6 +15,8 @@ import asyncio
 import contextvars
 import json
 import logging
+import os
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -147,25 +149,49 @@ GenerateTextOptions = None  # deprecated -- will be removed
 
 
 def build_agent_context_block(
-    agent_responses: list[dict[str, str]],
+    agent_responses: list[dict[str, Any]],
 ) -> str:
     """Format a list of agent responses into a context block string.
 
-    Shared between the AI SDK and LangChain integrations.
+    Shared between the AI SDK and LangChain integrations. Reached agents render
+    their reply; agents that could not be reached render an explicit
+    "unreachable" block plus a directive not to fabricate an answer on their
+    behalf, so the model tells the user the truth instead of confabulating.
     """
-    agent_context = "\n\n".join(
+    reached = [r for r in agent_responses if not r.get("unreachable")]
+    unreached = [r for r in agent_responses if r.get("unreachable")]
+
+    blocks = [
         f"--- Response from {r['agent']} ---\n{r['response']}\n"
         f"--- End response from {r['agent']} ---"
-        for r in agent_responses
-    )
+        for r in reached
+    ] + [
+        f"--- {r['agent']}: UNREACHABLE ---\nSpellguard could not reach "
+        f"{r['agent']} — it is offline or did not respond, so NO answer was "
+        f"received from it.\n--- End {r['agent']} ---"
+        for r in unreached
+    ]
 
-    instruction = (
-        "You have received responses from other agents. Use this information "
-        "along with your own data to provide a comprehensive answer to the "
-        "user's query."
-    )
+    if reached:
+        instruction = (
+            "You have received responses from other agents. Use this "
+            "information along with your own data to provide a comprehensive "
+            "answer to the user's query."
+        )
+    else:
+        instruction = (
+            "You attempted to reach other agents on the user's behalf but "
+            "received no responses."
+        )
+    if unreached:
+        names = ", ".join(r["agent"] for r in unreached)
+        instruction += (
+            f" The following agent(s) could NOT be reached: {names}. Do NOT "
+            "invent, guess, or paraphrase an answer on their behalf — tell the "
+            "user plainly that you were unable to reach them."
+        )
 
-    return f"{instruction}\n\n{agent_context}"
+    return f"{instruction}\n\n" + "\n\n".join(blocks)
 
 
 def is_spellguard_agent(agent: ResolvedAgent) -> bool:
@@ -220,11 +246,13 @@ def extract_text_from_response(response: Any) -> str:
 async def resolve_and_collect_agent_responses(
     prompt: str,
     detect_fn: Callable[[str], Awaitable[list[str]]] | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Full agent-routing pipeline: detect refs -> filter self -> discover
     agents -> collect responses (with retry).
 
-    Returns ``[]`` when no agents are found or all fail.
+    Returns one entry per referenced agent -- its reply, or an ``unreachable``
+    marker when it could not be reached. Returns ``[]`` ONLY when the prompt
+    referenced no other agents (so the caller runs the plain LLM).
     Raises on policy / rate-limit errors.
     """
     from .attestation import get_config
@@ -264,8 +292,18 @@ async def resolve_and_collect_agent_responses(
 
     resolved_agents = await discover_agents(filtered_refs)
     if not resolved_agents:
-        logger.warning("[Spellguard] No agents could be discovered")
-        return []
+        # Referenced agents the directory can't resolve are UNREACHABLE, not
+        # "no agents" -- surface them so the model reports it couldn't reach
+        # them instead of fabricating replies. (A prompt with NO agent
+        # references already returned [] above -> the plain-LLM path.)
+        logger.warning(
+            "[Spellguard] No agents could be discovered for: %s",
+            ", ".join(filtered_refs),
+        )
+        return [
+            {"agent": ref, "response": "", "unreachable": True}
+            for ref in filtered_refs
+        ]
 
     logger.info(
         "[Spellguard] Discovered %d agents: %s",
@@ -274,16 +312,27 @@ async def resolve_and_collect_agent_responses(
     )
 
     try:
-        return await _collect_agent_responses_with_retry(resolved_agents, prompt)
+        return await _collect_agent_responses(resolved_agents, prompt)
     except Exception as error:
         msg = str(error)
-        if is_policy_or_rate_limit_error(msg):
+        # Policy/rate-limit blocks must propagate -- never bypass enforcement.
+        # Fail-closed ("policy data unavailable") is transient infra, not a real
+        # block, so allow the direct-LLM fallback (mirrors the TS client).
+        is_fail_closed = "policy data unavailable" in msg
+        if is_policy_or_rate_limit_error(msg) and not is_fail_closed:
             raise
+        # Non-policy routing failure -- every referenced agent is unreachable;
+        # surface that (do NOT return [], which would let the plain LLM
+        # fabricate replies on their behalf). Mirrors the TS client. Verifier-
+        # mediated audit logging is necessarily skipped for this request.
         logger.warning(
-            "[Spellguard] Agent routing unavailable, falling back to direct LLM: %s",
+            "[Spellguard] Agent routing unavailable, marking peers unreachable: %s",
             msg,
         )
-        return []
+        return [
+            {"agent": a.name, "response": "", "unreachable": True}
+            for a in resolved_agents
+        ]
 
 
 # ===================================================================
@@ -419,6 +468,7 @@ async def _send_to_agent(
     agent: ResolvedAgent,
     prompt: str,
     from_agent_id: str,
+    timeout_ms: float | None = None,
 ) -> str:
     """Send a request to a single agent (bilateral or unilateral)."""
     if is_spellguard_agent(agent):
@@ -436,7 +486,7 @@ async def _send_to_agent(
         correlation_id = get_current_correlation_id()
         if correlation_id is not None:
             outbound["_spellguardCorrelationId"] = correlation_id
-        response = await channel.send(agent.name, outbound)
+        response = await channel.send(agent.name, outbound, timeout_ms)
         return extract_text_from_response(response)
 
     logger.info(
@@ -466,28 +516,121 @@ async def _send_to_agent(
     return "No response text"
 
 
+# Default peer fan-out width: 1, i.e. SEQUENTIAL. Mirrors
+# ``DEFAULT_FANOUT_CONCURRENCY`` in ``packages/client/ts/src/ai.ts``. Chosen
+# while the AGNTCY SLIM control plane is flaky: concurrent dispatch fires N
+# create-session calls at once, which during a plane wedge trips the verifier
+# worker's "5 consecutive create-session failures -> recycle" threshold faster,
+# aggravating the churn. Partial-tolerance below applies either way.
+_DEFAULT_FANOUT_CONCURRENCY = 1
+
+# Environment variable that overrides the fan-out width (same name in both SDKs).
+_FANOUT_CONCURRENCY_ENV = "SPELLGUARD_FANOUT_CONCURRENCY"
+
+
+def _resolve_fanout_concurrency() -> int:
+    """How many peer fan-out sends may run at once.
+
+    Read per fan-out (not captured at import time) so a host can raise it
+    without a reinstall once its SLIM plane is stable, reclaiming the max(leg)
+    latency win. Anything that is not a positive integer (absent, blank, junk,
+    ``0``, negative) falls back to :data:`_DEFAULT_FANOUT_CONCURRENCY`, so a
+    typo degrades to today's sequential behaviour rather than to an unbounded
+    fan-out.
+    """
+    raw = os.environ.get(_FANOUT_CONCURRENCY_ENV, "").strip()
+    # ASCII digits ONLY -- deliberately not ``str.isdigit()``, which is True for
+    # superscripts and other numeric forms ``int()`` then REFUSES: ``"2".isdigit()``
+    # is True while ``int("2")`` raises, and the exception would escape this
+    # resolver instead of degrading to the default, breaking the fan-out
+    # outright. It is also not ``str.isdecimal()`` alone, which accepts
+    # non-ASCII decimals like Arabic-Indic ``"3"`` that ``int()`` HAPPILY parses
+    # as 3 -- while the TypeScript twin's ``/^\d+$/`` (JS ``\d`` is ASCII-only)
+    # rejects them. Both SDKs must answer identically for the same value.
+    if not (raw.isascii() and raw.isdigit()):
+        return _DEFAULT_FANOUT_CONCURRENCY
+    parsed = int(raw)
+    return parsed if parsed >= 1 else _DEFAULT_FANOUT_CONCURRENCY
+
+
+# Total wall-clock budget for the whole peer fan-out (seconds). Mirrors
+# FANOUT_BUDGET_MS in packages/client/ts/src/ai.ts: the management proxy's POST
+# /chat has a 60s timeout, so a fan-out that overruns it surfaces as a bare 502
+# instead of a (degraded) answer. Cap the fan-out under 60s so it always falls
+# back BEFORE the proxy gives up. During a SLIM wedge (create-session hangs
+# ~10s/attempt) this turns a 60s 502 into a graceful fallback.
+_FANOUT_BUDGET_S = 45.0
+# Per-peer send ceiling (seconds). A single bilateral round-trip runs ~5-18s;
+# cap at 25s so one wedged/hung send can't eat the whole budget. The effective
+# per-send timeout is min(this, remaining budget).
+_FANOUT_PEER_TIMEOUT_S = 25.0
+
+
 async def _collect_agent_responses(
     resolved_agents: list[ResolvedAgent],
     prompt: str,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     from .attestation import get_config, get_or_create_channel
 
     channel = await get_or_create_channel()
     config = get_config()
-    responses: list[dict[str, str]] = []
+    from_agent_id = config.agent_id if config else "unknown"
+    # Shared budget for the whole fan-out -- each peer send is bounded by the
+    # remaining slice so the turn degrades to a fallback before the 60s proxy
+    # timeout instead of surfacing a bare 502 during a SLIM wedge (Gap A).
+    deadline = time.monotonic() + _FANOUT_BUDGET_S
 
-    for agent in resolved_agents:
-        text = await _send_to_agent(
-            channel, agent, prompt, config.agent_id if config else "unknown"
-        )
-        responses.append({"agent": agent.name, "response": text})
-        logger.info(
-            "[Spellguard] Received response from %s: %s...",
-            agent.name,
-            text[:100],
-        )
+    # Fan out to peers CONCURRENTLY (bounded by a semaphore), tolerant of
+    # PARTIAL failure: each peer settles independently, so one peer's transient
+    # failure -- a wedged SLIM plane, a timeout, a cold peer -- no longer
+    # discards another peer's reply. A genuine policy/rate-limit BLOCK is the
+    # exception: it is terminal and must never be silently dropped (that would
+    # answer from the unguarded path), so it propagates. Fail-closed
+    # ("policy data unavailable") is transient infra, tolerated like any other.
+    semaphore = asyncio.Semaphore(_resolve_fanout_concurrency())
 
-    return responses
+    async def _one(agent: ResolvedAgent) -> dict[str, Any]:
+        async with semaphore:
+            try:
+                text = await _send_to_agent_with_retry(
+                    channel, agent, prompt, from_agent_id, deadline
+                )
+            except Exception as error:
+                msg = str(error)
+                # Genuine policy/rate-limit block -> propagate (never bypass
+                # enforcement). Fail-closed + transient/infra -> this peer is
+                # unreachable: mark it (do NOT drop it) so the model doesn't
+                # fabricate a reply on its behalf.
+                if (
+                    is_policy_or_rate_limit_error(msg)
+                    and "policy data unavailable" not in msg
+                ):
+                    raise
+                logger.warning(
+                    "[Spellguard] Peer %s unreachable, dropped from fan-out (transient): %s",
+                    agent.name,
+                    msg[:120],
+                )
+                return {"agent": agent.name, "response": "", "unreachable": True}
+            logger.info(
+                "[Spellguard] Received response from %s: %s...",
+                agent.name,
+                text[:100],
+            )
+            return {"agent": agent.name, "response": text}
+
+    # gather preserves INPUT order (deterministic context block).
+    # return_exceptions=True so every peer settles without orphaning tasks; only
+    # a genuine policy block escapes _one -- re-raise the first one to abort.
+    results = await asyncio.gather(
+        *(_one(agent) for agent in resolved_agents), return_exceptions=True
+    )
+    for r in results:
+        if isinstance(r, BaseException):
+            raise r
+    # Every peer now yields a dict (reply or unreachable marker); only a genuine
+    # policy block escapes _one, and it was re-raised above.
+    return [r for r in results if isinstance(r, dict)]
 
 
 def _is_transient_error(msg: str) -> bool:
@@ -502,26 +645,53 @@ def _is_transient_error(msg: str) -> bool:
     )
 
 
-async def _collect_agent_responses_with_retry(
-    resolved_agents: list[ResolvedAgent],
+async def _send_to_agent_with_retry(
+    channel: ClientChannel,
+    agent: ResolvedAgent,
     prompt: str,
-) -> list[dict[str, str]]:
+    from_agent_id: str,
+    deadline: float,
+) -> str:
+    """Send to ONE peer with transient-error retry, bounded by a shared fan-out
+    ``deadline`` (monotonic seconds).
+
+    Each attempt's send is capped at ``min(_FANOUT_PEER_TIMEOUT_S, remaining
+    budget)``, and once the budget is spent no further attempt/retry runs -- so
+    a wedged plane (create-session hangs ~10s/attempt) can't drag the turn past
+    the management proxy's 60s /chat timeout (-> a bare 502). Backoff is short
+    and never exceeds the remaining budget. Only transient/infra failures are
+    retried; a genuine policy/rate-limit block raises immediately.
+    """
     max_retries = 3
     last_error: Exception | None = None
-
     for attempt in range(1, max_retries + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise last_error or RuntimeError(
+                f"[Spellguard] {agent.name}: fan-out time budget exhausted"
+            )
         try:
-            return await _collect_agent_responses(resolved_agents, prompt)
+            timeout_ms = min(_FANOUT_PEER_TIMEOUT_S, remaining) * 1000.0
+            return await _send_to_agent(
+                channel, agent, prompt, from_agent_id, timeout_ms
+            )
         except Exception as error:
             msg = str(error)
             last_error = error
-
-            transient = _is_transient_error(msg)
-            if transient and attempt < max_retries:
-                delay = attempt * 5
+            # Retry only a transient error, and only with meaningful budget
+            # left. Backoff is short (the budget is tight) and capped to what
+            # remains.
+            budget_left = deadline - time.monotonic()
+            if (
+                _is_transient_error(msg)
+                and attempt < max_retries
+                and budget_left > 3
+            ):
+                delay = min(attempt * 1.5, budget_left)
                 logger.info(
-                    "[Spellguard] Retrying after transient error "
-                    "(attempt %d/%d, waiting %ds): %s",
+                    "[Spellguard] Retrying %s after transient error "
+                    "(attempt %d/%d, waiting %.1fs): %s",
+                    agent.name,
                     attempt + 1,
                     max_retries,
                     delay,
@@ -529,25 +699,9 @@ async def _collect_agent_responses_with_retry(
                 )
                 await asyncio.sleep(delay)
                 continue
-
-            # Policy/rate-limit errors are terminal — never fallback.
-            # Skip when the error was already classified as transient
-            # (e.g. "Blocked: policy data unavailable (fail-closed)"
-            # matches both _is_transient_error and
-            # is_policy_or_rate_limit_error). After retries are exhausted
-            # the error should propagate as a non-policy failure so the
-            # caller can fall back to the direct LLM path.
-            if not transient and is_policy_or_rate_limit_error(msg):
-                raise
-
-            logger.error(
-                "[Spellguard] Agent routing failed after %d attempt(s): %s",
-                attempt,
-                msg,
-            )
             raise
 
-    raise last_error or RuntimeError("[Spellguard] Agent routing failed")
+    raise last_error or RuntimeError(f"[Spellguard] {agent.name} send failed")
 
 
 # ===================================================================

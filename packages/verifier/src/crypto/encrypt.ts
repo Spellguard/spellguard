@@ -13,6 +13,7 @@ import { x25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf';
 import { sha256 } from '@noble/hashes/sha256';
 import { getSessionX25519PrivateKey } from '@spellguard/ctls/crypto';
+import { base64ToBytes, bytesToBase64 } from './base64';
 
 const VERSION_BYTE = 0x01;
 const NONCE_LENGTH = 12;
@@ -54,9 +55,10 @@ export function decryptPayload(
     );
   }
 
-  const ephemeralPublicKey = data.slice(1, 33);
-  const nonce = data.slice(33, 33 + NONCE_LENGTH);
-  const ciphertext = data.slice(33 + NONCE_LENGTH);
+  // Views, not copies: the ciphertext is most of a large message.
+  const ephemeralPublicKey = data.subarray(1, 33);
+  const nonce = data.subarray(33, 33 + NONCE_LENGTH);
+  const ciphertext = data.subarray(33 + NONCE_LENGTH);
 
   // ECDH: compute shared secret
   const sharedSecret = x25519.getSharedSecret(
@@ -134,24 +136,6 @@ export function encryptPayload(
 }
 
 // Utility functions
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
 function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {

@@ -1,6 +1,6 @@
 {
   "name": "@spellguard/openclaw-plugin",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "files": ["dist", "openclaw.plugin.json", "README.md", "LICENSE", "skills"],
@@ -30,20 +30,21 @@
     }
   },
   "dependencies": {
-    "ws": "^8.19.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@hono/node-server": "^1.0.0",
+    "@hono/node-server": "^2.1.6",
     "@sinclair/typebox": "^0.34.0",
     "@spellguard/agent-control": "workspace:*",
     "@spellguard/client": "workspace:*",
     "@spellguard/management-api-types": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.21.0",
-    "hono": "^4.6.0",
+    "esbuild": "^0.28.1",
+    "hono": "^4.13.16",
+    "openclaw": "2026.6.35",
     "typescript": "^5.7.0",
-    "zod": "^4.0.0"
+    "zod": "^4.6.7"
   },
   "license": "Apache-2.0",
   "publishConfig": {

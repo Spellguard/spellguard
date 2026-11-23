@@ -76,7 +76,13 @@ This repository contains the open source implementation — ideal for developmen
 | `@spellguard/openclaw-plugin` (`packages/openclaw-plugin/`) | OpenClaw plugin |
 | `@spellguard/policy-sdk` (`packages/policy-sdk/`) | SDK for building external policy servers |
 | `@spellguard/policy-catalog` (`packages/policy-catalog/`) | Policy definitions as JSONC — validate, diff, sync |
-| `@spellguard/mcp-guard` (`packages/mcp-guard/`) | MCP server guard |
+| `@spellguard/mcp-guard` (`packages/mcp-guard/`) | MCP server guard — checks every tool call and its result against your policies; on npm as `@spellguard/mcp-guard` |
+| `@spellguard/audit-verify` (`packages/audit-verify/ts/`) | Audit verifier — checks an audit export against its locked checkpoints and Verifier signatures, without trusting Spellguard (also a Go CLI in `packages/audit-verify/go/`) |
+| `@spellguard/gateway` (`packages/gateway/`) | HTTP↔SLIM gateway for the AGNTCY profile |
+| `@spellguard/claude-code-plugin` (`packages/claude-code-plugin/`) | Claude Code plugin — a scoped, attributable git credential and git-activity tracking |
+| `@spellguard/codex-plugin` (`packages/codex-plugin/`) | Codex plugin — the same credential management for OpenAI Codex |
+| `@spellguard/agent-control` (`packages/agent-control/`) | Credential-channel client and wire protocol shared by the agent plugins |
+| `@spellguard/management-api-types` (`packages/management-api-types/`) | Generated TypeScript types for the management API |
 
 ### Python
 
@@ -174,7 +180,10 @@ VERIFIER_LOCAL_POLICIES=/path/to/my-bindings.json pnpm run dev:verifier
 ```
 
 Policy decisions land in an in-memory audit ring at `GET /logs/audit-events`
-on the Verifier (filter with `?agentId=` and `?limit=`).
+on the Verifier (filter with `?agentId=` and `?limit=`). That route, like the
+other `/logs/*` and `/internal/reset-*` helpers, is only mounted in dev mode
+(`VERIFIER_DEV_MODE=true`, implied by `VERIFIER_MOCK_MODE=true`); a deployed
+Verifier answers 404.
 
 ## Testing
 

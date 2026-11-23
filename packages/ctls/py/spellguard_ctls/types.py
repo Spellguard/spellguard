@@ -38,6 +38,13 @@ class VerifierAttestationDocument:
     event_log: str | None = field(default=None)
     # Docker compose hash for CVM verification (production only)
     compose_hash: str | None = field(default=None)
+    # 'nitro' | 'phala' | 'internal' | 'mock'; selects the signature check
+    attestation_type: str | None = field(default=None)
+    # The Verifier's id, bound by attestation_key_signature (internal mode, #1259)
+    verifier_id: str | None = field(default=None)
+    # Internal mode (#1259): Ed25519 signature by the Verifier's attestation key
+    # over verifierId|publicKey|imageHash|timestamp|nonce. Checked by management.
+    attestation_key_signature: str | None = field(default=None)
 
 
 # ═══════════════════════════════════════════════════════════════════

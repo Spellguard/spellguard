@@ -51,16 +51,21 @@ import {
   initManagementReporter,
   stopManagementReporter,
 } from './management/reporter';
-import { signRequest } from './management/request-signer';
+import {
+  signRegistrationRequest,
+  signRequest,
+} from './management/request-signer';
 import type { NonceStore } from './nonce-store';
 import { createNonceStore } from './nonce-store';
 import type { createDynamoDBNonceStore as CreateDDBNonceStoreFn } from './nonce-store-dynamodb';
 import { resolveExternalUrl } from './platform/resolve-url';
 import { startRateLimiterCleanup } from './proxy/engine-registry';
 import { installSelfRecycleGuard } from './recycle-guard';
+import { nodeSessionStoreFor } from './session/runtime';
 import { type SlimEndpointHandle, startSlimEndpoint } from './slim/endpoint';
 import { type LivenessHandle, startLivenessResponder } from './slim/liveness';
 import { type RosterSyncHandle, startRosterSync } from './slim/roster-sync';
+import { prewarmSlimSender } from './slim/send-to-agent';
 
 // ═══════════════════════════════════════════════════════════════════
 // Nonce store (SQLite by default; DynamoDB for Nitro)
@@ -196,8 +201,13 @@ function registerWithManagement(externalUrl: string): void {
   ): Promise<boolean> {
     const body = buildBody(attestationReport, platformAttestation);
     const bodyStr = JSON.stringify(body);
-    const headers = await signRequest(bodyStr);
-    const res = await fetch(`${managementUrl}/v1/internal/verifiers/register`, {
+    const url = `${managementUrl}/v1/internal/verifiers/register`;
+    const headers = await signRegistrationRequest(
+      url,
+      bodyStr,
+      process.env.VERIFIER_REGISTRATION_SECRET,
+    );
+    const res = await fetch(url, {
       method: 'POST',
       headers,
       body: bodyStr,
@@ -231,11 +241,14 @@ function registerWithManagement(externalUrl: string): void {
       profile: bundle?.profile,
       transport: bundle?.transport.name,
     });
-    const headers = await signRequest(body);
-    const res = await fetch(
-      `${managementUrl}/v1/internal/verifiers/${encodeURIComponent(verifierId)}/heartbeat`,
-      { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) },
-    );
+    const url = `${managementUrl}/v1/internal/verifiers/${encodeURIComponent(verifierId)}/heartbeat`;
+    const headers = await signRequest('POST', url, body);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
 
     if (res.status === 401) {
       console.warn(
@@ -483,6 +496,12 @@ async function startServer() {
     // the time a probe arrives it's populated. Non-slim profiles never set
     // it, so /ready reports ready (no SLIM dependency).
     getSlimReady: () => (slimEndpoint ? slimEndpoint.isReady() : true),
+    // The session ledger. Local development (dev mode or mock mode) gets the
+    // in-memory store so the session policies work under `dev:verifier`. A
+    // deployed Node Verifier (Fargate) gets none: it has no encrypted store,
+    // so its session policies report session_unavailable and act on their
+    // failBehavior. No document extractor or decision model on Node.
+    sessionStore: nodeSessionStoreFor(process.env),
   });
 
   // Register this Verifier with the management server (non-blocking)
@@ -597,6 +616,24 @@ async function startServer() {
     void rosterSync.primed
       .then(() => console.log('[Verifier] roster pre-sync primed'))
       .catch(() => undefined);
+
+    // Prewarm the verifier→agent SLIM sender worker. It is otherwise spawned
+    // LAZILY on the first fan-out delivery, so the first verifier→agent send
+    // after each boot / RSS self-recycle pays the full cold cost — worker
+    // spawn + bindings load + control-plane connect + identity registration
+    // (~20-30s, the "first peer leg" spike in the dashboard Agent Chat). This
+    // is the same boot-time hot-path priming as roster-sync + startSlimEndpoint
+    // above. Recipient-agnostic (no session created here), best-effort, and
+    // never blocks boot — run it in the background.
+    void prewarmSlimSender()
+      .then((ok) =>
+        console.log(
+          ok
+            ? '[Verifier] SLIM sender prewarmed'
+            : '[Verifier] SLIM sender prewarm skipped (bindings unavailable)',
+        ),
+      )
+      .catch(() => undefined);
   }
 
   const config = getBackendConfig();
@@ -608,7 +645,9 @@ async function startServer() {
     `[Verifier] Platform: ${process.env.VERIFIER_PLATFORM || 'default (phala)'}`,
   );
   if (process.env.VERIFIER_PLATFORM?.toLowerCase() === 'internal') {
-    console.log('[Verifier] Internal mode: intra-org traffic only');
+    console.log(
+      '[Verifier] Internal mode: platform-attested, no hardware root of trust',
+    );
     console.log(
       `[Verifier] Identity provider: ${process.env.VERIFIER_IDENTITY_PROVIDER || 'none'}`,
     );

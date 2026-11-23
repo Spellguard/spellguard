@@ -66,13 +66,20 @@ interface OpenClawConfig {
   };
 }
 
+// The operator's REAL home: the local OpenClaw gateway's config lives there.
+// The integration suite points HOME at a temp dir (#1136), so read it through
+// the seal's SPELLGUARD_TEST_REAL_HOME. These reads never write.
+function operatorHome(): string {
+  return process.env.SPELLGUARD_TEST_REAL_HOME ?? homedir();
+}
+
 async function loadGatewayConfig(): Promise<{
   url: string;
   token: string;
 } | null> {
   try {
     const raw = await readFile(
-      join(homedir(), '.openclaw', 'openclaw.json'),
+      join(operatorHome(), '.openclaw', 'openclaw.json'),
       'utf-8',
     );
     const config = JSON.parse(raw) as OpenClawConfig;

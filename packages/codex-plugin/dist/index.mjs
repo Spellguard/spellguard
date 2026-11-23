@@ -492,17 +492,845 @@ function removeTrailingSlash(url) {
 }
 
 // ../agent-control/dist/index.mjs
+import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+var A2A_TASK_STATES = [
+  "SUBMITTED",
+  "WORKING",
+  "INPUT_REQUIRED",
+  "COMPLETED",
+  "CANCELED",
+  "FAILED",
+  "REJECTED",
+  "AUTH_REQUIRED"
+];
+var A2A_ROLES = ["USER", "AGENT"];
+var TASK_STATE_SET = new Set(A2A_TASK_STATES);
+var ROLE_SET = new Set(A2A_ROLES);
+var PART_CONTENT_KEYS = ["text", "raw", "url", "data"];
+var PART_KEYS = /* @__PURE__ */ new Set([
+  ...PART_CONTENT_KEYS,
+  "metadata",
+  "filename",
+  "mediaType"
+]);
+var MESSAGE_KEYS = /* @__PURE__ */ new Set([
+  "messageId",
+  "role",
+  "parts",
+  "contextId",
+  "taskId",
+  "metadata",
+  "extensions",
+  "referenceTaskIds"
+]);
+var ARTIFACT_KEYS = /* @__PURE__ */ new Set([
+  "artifactId",
+  "parts",
+  "name",
+  "description",
+  "metadata",
+  "extensions"
+]);
+var STATUS_KEYS = /* @__PURE__ */ new Set(["state", "message", "timestamp"]);
+var TASK_KEYS = /* @__PURE__ */ new Set([
+  "id",
+  "status",
+  "contextId",
+  "artifacts",
+  "history",
+  "metadata"
+]);
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function rejectUnknownKeys(obj, allowed, path, errors) {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) {
+      errors.push(`${path}: unknown field '${key}' is not permitted`);
+    }
+  }
+}
+function checkOptionalString(obj, key, path, errors) {
+  if (key in obj && typeof obj[key] !== "string") {
+    errors.push(`${path}.${key}: expected string`);
+  }
+}
+function checkOptionalStringArray(obj, key, path, errors) {
+  if (!(key in obj)) return;
+  const arr = obj[key];
+  if (!Array.isArray(arr)) {
+    errors.push(`${path}.${key}: expected array of string`);
+    return;
+  }
+  arr.forEach((el, i) => {
+    if (typeof el !== "string") {
+      errors.push(`${path}.${key}[${i}]: expected string`);
+    }
+  });
+}
+function checkOptionalObject(obj, key, path, errors) {
+  if (key in obj && !isPlainObject(obj[key])) {
+    errors.push(`${path}.${key}: expected object`);
+  }
+}
+function validatePart(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, PART_KEYS, path, errors);
+  const contentPresent = PART_CONTENT_KEYS.filter((k) => k in input);
+  if (contentPresent.length !== 1) {
+    errors.push(
+      `${path}: exactly one content field (text|raw|url|data) required, found ${contentPresent.length}`
+    );
+  }
+  if ("text" in input && typeof input.text !== "string") {
+    errors.push(`${path}.text: expected string`);
+  }
+  if ("raw" in input && typeof input.raw !== "string") {
+    errors.push(`${path}.raw: expected string`);
+  }
+  if ("url" in input && typeof input.url !== "string") {
+    errors.push(`${path}.url: expected string`);
+  }
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalString(input, "filename", path, errors);
+  checkOptionalString(input, "mediaType", path, errors);
+}
+function validateParts(input, path, errors) {
+  if (!Array.isArray(input)) {
+    errors.push(`${path}: expected array of parts`);
+    return;
+  }
+  if (input.length < 1) {
+    errors.push(`${path}: at least one part required`);
+  }
+  input.forEach((p, i) => validatePart(p, `${path}[${i}]`, errors));
+}
+function validateMessageInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, MESSAGE_KEYS, path, errors);
+  if (typeof input.messageId !== "string" || input.messageId.length === 0) {
+    errors.push(`${path}.messageId: required non-empty string`);
+  }
+  if (typeof input.role !== "string" || !ROLE_SET.has(input.role)) {
+    errors.push(
+      `${path}.role: required, must be one of ${A2A_ROLES.join(" | ")}`
+    );
+  }
+  if (!("parts" in input)) {
+    errors.push(`${path}.parts: required`);
+  } else {
+    validateParts(input.parts, `${path}.parts`, errors);
+  }
+  checkOptionalString(input, "contextId", path, errors);
+  checkOptionalString(input, "taskId", path, errors);
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalStringArray(input, "extensions", path, errors);
+  checkOptionalStringArray(input, "referenceTaskIds", path, errors);
+}
+function validateArtifactInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, ARTIFACT_KEYS, path, errors);
+  if (typeof input.artifactId !== "string" || input.artifactId.length === 0) {
+    errors.push(`${path}.artifactId: required non-empty string`);
+  }
+  if (!("parts" in input)) {
+    errors.push(`${path}.parts: required`);
+  } else {
+    validateParts(input.parts, `${path}.parts`, errors);
+  }
+  checkOptionalString(input, "name", path, errors);
+  checkOptionalString(input, "description", path, errors);
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalStringArray(input, "extensions", path, errors);
+}
+function validateStatusInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, STATUS_KEYS, path, errors);
+  if (typeof input.state !== "string" || !TASK_STATE_SET.has(input.state)) {
+    errors.push(
+      `${path}.state: required, must be one of ${A2A_TASK_STATES.join(" | ")}`
+    );
+  }
+  if ("message" in input) {
+    validateMessageInto(input.message, `${path}.message`, errors);
+  }
+  checkOptionalString(input, "timestamp", path, errors);
+}
+function validateTaskInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, TASK_KEYS, path, errors);
+  if (typeof input.id !== "string" || input.id.length === 0) {
+    errors.push(`${path}.id: required non-empty string`);
+  }
+  if (!("status" in input)) {
+    errors.push(`${path}.status: required`);
+  } else {
+    validateStatusInto(input.status, `${path}.status`, errors);
+  }
+  checkOptionalString(input, "contextId", path, errors);
+  if ("artifacts" in input) {
+    if (!Array.isArray(input.artifacts)) {
+      errors.push(`${path}.artifacts: expected array`);
+    } else {
+      input.artifacts.forEach(
+        (a, i) => validateArtifactInto(a, `${path}.artifacts[${i}]`, errors)
+      );
+    }
+  }
+  if ("history" in input) {
+    if (!Array.isArray(input.history)) {
+      errors.push(`${path}.history: expected array`);
+    } else {
+      input.history.forEach(
+        (m, i) => validateMessageInto(m, `${path}.history[${i}]`, errors)
+      );
+    }
+  }
+  checkOptionalObject(input, "metadata", path, errors);
+}
+function validateA2aMessage(input) {
+  const errors = [];
+  validateMessageInto(input, "message", errors);
+  return errors.length === 0 ? { valid: true, value: input, errors: [] } : { valid: false, value: null, errors };
+}
+function validateA2aTask(input) {
+  const errors = [];
+  validateTaskInto(input, "task", errors);
+  return errors.length === 0 ? { valid: true, value: input, errors: [] } : { valid: false, value: null, errors };
+}
+function describeGithubCredentialScope(scope) {
+  if (!scope) return "unknown";
+  return scope.mode === "all" ? "all repositories in the organization" : `[${scope.repos.join(", ")}]`;
+}
+var A2A_PROTOCOL_LIMITS = {
+  ordinaryFrameBytes: 65536,
+  taskCreateOuterFrameBytes: 327680,
+  taskUpdateOuterFrameBytes: 1572864,
+  taskCreateInputBytes: 262144,
+  taskCreateEnvelopeBytes: 65536,
+  identifierBytes: 256,
+  messageTextBytes: 16384,
+  messagePartsBytes: 65536,
+  artifactsPerUpdate: 50,
+  artifactLabelBytes: 256,
+  artifactValueBytes: 2048,
+  taskUpdateResultBytes: 1048576,
+  diagnosticsPerUpdate: 16,
+  diagnosticsBytesPerUpdate: 8192
+};
+var A2A_TASK_TYPE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+var DECIMAL_REVISION_RE = /^[1-9][0-9]*$/;
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+var CANONICAL_FRAMEWORKS = /* @__PURE__ */ new Set([
+  "claude_code",
+  "codex",
+  "openclaw",
+  "hermes"
+]);
+var HANDLER_STATES = /* @__PURE__ */ new Set([
+  "current",
+  "outdated_unedited",
+  "owner_modified",
+  "example_scaffold",
+  "not_installed_apply_pending",
+  "not_installed_custom",
+  "missing_deleted",
+  "custom_no_reference",
+  "not_reported"
+]);
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function hasOnlyKeys(value, allowed) {
+  const keySet = new Set(allowed);
+  return Object.keys(value).every((key) => keySet.has(key));
+}
+function isNonEmptyString(value, maxBytes = Number.MAX_SAFE_INTEGER) {
+  if (typeof value !== "string" || value.length === 0) return false;
+  const size = utf8ByteLength(value);
+  return size !== null && size <= maxBytes;
+}
+function utf8ByteLength(value) {
+  let size = 0;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint >= 55296 && codePoint <= 57343) return null;
+    if (codePoint <= 127) size += 1;
+    else if (codePoint <= 2047) size += 2;
+    else if (codePoint <= 65535) size += 3;
+    else size += 4;
+  }
+  return size;
+}
+function unicodeScalarCompare(left, right) {
+  const a = [...left].map((char) => char.codePointAt(0));
+  const b = [...right].map((char) => char.codePointAt(0));
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    if (a[index] !== b[index])
+      return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+function conservativeJsonStringBudget(value) {
+  let size = 2;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint >= 55296 && codePoint <= 57343) return null;
+    if (codePoint <= 31) size += 6;
+    else if (codePoint === 34 || codePoint === 92) size += 2;
+    else {
+      const bytes = utf8ByteLength(char);
+      if (bytes === null) return null;
+      size += bytes;
+    }
+  }
+  return size;
+}
+function conservativeJsonSizeBudget(value) {
+  const ancestors = /* @__PURE__ */ new WeakSet();
+  const visit = (current) => {
+    if (current === null) return 4;
+    if (typeof current === "boolean") return current ? 4 : 5;
+    if (typeof current === "number")
+      return Number.isFinite(current) ? 24 : null;
+    if (typeof current === "string")
+      return conservativeJsonStringBudget(current);
+    if (typeof current !== "object") return null;
+    if (ancestors.has(current)) return null;
+    ancestors.add(current);
+    try {
+      if (Array.isArray(current)) {
+        let size2 = 2 + Math.max(0, current.length - 1);
+        for (const item of current) {
+          const itemSize = visit(item);
+          if (itemSize === null) return null;
+          size2 += itemSize;
+        }
+        return size2;
+      }
+      const prototype = Object.getPrototypeOf(current);
+      if (prototype !== Object.prototype && prototype !== null || Object.getOwnPropertySymbols(current).length > 0) {
+        return null;
+      }
+      const object = current;
+      const keys = Object.keys(object).sort(unicodeScalarCompare);
+      let size = 2 + Math.max(0, keys.length - 1);
+      for (const key of keys) {
+        const keySize = conservativeJsonStringBudget(key);
+        const itemSize = visit(object[key]);
+        if (keySize === null || itemSize === null) return null;
+        size += keySize + 1 + itemSize;
+      }
+      return size;
+    } catch {
+      return null;
+    } finally {
+      ancestors.delete(current);
+    }
+  };
+  return visit(value);
+}
+function serializedJsonByteLength(value) {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === void 0 ? null : utf8ByteLength(serialized);
+  } catch {
+    return null;
+  }
+}
+function a2aMessageTextWithinLimit(value) {
+  return value.parts.every((part) => {
+    if (part.text === void 0) return true;
+    const size = utf8ByteLength(part.text);
+    return size !== null && size <= A2A_PROTOCOL_LIMITS.messageTextBytes;
+  });
+}
+function a2aArtifactWithinLimits(value) {
+  if (value.name !== void 0 && (utf8ByteLength(value.name) === null || utf8ByteLength(value.name) > A2A_PROTOCOL_LIMITS.artifactLabelBytes)) {
+    return false;
+  }
+  return value.parts.every((part) => {
+    if (part.text !== void 0 && (utf8ByteLength(part.text) === null || utf8ByteLength(part.text) > A2A_PROTOCOL_LIMITS.artifactValueBytes)) {
+      return false;
+    }
+    if (part.url !== void 0 && (utf8ByteLength(part.url) === null || utf8ByteLength(part.url) > A2A_PROTOCOL_LIMITS.artifactValueBytes)) {
+      return false;
+    }
+    if (part.data !== void 0) {
+      const size = typeof part.data === "string" ? utf8ByteLength(part.data) : conservativeJsonSizeBudget(part.data);
+      if (size === null || size > A2A_PROTOCOL_LIMITS.artifactValueBytes) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+function validA2aMessage(value, textLimit = false, partsLimit = false) {
+  const result = validateA2aMessage(value);
+  const partsBudget = result.valid ? serializedJsonByteLength(result.value.parts) : null;
+  return result.valid && conservativeJsonSizeBudget(value) !== null && (!partsLimit || partsBudget !== null && partsBudget <= A2A_PROTOCOL_LIMITS.messagePartsBytes) && (!textLimit || a2aMessageTextWithinLimit(result.value));
+}
+function validA2aArtifact(value) {
+  const task = validateA2aTask({
+    id: "contract-validation",
+    status: { state: "SUBMITTED" },
+    artifacts: [value]
+  });
+  return task.valid && conservativeJsonSizeBudget(value) !== null && a2aArtifactWithinLimits(task.value.artifacts?.[0]);
+}
+function validTaskUpdateDiagnostics(value) {
+  if (!Array.isArray(value) || value.length > A2A_PROTOCOL_LIMITS.diagnosticsPerUpdate)
+    return false;
+  let aggregate = 0;
+  for (const item of value) {
+    if (!isPlainObject2(item) || !hasOnlyKeys(item, ["kind", "reasonCode", "message", "details"]) || typeof item.kind !== "string" || !A2A_TASK_TYPE_PATTERN.test(item.kind) || item.reasonCode !== void 0 && typeof item.reasonCode !== "string" || item.message !== void 0 && typeof item.message !== "string" || item.details !== void 0 && !isPlainObject2(item.details))
+      return false;
+    const reasonBytes = item.reasonCode === void 0 ? 0 : utf8ByteLength(item.reasonCode);
+    const messageBytes = item.message === void 0 ? 0 : utf8ByteLength(item.message);
+    const detailsBytes = item.details === void 0 || Object.keys(item.details).length === 0 ? 0 : utf8ByteLength(JSON.stringify(item.details));
+    if (reasonBytes === null || messageBytes === null || detailsBytes === null)
+      return false;
+    aggregate += reasonBytes + messageBytes + detailsBytes;
+  }
+  return aggregate <= A2A_PROTOCOL_LIMITS.diagnosticsBytesPerUpdate;
+}
+function isRevision(value) {
+  return typeof value === "string" && DECIMAL_REVISION_RE.test(value);
+}
+function isTaskType(value) {
+  return typeof value === "string" && A2A_TASK_TYPE_PATTERN.test(value);
+}
+function isDispatchEventContext(value) {
+  if (!isPlainObject2(value) || !hasOnlyKeys(value, ["origin", "sender", "provider", "delivery_id"]) || !isPlainObject2(value.sender) || !hasOnlyKeys(value.sender, ["kind", "identity"]))
+    return false;
+  const sender = value.sender;
+  if (value.origin === "send") {
+    return (sender.kind === "user" || sender.kind === "agent") && typeof sender.identity === "string" && UUID_RE.test(sender.identity) && value.provider === void 0 && value.delivery_id === void 0;
+  }
+  return value.origin === "webhook" && sender.kind === "coordinator" && sender.identity === "spellguard" && isNonEmptyString(value.provider, A2A_PROTOCOL_LIMITS.identifierBytes) && isNonEmptyString(value.delivery_id, A2A_PROTOCOL_LIMITS.identifierBytes);
+}
+var DELIVERY_OUTCOMES = /* @__PURE__ */ new Set([
+  "injected",
+  "resumed",
+  "ledger_only",
+  "delivery_failed"
+]);
+function isDeliveryOutcome(value) {
+  return typeof value === "string" && DELIVERY_OUTCOMES.has(value);
+}
+function isTaskTypeList(value) {
+  return Array.isArray(value) && value.every(isTaskType);
+}
+function isBlockedTaskTypes(value) {
+  return Array.isArray(value) && value.every(
+    (entry) => isPlainObject2(entry) && hasOnlyKeys(entry, ["task_type", "cause"]) && isTaskType(entry.task_type) && isNonEmptyString(entry.cause, 500)
+  );
+}
+function isHandlerInventory(value) {
+  return Array.isArray(value) && value.every(
+    (entry) => isPlainObject2(entry) && hasOnlyKeys(entry, [
+      "task_type",
+      "state",
+      "path",
+      "installed_hash",
+      "current_hash",
+      "dist_hash",
+      "blocking_cause"
+    ]) && isTaskType(entry.task_type) && typeof entry.state === "string" && HANDLER_STATES.has(entry.state) && isNonEmptyString(entry.path, 4096) && (entry.installed_hash === void 0 || isNonEmptyString(entry.installed_hash, 256)) && (entry.current_hash === void 0 || isNonEmptyString(entry.current_hash, 256)) && (entry.dist_hash === void 0 || isNonEmptyString(entry.dist_hash, 256)) && (entry.blocking_cause === void 0 || isNonEmptyString(entry.blocking_cause, 500))
+  );
+}
+function isConfigApplication(value) {
+  return isRevision(value.config_revision) && isTaskTypeList(value.applied_task_types) && isBlockedTaskTypes(value.blocked_task_types) && (value.superseded === void 0 || typeof value.superseded === "boolean");
+}
+function isMaintenanceApplication(value) {
+  return isNonEmptyString(value.operation_id, 256) && (value.status === "applied" || value.status === "blocked") && isRevision(value.config_revision) && (value.reason === void 0 || isNonEmptyString(value.reason, 500));
+}
+var PUBLIC_TASK_RESPONSE_KEYS = [
+  "id",
+  "contextId",
+  "organizationId",
+  "senderKind",
+  "senderAgentId",
+  "senderUserId",
+  "recipientAgentId",
+  "originatingAgentId",
+  "originatingAgentIdentity",
+  "originatingSessionId",
+  "framework",
+  "type",
+  "state",
+  "artifactUrl",
+  "metadata",
+  "resultPayload",
+  "deferred",
+  "lastProgressAt",
+  "lastSupervisionKeepaliveAt",
+  "effectiveDeadlineAt",
+  "workingTimeoutSeconds",
+  "hasUnansweredWorkerMessage",
+  "threadRecordCount",
+  "threadWriteAttemptCount",
+  "suppressedMessageCount",
+  "suppressedProgressCount",
+  "artifactCount",
+  "terminalAt",
+  "createdAt",
+  "updatedAt"
+];
+var TASK_SUMMARY_RESPONSE_KEYS = [
+  ...PUBLIC_TASK_RESPONSE_KEYS.filter(
+    (key) => key !== "originatingAgentId" && key !== "originatingAgentIdentity" && key !== "originatingSessionId"
+  ),
+  "typeLabel",
+  "stateLabel"
+];
+function nullableString(value) {
+  return value === null || typeof value === "string";
+}
+function exactKeys(value, keys) {
+  return Object.keys(value).length === keys.length && hasOnlyKeys(value, keys);
+}
+function validTaskResponseBase(value, summary) {
+  const keys = summary ? TASK_SUMMARY_RESPONSE_KEYS : PUBLIC_TASK_RESPONSE_KEYS;
+  return exactKeys(value, keys) && isNonEmptyString(value.id) && isNonEmptyString(value.contextId) && isNonEmptyString(value.organizationId) && (value.senderKind === "agent" || value.senderKind === "coordinator" || value.senderKind === "user") && nullableString(value.senderAgentId) && nullableString(value.senderUserId) && isNonEmptyString(value.recipientAgentId) && (summary || nullableString(value.originatingAgentId) && nullableString(value.originatingAgentIdentity) && nullableString(value.originatingSessionId)) && nullableString(value.framework) && isNonEmptyString(value.type) && A2A_TASK_STATES.includes(value.state) && nullableString(value.artifactUrl) && isPlainObject2(value.metadata) && typeof value.deferred === "boolean" && nullableString(value.lastProgressAt) && nullableString(value.lastSupervisionKeepaliveAt) && nullableString(value.effectiveDeadlineAt) && (value.workingTimeoutSeconds === null || typeof value.workingTimeoutSeconds === "number") && typeof value.hasUnansweredWorkerMessage === "boolean" && typeof value.threadRecordCount === "number" && typeof value.threadWriteAttemptCount === "number" && typeof value.suppressedMessageCount === "number" && typeof value.suppressedProgressCount === "number" && typeof value.artifactCount === "number" && nullableString(value.terminalAt) && isNonEmptyString(value.createdAt) && isNonEmptyString(value.updatedAt) && (!summary || isNonEmptyString(value.typeLabel) && isNonEmptyString(value.stateLabel));
+}
+function validatePublicTaskResponse(value) {
+  return isPlainObject2(value) && validTaskResponseBase(value, false);
+}
+function validateTaskDetailResponse(value) {
+  if (!isPlainObject2(value)) return false;
+  const { thread, artifacts, diagnostics, ...summary } = value;
+  return validTaskResponseBase(summary, true) && Array.isArray(thread) && Array.isArray(artifacts) && Array.isArray(diagnostics) && thread.every(validateTaskThreadResponse) && artifacts.every(validateTaskArtifactResponse) && diagnostics.every(validateTaskDiagnosticResponse);
+}
+function nonnegativeInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+function validateTaskThreadResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "sequence",
+    "recordKind",
+    "messageId",
+    "senderRole",
+    "senderKind",
+    "senderAgentId",
+    "senderAgentIdentity",
+    "senderUserId",
+    "senderUserIdentity",
+    "senderDisplayName",
+    "text",
+    "parts",
+    "postTerminal",
+    "deliveryState",
+    "deliveryReason",
+    "terminalState",
+    "terminalCause",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && nonnegativeInteger(value.sequence) && (value.recordKind === "progress" || value.recordKind === "message" || value.recordKind === "terminal") && nullableString(value.messageId) && (value.senderRole === null || value.senderRole === "USER" || value.senderRole === "AGENT") && (value.senderKind === null || value.senderKind === "agent" || value.senderKind === "user" || value.senderKind === "coordinator" || value.senderKind === "handler" || value.senderKind === "daemon") && nullableString(value.senderAgentId) && nullableString(value.senderAgentIdentity) && nullableString(value.senderUserId) && nullableString(value.senderUserIdentity) && nullableString(value.senderDisplayName) && nullableString(value.text) && typeof value.postTerminal === "boolean" && nullableString(value.deliveryState) && nullableString(value.deliveryReason) && (value.terminalState === null || A2A_TASK_STATES.includes(value.terminalState)) && (value.terminalCause === null || isPlainObject2(value.terminalCause)) && isNonEmptyString(value.createdAt);
+}
+function validateTaskArtifactResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "artifactId",
+    "sequence",
+    "type",
+    "value",
+    "displayLabel",
+    "metadata",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && isNonEmptyString(value.artifactId) && nonnegativeInteger(value.sequence) && isNonEmptyString(value.type) && typeof value.value === "string" && nullableString(value.displayLabel) && isPlainObject2(value.metadata) && isNonEmptyString(value.createdAt);
+}
+function validateTaskDiagnosticResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "sequence",
+    "kind",
+    "reasonCode",
+    "message",
+    "details",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && nonnegativeInteger(value.sequence) && isNonEmptyString(value.kind) && nullableString(value.reasonCode) && nullableString(value.message) && isPlainObject2(value.details) && isNonEmptyString(value.createdAt);
+}
+function validateA2aAckResult(value) {
+  if (!isPlainObject2(value) || typeof value.kind !== "string") return false;
+  switch (value.kind) {
+    case "task_update":
+      return hasOnlyKeys(value, ["kind", "outcome", "response"]) && (value.outcome === "persisted" || value.outcome === "already_terminal" || value.outcome === "thread_bound_reached") && (value.response === void 0 || validatePublicTaskResponse(value.response));
+    case "message":
+      return hasOnlyKeys(value, ["kind", "outcome", "message_id", "response"]) && value.outcome === "persisted" && isNonEmptyString(value.message_id) && (value.response === void 0 || isPlainObject2(value.response) && exactKeys(value.response, ["messageId", "postTerminal"]) && isNonEmptyString(value.response.messageId) && typeof value.response.postTerminal === "boolean");
+    case "task_create":
+      return hasOnlyKeys(value, ["kind", "task", "outcome", "response"]) && validateA2aTask(value.task).valid && conservativeJsonSizeBudget(value.task) !== null && (value.outcome === void 0 || value.outcome === "created" || value.outcome === "duplicate" || value.outcome === "delivery_failed" || // Acceptance, not failure: the recipient box was asleep, the task is
+      // durably parked and a wake was requested. The server emits this for
+      // task_create; rejecting it drops the entire ack frame (see the
+      // declared `A2aAckResult` union and the Go daemon's mirror).
+      value.outcome === "pending_wake") && (value.response === void 0 || validatePublicTaskResponse(value.response));
+    case "task_read":
+      return hasOnlyKeys(value, ["kind", "task", "response"]) && validateA2aTask(value.task).valid && conservativeJsonSizeBudget(value.task) !== null && (value.response === void 0 || validateTaskDetailResponse(value.response));
+    case "config_applied":
+      return hasOnlyKeys(value, [
+        "kind",
+        "config_revision",
+        "applied_task_types",
+        "blocked_task_types",
+        "superseded"
+      ]) && isConfigApplication(value);
+    case "maintenance":
+      return hasOnlyKeys(value, [
+        "kind",
+        "operation_id",
+        "status",
+        "config_revision",
+        "reason"
+      ]) && isMaintenanceApplication(value);
+    default:
+      return false;
+  }
+}
+function validateA2aContractFrame(value, direction) {
+  if (!isPlainObject2(value) || typeof value.type !== "string") return false;
+  const serverBase = direction === "server" && isNonEmptyString(value.seq) && isNonEmptyString(value.ts);
+  const clientBase = direction === "client" && isNonEmptyString(value.client_msg_id, A2A_PROTOCOL_LIMITS.identifierBytes);
+  switch (value.type) {
+    case "a2a_task_dispatch":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "task",
+        "message",
+        "framework",
+        "recipient_agent_id",
+        "sender_agent_id",
+        "org_id",
+        "event_context"
+      ]) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && (value.sender_agent_id === void 0 || isNonEmptyString(
+        value.sender_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.org_id === void 0 || isNonEmptyString(
+        value.org_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework)) && (value.event_context === void 0 || isDispatchEventContext(value.event_context)) && validateA2aTask(value.task).valid && validateA2aMessage(value.message).valid;
+    case "config_updated":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "config",
+        "triggers_rotation",
+        "config_revision"
+      ]) && isPlainObject2(value.config) && typeof value.triggers_rotation === "boolean" && isRevision(value.config_revision);
+    case "a2a_maintenance":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "operation_id",
+        "action",
+        "config_revision"
+      ]) && isNonEmptyString(value.operation_id, 256) && value.action === "backfill" && isRevision(value.config_revision);
+    case "a2a_config_applied":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "config_revision",
+        "applied_task_types",
+        "blocked_task_types",
+        "superseded"
+      ]) && isConfigApplication(value);
+    case "a2a_handler_inventory":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "config_revision",
+        "handlers"
+      ]) && isRevision(value.config_revision) && isHandlerInventory(value.handlers);
+    case "a2a_maintenance_result":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "operation_id",
+        "status",
+        "config_revision",
+        "reason"
+      ]) && isMaintenanceApplication(value);
+    case "a2a_supervision_keepalive":
+    case "a2a_task_read":
+    case "a2a_deferred_accepted":
+      return clientBase && hasOnlyKeys(value, ["type", "client_msg_id", "taskId"]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes);
+    case "a2a_message_delivery":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "taskId",
+        "messageId",
+        "reason",
+        "outcome"
+      ]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes) && isNonEmptyString(
+        value.messageId,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && isDeliveryOutcome(value.outcome) && // A clean injection needs no explanation; every other terminal state
+      // must name why, so no message ends as an unexplained failure.
+      (value.outcome === "injected" ? value.reason === void 0 : isNonEmptyString(value.reason, A2A_PROTOCOL_LIMITS.identifierBytes));
+    case "a2a_session_register":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "session_id",
+        "framework",
+        "working_directory",
+        "taskId"
+      ]) && isNonEmptyString(value.session_id, 256) && typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework) && isNonEmptyString(value.working_directory, 4096) && (value.taskId === void 0 || isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes));
+    case "a2a_task_create": {
+      const messageBudget = conservativeJsonSizeBudget(value.message);
+      const frameBudget = conservativeJsonSizeBudget(value);
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "recipient_agent_id",
+        "task_type",
+        "idempotency_key",
+        "message",
+        "originating_session_id"
+      ]) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && isTaskType(value.task_type) && isNonEmptyString(value.idempotency_key, 256) && validA2aMessage(value.message, true) && messageBudget !== null && messageBudget <= A2A_PROTOCOL_LIMITS.taskCreateInputBytes && frameBudget !== null && frameBudget - messageBudget <= A2A_PROTOCOL_LIMITS.taskCreateEnvelopeBytes && (value.originating_session_id === void 0 || isNonEmptyString(value.originating_session_id, 256));
+    }
+    case "a2a_task_update": {
+      const artifacts = value.artifacts;
+      const artifact = value.artifact;
+      const artifactsValid = artifacts === void 0 || Array.isArray(artifacts) && artifacts.every(validA2aArtifact);
+      const artifactValid = artifact === void 0 || validA2aArtifact(artifact);
+      const artifactCount = (artifact === void 0 ? 0 : 1) + (Array.isArray(artifacts) ? artifacts.length : 0);
+      const resultBudget = value.result === void 0 ? 0 : conservativeJsonSizeBudget(value.result);
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "taskId",
+        "state",
+        "message",
+        "artifact",
+        "artifacts",
+        "result",
+        "diagnostics",
+        "reasonSource",
+        "deferred",
+        "framework"
+      ]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes) && typeof value.state === "string" && A2A_TASK_STATES.includes(value.state) && (value.message === void 0 || validA2aMessage(value.message, true)) && artifactValid && artifactsValid && artifactCount <= A2A_PROTOCOL_LIMITS.artifactsPerUpdate && resultBudget !== null && resultBudget <= A2A_PROTOCOL_LIMITS.taskUpdateResultBytes && (value.diagnostics === void 0 || validTaskUpdateDiagnostics(value.diagnostics)) && // Present-or-absent, and 'handler' is the ONLY admissible value: a
+      // daemon-authored reason is the default, so there is no positive daemon
+      // marker to accept — anything else is drift and fails the whole frame.
+      (value.reasonSource === void 0 || value.reasonSource === "handler") && (value.deferred === void 0 || value.deferred === true && value.state === "WORKING") && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework));
+    }
+    case "a2a_message": {
+      const common = validA2aMessage(value.message, true, true) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && (value.sender_agent_id === void 0 || isNonEmptyString(
+        value.sender_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework)) && (value.target_session_id === void 0 || isNonEmptyString(value.target_session_id, 256));
+      if (direction === "client") {
+        return clientBase && hasOnlyKeys(value, [
+          "type",
+          "client_msg_id",
+          "message",
+          "recipient_agent_id",
+          "sender_agent_id",
+          "framework",
+          "target_session_id"
+        ]) && common;
+      }
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "message",
+        "recipient_agent_id",
+        "sender_agent_id",
+        "framework",
+        "org_id",
+        "target_session_id"
+      ]) && common && (value.org_id === void 0 || isNonEmptyString(value.org_id, A2A_PROTOCOL_LIMITS.identifierBytes));
+    }
+    default:
+      return false;
+  }
+}
+function isGeneralizedServerEnvelopeValid(obj) {
+  if (obj.type === "ack" && obj.result !== void 0) {
+    return validateA2aAckResult(obj.result);
+  }
+  if (obj.type === "config_updated" && obj.config_revision !== void 0) {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_maintenance") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_task_dispatch") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_message") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  return true;
+}
 var KNOWN_SERVER_FRAME_TYPES = /* @__PURE__ */ new Set([
   "hello",
   "credential_delivered",
   "credential_rotated",
   "credential_revoked",
+  "github_grants_bundle",
+  "github_grants_commit_confirmed",
   "config_updated",
   "ack",
   "error",
   "resume_window_exceeded",
   "login_code",
-  "login_restart"
+  "login_restart",
+  "slack_event",
+  "slack_event_blocked",
+  "teams_activity",
+  "teams_activity_blocked",
+  // A2A collaboration-plane down frames (Task T2). `a2a_message` is
+  // bidirectional; this is its server→box direction.
+  "a2a_task_dispatch",
+  "a2a_message",
+  "a2a_maintenance"
+]);
+var A2A_FRAME_TYPES = /* @__PURE__ */ new Set([
+  "a2a_config_applied",
+  "a2a_deferred_accepted",
+  "a2a_message_delivery",
+  "a2a_handler_inventory",
+  "a2a_maintenance",
+  "a2a_maintenance_result",
+  "a2a_task_dispatch",
+  "a2a_task_update",
+  "a2a_message",
+  "a2a_session_register",
+  "a2a_supervision_keepalive",
+  "a2a_task_create",
+  "a2a_task_read"
 ]);
 function parseServerFrame(text) {
   if (typeof text !== "string" || text.length === 0) return null;
@@ -516,10 +1344,123 @@ function parseServerFrame(text) {
   const obj = raw;
   if (typeof obj.type !== "string") return null;
   if (!KNOWN_SERVER_FRAME_TYPES.has(obj.type)) return null;
+  if (obj.type === "github_grants_bundle") {
+    if (!isGithubGrantsBundle(obj)) return null;
+    return obj;
+  }
+  if (obj.type === "github_grants_commit_confirmed") {
+    if (!hasOnlyKeys(obj, [
+      "type",
+      "protocol_version",
+      "seq",
+      "ts",
+      "delivery_id",
+      "grant_set_revision"
+    ]) || obj.protocol_version !== "5" || typeof obj.seq !== "string" || typeof obj.ts !== "string" || typeof obj.delivery_id !== "string" || !UUID_RE.test(obj.delivery_id) || !isRevision(obj.grant_set_revision))
+      return null;
+    return obj;
+  }
+  if (A2A_FRAME_TYPES.has(obj.type) && conservativeJsonSizeBudget(obj) === null)
+    return null;
   if (obj.type === "login_code") {
     if (typeof obj.code !== "string" || obj.code.length === 0) return null;
   }
+  if (!isGeneralizedServerEnvelopeValid(obj)) return null;
+  if (!isA2aServerPayloadValid(obj)) return null;
   return obj;
+}
+function isGithubGrantsBundle(value) {
+  if (!hasOnlyKeys(value, [
+    "type",
+    "protocol_version",
+    "seq",
+    "ts",
+    "delivery_id",
+    "grant_set_revision",
+    "credentials"
+  ]) || value.protocol_version !== "5" || typeof value.seq !== "string" || typeof value.ts !== "string" || typeof value.delivery_id !== "string" || !UUID_RE.test(value.delivery_id) || !isRevision(value.grant_set_revision) || !Array.isArray(value.credentials))
+    return false;
+  const grantIds = /* @__PURE__ */ new Set();
+  const installationIds = /* @__PURE__ */ new Set();
+  const credentialIds = /* @__PURE__ */ new Set();
+  const scopedTokenIds = /* @__PURE__ */ new Set();
+  const numericInstallationIds = /* @__PURE__ */ new Set();
+  const owners = /* @__PURE__ */ new Set();
+  let memberAgentId;
+  for (const raw of value.credentials) {
+    if (!isPlainObject2(raw)) return false;
+    const scope = raw.scope;
+    const providerData = raw.provider_data;
+    if (!hasOnlyKeys(raw, [
+      "grant_id",
+      "installation_record_id",
+      "credential_id",
+      "scoped_token_id",
+      "agent_id",
+      "provider",
+      "kind",
+      "status",
+      "grant_revision",
+      "grant_set_revision",
+      "github_org_login",
+      "github_org_display_name",
+      "installation_id",
+      "expires_at",
+      "scoped_token",
+      "access",
+      "scope",
+      "provider_data"
+    ]) || raw.provider !== "github" || raw.kind !== "issued" || raw.status !== "valid" || typeof raw.grant_id !== "string" || !UUID_RE.test(raw.grant_id) || typeof raw.installation_record_id !== "string" || !UUID_RE.test(raw.installation_record_id) || typeof raw.credential_id !== "string" || !UUID_RE.test(raw.credential_id) || // NOT a UUID, unlike the four relational ids around it. This is GitHub's
+    // INSTALLATION-TOKEN id — a number the mint path stringifies
+    // (`scopedTokenId()` in `services/github/github-api.ts`) into the `text`
+    // column `credentials.scoped_token_id`; real rows look like `5249971925`.
+    // A UUID test here rejected every bundle the server actually sends, so a
+    // marked agent's credential store stayed empty and git kept 401ing. It is
+    // an OPAQUE identifier everywhere else in the codebase (the API contract
+    // types it `z.string().min(1)`), and it is validated as one here: present,
+    // a string, non-empty. Uniqueness within the bundle is still enforced
+    // below.
+    typeof raw.scoped_token_id !== "string" || raw.scoped_token_id.length === 0 || typeof raw.agent_id !== "string" || !UUID_RE.test(raw.agent_id) || !isRevision(raw.grant_revision) || raw.grant_set_revision !== value.grant_set_revision || typeof raw.github_org_login !== "string" || raw.github_org_login.length === 0 || typeof raw.github_org_display_name !== "string" || raw.github_org_display_name.trim().length === 0 || typeof raw.installation_id !== "number" || !Number.isSafeInteger(raw.installation_id) || raw.installation_id <= 0 || typeof raw.expires_at !== "string" || !Number.isFinite(Date.parse(raw.expires_at)) || typeof raw.scoped_token !== "string" || raw.scoped_token.length === 0 || !["read", "write"].includes(raw.access) || !isPlainObject2(scope) || !isPlainObject2(providerData) || !hasOnlyKeys(providerData, [
+      "github_user_id",
+      "github_login",
+      "github_user_email",
+      "git_author_name",
+      "git_author_email"
+    ]) || typeof providerData.github_user_id !== "number" || !Number.isSafeInteger(providerData.github_user_id) || // Strictly positive: no GitHub account has id 0, and 0 is precisely the
+    // placeholder a missing identity used to produce server-side. The
+    // plugins write this into the box's real git config, so a bundle whose
+    // committer resolves to nobody is refused at the boundary too.
+    providerData.github_user_id <= 0 || typeof providerData.github_login !== "string" || providerData.github_login.trim().length === 0 || !(providerData.github_user_email === null || typeof providerData.github_user_email === "string") || typeof providerData.git_author_name !== "string" || providerData.git_author_name.trim().length === 0 || typeof providerData.git_author_email !== "string" || providerData.git_author_email.trim().length === 0)
+      return false;
+    const owner = raw.github_org_login;
+    const validScope = scope.mode === "all" && hasOnlyKeys(scope, ["mode"]) || scope.mode === "selected" && hasOnlyKeys(scope, ["mode", "repository_names"]) && Array.isArray(scope.repository_names) && scope.repository_names.length > 0 && scope.repository_names.every((name) => {
+      if (typeof name !== "string" || name !== name.toLowerCase())
+        return false;
+      const parts = name.split("/");
+      return parts.length === 2 && parts[0] === owner.toLowerCase() && parts[1].length > 0;
+    }) && new Set(scope.repository_names).size === scope.repository_names.length;
+    if (!validScope) return false;
+    const normalizedLogin = owner.toLowerCase();
+    if (grantIds.has(raw.grant_id) || installationIds.has(raw.installation_record_id) || credentialIds.has(raw.credential_id) || scopedTokenIds.has(raw.scoped_token_id) || numericInstallationIds.has(raw.installation_id) || memberAgentId !== void 0 && memberAgentId !== raw.agent_id || owners.has(normalizedLogin))
+      return false;
+    grantIds.add(raw.grant_id);
+    installationIds.add(raw.installation_record_id);
+    credentialIds.add(raw.credential_id);
+    scopedTokenIds.add(raw.scoped_token_id);
+    numericInstallationIds.add(raw.installation_id);
+    memberAgentId = raw.agent_id;
+    owners.add(normalizedLogin);
+  }
+  return true;
+}
+function isA2aServerPayloadValid(obj) {
+  if (obj.type === "a2a_task_dispatch") {
+    return validateA2aTask(obj.task).valid && validateA2aMessage(obj.message).valid && conservativeJsonSizeBudget(obj.task) !== null && conservativeJsonSizeBudget(obj.message) !== null;
+  }
+  if (obj.type === "a2a_message") {
+    return validA2aMessage(obj.message, true, true) && conservativeJsonSizeBudget(obj.message) !== null;
+  }
+  return true;
 }
 var AGENT_CONTROL_CLOSE_CODES = {
   NORMAL: 1e3,
@@ -528,13 +1469,36 @@ var AGENT_CONTROL_CLOSE_CODES = {
   AUTH_FAILED: 4401,
   AGENT_OWNERSHIP: 4403,
   RESUME_WINDOW_EXCEEDED: 4413,
+  /**
+   * The channel displaced a registered socket that had stopped answering the
+   * keepalive, so a newcomer could take the single-socket slot (S2).
+   *
+   * Distinct from `ALREADY_CONNECTED` because it points the OTHER way: 4429
+   * tells a newcomer "someone live is already here", while this tells an
+   * incumbent "you look dead and have been replaced". It is deliberately NOT
+   * fatal to the client — a socket that receives it either really is a zombie
+   * whose process is gone, or is a live daemon that was mis-judged and must
+   * reconnect rather than exit.
+   */
+  STALE_SOCKET: 4410,
   ALREADY_CONNECTED: 4429,
   /**
    * Set ONLY on a deliberate move/re-bootstrap rotation; the sole trigger
    * for the plugin self-wipe. The close reason string is one of
    * `AUTH_SUPERSEDED_CLOSE_REASONS` — use that constant to match on it.
    */
-  AUTH_SUPERSEDED: 4409
+  AUTH_SUPERSEDED: 4409,
+  /**
+   * The agent is quarantined: its channel is suspended, not revoked (#1348).
+   * Sent only to a client that advertised `AGENT_SUSPEND_CAPABILITY`; any
+   * other gets AUTH_FAILED (4401). The client drops every credential it
+   * placed, keeps its identity, and reconnects with backoff (30 s, doubling to
+   * 5 min). A quarantined agent's capable reconnect is answered with this code
+   * too, until a release lets the upgrade through and the normal resume
+   * re-delivers what is still granted. The reason is
+   * `AGENT_SUSPENDED_CLOSE_REASON`.
+   */
+  AGENT_SUSPENDED: 4423
   // A SERVER_TRANSIENT (4503) code is intentionally not declared here: the
   // server's transient-failure paths (storage put errors, missing DB handle,
   // serialization throws) log and fall through rather than emitting a close
@@ -545,6 +1509,7 @@ var AUTH_SUPERSEDED_CLOSE_REASONS = {
   ATTACHED_ELSEWHERE: "attached_elsewhere",
   REASSIGNED: "reassigned"
 };
+var AGENT_SUSPEND_CAPABILITY = "agent_suspend_v1";
 var FATAL_CLOSE_CODES = /* @__PURE__ */ new Set([
   // 4400 BOOTSTRAP_ERROR is wired up server-side. Without listing it here,
   // partysocket would auto-reconnect after a bootstrap-terminal failure and
@@ -569,10 +1534,15 @@ var AgentControlClient = class {
     this.#lastServerSeq = opts.initialLastServerSeq ?? "0";
     this.#knownCredentials = opts.initialKnownCredentials ?? [];
   }
+  opts;
   #ps = null;
+  /** Preserve wire order across async receiver durability hooks. */
+  #messageChain = Promise.resolve();
   #closed = false;
   #lastServerSeq;
   #knownCredentials;
+  /** True only for a connection whose query advertised `resume=always`. */
+  #resumeAlwaysConnection = false;
   #firstConnect = true;
   #pendingRequests = /* @__PURE__ */ new Map();
   // Serializes refresh requests because `credential_delivered` carries no
@@ -580,6 +1550,11 @@ var AgentControlClient = class {
   // would resolve them out-of-order. This serialization can be dropped if the
   // protocol later grows an `in_response_to` correlation field.
   #refreshChain = Promise.resolve();
+  // Redacted replay and the following divergence pass can announce the same
+  // issued identity before its first refresh completes. Keep one refresh per
+  // identity in flight so the second notice cannot rotate it again after the
+  // first response settles.
+  #redactedRefreshesInFlight = /* @__PURE__ */ new Set();
   // Rotation-fallback timers. Key = seq of the config_updated frame.
   // Cleared when a credential_rotated arrives before the 10s window expires.
   #rotationTimers = /* @__PURE__ */ new Map();
@@ -588,11 +1563,24 @@ var AgentControlClient = class {
   // value, via the injectable #now()) so the timer can detect a zombie socket.
   #heartbeatTimer = null;
   #lastPongAt = 0;
+  /** Consecutive HTTP-upgrade auth failures seen before a socket opens. */
+  #consecutiveUpgradeAuthFailures = 0;
+  /**
+   * #1348: the last suspended (4423) wait, or null while the session is
+   * healthy. A suspended reconnect still opens (hello, then 4423), so this
+   * resets only on a frame past the hello, never on `open`.
+   */
+  #suspendedDelayMs = null;
+  #suspendedTimer = null;
   /** Open the socket. Subsequent reconnects are automatic. */
   start() {
     if (this.#closed || this.#ps) return;
     const BaseImpl = this.opts.WebSocketImpl ?? WebSocket;
-    const Impl = makeErrorSafeWebSocket(BaseImpl, this.opts.upgradeHeaders);
+    const Impl = makeErrorSafeWebSocket(
+      BaseImpl,
+      this.opts.upgradeHeaders,
+      (err) => this.#observeUpgradeError(err)
+    );
     const apiBaseUrl = this.opts.apiBaseUrl.replace(/^https?:\/\//, "");
     const tls = this.opts.apiBaseUrl.startsWith("https://");
     const ps = new PartySocket({
@@ -628,10 +1616,13 @@ var AgentControlClient = class {
     });
     this.#ps = ps;
     ps.addEventListener("open", () => {
+      this.#consecutiveUpgradeAuthFailures = 0;
       void this.#onOpen();
     });
     ps.addEventListener("message", (e) => {
-      void this.#handleMessage(e);
+      this.#messageChain = this.#messageChain.then(
+        () => this.#handleMessage(e)
+      );
     });
     ps.addEventListener("close", (event) => {
       this.#stopHeartbeat();
@@ -649,6 +1640,10 @@ var AgentControlClient = class {
         this.close();
         return;
       }
+      if (code === AGENT_CONTROL_CLOSE_CODES.AGENT_SUSPENDED) {
+        this.#suspend(reason);
+        return;
+      }
       if (FATAL_CLOSE_CODES.has(code)) {
         this.opts.onFatalClose(code, reason);
         this.close();
@@ -662,8 +1657,50 @@ var AgentControlClient = class {
       this.opts.onError?.(err);
     });
   }
-  /** Send a CredentialRequest and resolve to the delivered descriptors.
-   *  Times out if no `credential_delivered` arrives within `timeoutMs`. */
+  /**
+   * #1348: the agent is quarantined. PartySocket has already queued its own
+   * quick retry (its close handler reconnects before listeners run), so stop
+   * it and reconnect on the suspended backoff instead. Identity stays.
+   */
+  #suspend(reason) {
+    const ps = this.#ps;
+    if (this.#closed || !ps) return;
+    ps.close();
+    const { initial, max } = this.opts.suspendedBackoffMs ?? {
+      initial: 3e4,
+      max: 3e5
+    };
+    const retryInMs = this.#suspendedDelayMs === null ? initial : Math.min(this.#suspendedDelayMs * 2, max);
+    this.#suspendedDelayMs = retryInMs;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = setTimeout(() => {
+      this.#suspendedTimer = null;
+      if (!this.#closed && this.#ps === ps) ps.reconnect();
+    }, retryInMs);
+    this.#knownCredentials = [];
+    void Promise.resolve().then(() => this.opts.onKnownCredentialsChanged?.([])).then(() => this.opts.onSuspended?.({ reason, retryInMs })).catch(
+      (err) => this.opts.onError?.(
+        err instanceof Error ? err : new Error(String(err))
+      )
+    );
+  }
+  #observeUpgradeError(err) {
+    if (isUpgradeUnauthorized(err)) {
+      this.#consecutiveUpgradeAuthFailures += 1;
+      if (this.#consecutiveUpgradeAuthFailures >= 3) {
+        this.opts.onFatalClose(
+          AGENT_CONTROL_CLOSE_CODES.AUTH_FAILED,
+          "http_upgrade_unauthorized"
+        );
+        this.close();
+      }
+      return;
+    }
+    this.#consecutiveUpgradeAuthFailures = 0;
+  }
+  /** Send a CredentialRequest and resolve after the durable response apply.
+   *  V4 returns delivered descriptors; V5 resolves `[]` after its bundle hook
+   *  commits. Times out if no matching response arrives within `timeoutMs`. */
   async requestRefresh(args, opts = {}) {
     if (!this.#ps) throw new Error("client not started");
     const next = this.#refreshChain.catch(() => void 0).then(() => this.#sendRefresh(args, opts));
@@ -675,15 +1712,17 @@ var AgentControlClient = class {
     if (!this.#ps) throw new Error("client not started");
     const clientMsgId = crypto.randomUUID();
     const timeoutMs = opts.timeoutMs ?? 3e4;
-    return await new Promise((resolve4, reject) => {
+    return await new Promise((resolve5, reject) => {
       const timer = setTimeout(() => {
         this.#pendingRequests.delete(clientMsgId);
         reject(new Error("credential_request_timeout"));
       }, timeoutMs);
       this.#pendingRequests.set(clientMsgId, {
-        resolve: resolve4,
+        resolve: resolve5,
         reject,
         timer,
+        requestedProvider: args.provider,
+        requestedReason: args.reason,
         // Carry the superseded id so the resolution path can prune it from
         // knownCredentials when the new credential is delivered.
         supersededProvider: args.provider,
@@ -753,7 +1792,11 @@ var AgentControlClient = class {
           client_msg_id: crypto.randomUUID(),
           state: update.state,
           ...update.login_url ? { login_url: update.login_url } : {},
-          ...update.message ? { message: update.message } : {}
+          ...update.message ? { message: update.message } : {},
+          // T4.3 — carry the per-frame framework discriminator when the caller
+          // (the multiplexed Go box daemon) supplies it. Omitted for the
+          // single-framework Node daemon path so its frame stays byte-identical.
+          ...update.framework ? { framework: update.framework } : {}
         })
       );
     } catch {
@@ -762,6 +1805,8 @@ var AgentControlClient = class {
   /** Close the socket and stop reconnecting. */
   close() {
     this.#closed = true;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = null;
     this.#stopHeartbeat();
     for (const [, p] of this.#pendingRequests) {
       clearTimeout(p.timer);
@@ -843,11 +1888,27 @@ var AgentControlClient = class {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
   }
+  /**
+   * #1348: the Resume capabilities. AGENT_SUSPEND_CAPABILITY is added only
+   * when the plugin wired `onSuspended`, since only then does a suspension
+   * drop what it placed; a client that can't must keep getting 4401.
+   */
+  #resumeCapabilities() {
+    if (!this.opts.onSuspended) return this.opts.capabilities;
+    return [...this.opts.capabilities ?? [], AGENT_SUSPEND_CAPABILITY];
+  }
   async #buildQuery() {
     const creds = await this.opts.credentials();
     if (creds.mode === "secret") {
-      return { agent_secret: creds.agentSecret };
+      this.#resumeAlwaysConnection = true;
+      return {
+        agent_secret: creds.agentSecret,
+        resume: "always",
+        ...creds.framework ? { framework: creds.framework } : {},
+        ...this.opts.onSuspended ? { suspend: "1" } : {}
+      };
     }
+    this.#resumeAlwaysConnection = false;
     if (creds.mode === "managed-bootstrap") {
       return { nonce: creds.nonce };
     }
@@ -933,16 +1994,14 @@ var AgentControlClient = class {
    * `case 'hello'`.
    */
   #sendResumeIfApplicable() {
-    if (!this.#ps) return;
-    const noStateYet = this.#lastServerSeq === "0" && this.#knownCredentials.length === 0;
-    if (noStateYet) return;
+    if (!this.#ps || !this.#resumeAlwaysConnection) return;
     this.#ps.send(
       JSON.stringify({
         type: "resume",
         client_msg_id: crypto.randomUUID(),
         last_server_seq: this.#lastServerSeq,
         known_credentials: this.#knownCredentials,
-        capabilities: this.opts.capabilities
+        capabilities: this.#resumeCapabilities()
       })
     );
   }
@@ -959,10 +2018,39 @@ var AgentControlClient = class {
       );
       return;
     }
+    if (frame.type !== "hello") this.#suspendedDelayMs = null;
     try {
       await this.#dispatch(frame);
     } catch (err) {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  /**
+   * A V5 bundle is a complete authoritative GitHub set but carries no request
+   * correlation id. Refresh requests are serialized, so at most one pending
+   * request can match. A scoped refresh is satisfied only when the full set no
+   * longer contains the superseded id; an unscoped manual issuance is
+   * satisfied only by a secret-bearing set. The caller invokes this strictly
+   * after the receiver's durable apply hook succeeds.
+   */
+  #settlePendingGithubGrantBundle(frame) {
+    const activeIds = new Set(
+      frame.credentials.map((credential) => credential.scoped_token_id)
+    );
+    for (const [id, pending] of this.#pendingRequests) {
+      if (pending.requestedProvider !== "github") continue;
+      const matches = pending.supersededScopedTokenId ? !activeIds.has(pending.supersededScopedTokenId) : pending.requestedReason === "manual" && frame.credentials.length > 0;
+      if (!matches) continue;
+      clearTimeout(pending.timer);
+      if (pending.supersededScopedTokenId) {
+        this.#dropKnownCredential(
+          pending.supersededProvider,
+          pending.supersededScopedTokenId
+        );
+      }
+      pending.resolve([]);
+      this.#pendingRequests.delete(id);
+      break;
     }
   }
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pure protocol-frame dispatcher; each case is a leaf delegating to a typed handler. Splitting per-case would scatter the seq-advancement / pending-resolution invariants this method enforces in one place.
@@ -981,14 +2069,14 @@ var AgentControlClient = class {
           this.#knownCredentials = [];
           await this.opts.onSeqAdvanced("0");
           await this.opts.onKnownCredentialsChanged?.([]);
-          if (this.#ps && preResetKnown.length > 0) {
+          if (this.#ps && this.#resumeAlwaysConnection) {
             this.#ps.send(
               JSON.stringify({
                 type: "resume",
                 client_msg_id: crypto.randomUUID(),
                 last_server_seq: "0",
                 known_credentials: preResetKnown,
-                capabilities: this.opts.capabilities
+                capabilities: this.#resumeCapabilities()
               })
             );
           }
@@ -997,20 +2085,72 @@ var AgentControlClient = class {
         this.#sendResumeIfApplicable();
         return;
       }
+      case "github_grants_bundle": {
+        try {
+          if (!this.opts.onGithubGrantsBundle) {
+            throw new Error("github_grant_bundle_v1 handler is unavailable");
+          }
+          await this.opts.onGithubGrantsBundle(frame);
+          this.#settlePendingGithubGrantBundle(frame);
+          this.#ps?.send(
+            JSON.stringify({
+              type: "github_grants_applied",
+              protocol_version: "5",
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: true
+            })
+          );
+          await this.#advanceSeq(frame.seq);
+        } catch (error) {
+          this.#ps?.send(
+            JSON.stringify({
+              type: "github_grants_applied",
+              protocol_version: "5",
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: false,
+              error_code: "durable_apply_failed"
+            })
+          );
+          throw error;
+        }
+        return;
+      }
+      case "github_grants_commit_confirmed":
+        await this.opts.onGithubGrantsCommitConfirmed?.(frame);
+        await this.#advanceSeq(frame.seq);
+        return;
       case "credential_delivered": {
         const isBootstrapCause = frame.cause === "bootstrap" || frame.cause === "re_bootstrap";
-        if (!isBootstrapCause && await this.#handleIfRedacted(
+        const incomplete = this.#incompleteCredentials(frame.credentials);
+        if (!isBootstrapCause && await this.#handleIfIncomplete(
           frame.credentials,
           frame.seq,
           `credential_delivered{cause:'${frame.cause}'}`
         )) {
           return;
         }
-        await this.opts.onCredentialDelivered(frame);
-        this.#trackKnownCredentials(frame.credentials);
+        if (isBootstrapCause && incomplete.length > 0) {
+          await this.#dropIncompleteKnownCredentials(incomplete);
+        }
+        const usableCredentials = incomplete.length > 0 ? frame.credentials.filter(
+          (credential) => this.#credentialCarriesUsableSecret(credential)
+        ) : frame.credentials;
+        await this.opts.onCredentialDelivered(
+          usableCredentials === frame.credentials ? frame : { ...frame, credentials: usableCredentials }
+        );
+        this.#trackKnownCredentials(usableCredentials);
         await this.#advanceSeq(frame.seq);
         if (isBootstrapCause) {
           this.#queueRefreshForBareIssued(frame.credentials);
+          if (incomplete.some((credential) => credential.provider !== "github")) {
+            this.#reportIncomplete(
+              `credential_delivered{cause:'${frame.cause}'}`
+            );
+          }
         }
         if (frame.cause === "refresh_response" || frame.cause === "admin_reissue") {
           for (const [id, p] of this.#pendingRequests) {
@@ -1034,7 +2174,7 @@ var AgentControlClient = class {
           this.#rotationTimers.delete(seq);
         }
         const superseded = frame.superseded_scoped_token_id;
-        if (await this.#handleIfRedacted(
+        if (await this.#handleIfIncomplete(
           frame.credentials,
           frame.seq,
           "credential_rotated",
@@ -1073,6 +2213,7 @@ var AgentControlClient = class {
           await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
         }
         await this.#advanceSeq(frame.seq);
+        await this.opts.onCredentialRevokeSettled?.(frame);
         return;
       }
       case "config_updated": {
@@ -1153,42 +2294,101 @@ var AgentControlClient = class {
         await this.opts.onLoginRestart?.(frame);
         return;
       }
+      case "slack_event":
+      case "slack_event_blocked":
+      case "teams_activity":
+      case "teams_activity_blocked": {
+        this.#dispatchRelayFrame(frame);
+        return;
+      }
     }
   }
   /**
-   * Handles a credential frame that has any redacted credential (no
-   * `scoped_token`). See the redacted-replay contract in protocol.ts.
-   *
-   * Returns `true` if any credential was redacted (caller should return
-   * early, skipping `onCredentialDelivered`/`onCredentialRotated`).
-   * Returns `false` when all credentials carry a `scoped_token`.
-   *
-   * When redacted: advances seq, logs via `onError` (informational), and
-   * queues a fire-and-forget `requestRefresh` for each bare credential.
-   * `client_closed` rejections on teardown are swallowed silently.
+   * Fire-and-forget invocation of the relay-event handler. NEVER awaited on the
+   * dispatch path (R5): a synchronous throw is caught, and a returned rejecting
+   * promise gets a `.catch` — both route to `onError`, never to the socket or
+   * the seq cursor. No-op when `onRelayEvent` is unwired (relay frame ignored).
    */
-  async #handleIfRedacted(creds, seq, logLabel, supersededId) {
-    const issuedCreds = creds.filter(
-      (c) => {
-        const effKind = c.kind ?? (c.provider === "github" ? "issued" : c.kind);
-        return effKind === "issued";
+  #dispatchRelayFrame(frame) {
+    const handler = this.opts.onRelayEvent;
+    if (!handler) return;
+    try {
+      const r = handler(frame);
+      if (r && typeof r.catch === "function") {
+        r.catch((err) => {
+          this.opts.onError?.(
+            err instanceof Error ? err : new Error(String(err))
+          );
+        });
       }
-    );
-    if (!issuedCreds.some((c) => !c.scoped_token)) return false;
-    await this.#advanceSeq(seq);
-    const redactedNotice = `agent-control: redacted ${logLabel} \u2014 queuing credential_request to obtain fresh secret`;
-    if (this.opts.onInfo) {
-      this.opts.onInfo(redactedNotice);
-    } else {
-      this.opts.onError?.(new Error(redactedNotice));
+    } catch (err) {
+      this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
+  }
+  /**
+   * Settle a frame containing a provider-incomplete descriptor. Ring replay
+   * strips GitHub `scoped_token`, Slack/Discord `botToken`, Teams `password`,
+   * and OpenRouter `api_key`. Remove any prior projection entry durably, leave
+   * the consuming destination untouched, advance the replay cursor, and queue
+   * refresh only for the issued GitHub path.
+   */
+  async #handleIfIncomplete(creds, seq, logLabel, supersededId) {
+    const incomplete = this.#incompleteCredentials(creds);
+    if (incomplete.length === 0) return false;
+    await this.#dropIncompleteKnownCredentials(incomplete);
+    await this.#advanceSeq(seq);
+    this.#reportIncomplete(logLabel);
     this.#queueRefreshForBareIssued(creds, supersededId);
     return true;
+  }
+  #credentialCarriesUsableSecret(credential) {
+    const raw = credential;
+    switch (credential.provider) {
+      case "github":
+        return typeof raw.scoped_token === "string" && raw.scoped_token.length > 0;
+      case "slack":
+      case "discord":
+        return typeof raw.botToken === "string" && raw.botToken.length > 0;
+      case "teams":
+        return typeof raw.password === "string" && raw.password.length > 0;
+      case "openrouter":
+        return typeof raw.api_key === "string" && raw.api_key.length > 0;
+      default:
+        return true;
+    }
+  }
+  #incompleteCredentials(credentials) {
+    return credentials.filter(
+      (credential) => !this.#credentialCarriesUsableSecret(credential)
+    );
+  }
+  async #dropIncompleteKnownCredentials(credentials) {
+    const identities = new Set(
+      credentials.map((credential) => {
+        const raw = credential;
+        const id = raw.scoped_token_id ?? credential.credential_id;
+        return `${credential.provider}\0${String(id)}`;
+      })
+    );
+    const next = this.#knownCredentials.filter(
+      (known) => !identities.has(`${known.provider}\0${known.scoped_token_id}`)
+    );
+    if (next.length === this.#knownCredentials.length) return;
+    this.#knownCredentials = next;
+    await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
+  }
+  #reportIncomplete(logLabel) {
+    const notice = `agent-control: redacted/replay-incomplete ${logLabel} \u2014 preserving existing credential and awaiting authoritative hydration`;
+    if (this.opts.onInfo) {
+      this.opts.onInfo(notice);
+    } else {
+      this.opts.onError?.(new Error(notice));
+    }
   }
   /**
    * Queue a fire-and-forget `credential_request` for each ISSUED (github)
    * credential that arrived WITHOUT a `scoped_token`. Shared by the
-   * redacted-replay path (`#handleIfRedacted`) and the bootstrap/re_bootstrap
+   * redacted-replay path (`#handleIfIncomplete`) and the bootstrap/re_bootstrap
    * delivery path (where the descriptor is bare by design — see the C11 note
    * in `case 'credential_delivered'`). #refreshChain serializes concurrent
    * requests; `client_closed` / `client not started` rejections on teardown
@@ -1202,10 +2402,14 @@ var AgentControlClient = class {
       if (effKind !== "issued") continue;
       const issued = c;
       if (issued.scoped_token) continue;
+      const identity = supersededId ?? issued.scoped_token_id ?? issued.credential_id;
+      const refreshKey = `${issued.provider}\0${identity}`;
+      if (this.#redactedRefreshesInFlight.has(refreshKey)) continue;
+      this.#redactedRefreshesInFlight.add(refreshKey);
       void this.requestRefresh({
         reason: "expiry",
         provider: issued.provider,
-        superseded_scoped_token_id: supersededId ?? issued.scoped_token_id ?? issued.credential_id
+        superseded_scoped_token_id: identity
       }).catch((err) => {
         if (err instanceof Error && (err.message === "client_closed" || err.message === "client not started")) {
           return;
@@ -1213,6 +2417,8 @@ var AgentControlClient = class {
         this.opts.onError?.(
           err instanceof Error ? err : new Error(String(err))
         );
+      }).finally(() => {
+        this.#redactedRefreshesInFlight.delete(refreshKey);
       });
     }
   }
@@ -1277,7 +2483,30 @@ var AgentControlClient = class {
     }
   }
 };
-function makeErrorSafeWebSocket(Base, headers) {
+function upgradeStatusOf(err) {
+  if (typeof err !== "object" || err === null) return void 0;
+  const e = err;
+  for (const candidate of [
+    e.statusCode,
+    e.status,
+    e.response?.statusCode,
+    e.response?.status
+  ]) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return void 0;
+}
+function isUpgradeUnauthorized(err) {
+  const status = upgradeStatusOf(err);
+  if (status !== void 0) return status === 401;
+  const message = typeof err === "object" && err !== null && "message" in err ? String(err.message ?? "") : String(err ?? "");
+  return /\b(?:http|status(?:\s+code)?|code|response|upgrade|connection)\b[\s:=]*401\b/i.test(
+    message
+  ) || /\b401\s+unauthorized\b/i.test(message);
+}
+function makeErrorSafeWebSocket(Base, headers, onUpgradeError) {
   function Wrapped(url, protocols) {
     const ws = headers ? (
       // biome-ignore lint/suspicious/noExplicitAny: bridging to ws (url, protocols, options) signature (see above).
@@ -1286,9 +2515,17 @@ function makeErrorSafeWebSocket(Base, headers) {
       // biome-ignore lint/suspicious/noExplicitAny: bridging to ws (url, protocols) signature (see above).
       new Base(url, protocols)
     );
+    const observe = (value) => {
+      const wrapped = value;
+      const err = value instanceof Error ? value : wrapped.error instanceof Error ? wrapped.error : new Error(
+        typeof wrapped.message === "string" ? wrapped.message : String(value)
+      );
+      onUpgradeError?.(err);
+    };
     if (ws && typeof ws.on === "function") {
-      ws.on("error", () => {
-      });
+      ws.on("error", observe);
+    } else if (ws && typeof ws.addEventListener === "function") {
+      ws.addEventListener("error", observe);
     }
     return ws;
   }
@@ -1296,6 +2533,12 @@ function makeErrorSafeWebSocket(Base, headers) {
   return Wrapped;
 }
 var AGENT_GONE_HTTP_STATUSES = [401, 403, 404, 410];
+function normalizeManagementBaseUrl(baseUrl) {
+  let url = baseUrl;
+  while (url.endsWith("/")) url = url.slice(0, -1);
+  if (url.endsWith("/v1")) url = url.slice(0, -3);
+  return url;
+}
 function isAgentGoneStatus(httpStatus) {
   return httpStatus !== void 0 && AGENT_GONE_HTTP_STATUSES.includes(httpStatus);
 }
@@ -1304,16 +2547,16 @@ function createManagementClient(opts) {
   const baseFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const retryDelay = opts.retryDelayMs ?? 1e3;
   const retryOn5xx = opts.retry ?? true;
-  const retryingFetch = async (input, init) => {
+  const retryingFetch = (async (input, init) => {
     const req = input instanceof Request ? input : new Request(String(input), init);
     if (!retryOn5xx) return baseFetch(req);
     const first = await baseFetch(req.clone());
     if (first.status >= 500) {
-      await new Promise((resolve4) => setTimeout(resolve4, retryDelay));
+      await new Promise((resolve5) => setTimeout(resolve5, retryDelay));
       return baseFetch(req);
     }
     return first;
-  };
+  });
   const auth = {
     onRequest({ request }) {
       if ((opts.auth ?? "agent-secret") === "bearer") {
@@ -1330,58 +2573,209 @@ function createManagementClient(opts) {
     // Strip a trailing slash AND a trailing `/v1` before appending `/v1`, so a
     // baseUrl of either `https://host` or `https://host/v1` (OpenClaw's docker
     // default carries `/v1`) yields a single `/v1`, never `/v1/v1`.
-    baseUrl: `${opts.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1`,
+    baseUrl: `${normalizeManagementBaseUrl(opts.baseUrl)}/v1`,
     fetch: retryingFetch
   });
   client.use(auth);
   return client;
 }
+var MANAGED_MARKER_BASENAME = ".managed";
+function spellguardRootDir(env = process.env, home = homedir()) {
+  const xdg = env.XDG_CONFIG_HOME;
+  return xdg ? join(xdg, "spellguard") : join(home, ".config", "spellguard");
+}
+function managedMarkerPath(root = spellguardRootDir()) {
+  return join(root, MANAGED_MARKER_BASENAME);
+}
+function readManagedMarker(root = spellguardRootDir()) {
+  const path = managedMarkerPath(root);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    const e = err;
+    if (e.code === "ENOENT") return { managed: false };
+    return {
+      managed: false,
+      diagnostic: `managed marker unreadable at ${path}: ${e.message}`
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker corrupt at ${path}: ${err.message}`
+    };
+  }
+  const marker = parsed;
+  if (!marker || typeof marker !== "object" || typeof marker.agent_id !== "string" || marker.agent_id === "") {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} missing agent_id`
+    };
+  }
+  let stats;
+  try {
+    stats = statSync(path);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker unstatable at ${path}: ${err.message}`
+    };
+  }
+  const perm = stats.mode & 511;
+  if (perm & 18) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} is group/world-writable (mode ${perm.toString(8)}); refusing to honor`
+    };
+  }
+  const readerUid = typeof process.getuid === "function" ? process.getuid() : void 0;
+  if (readerUid !== void 0 && readerUid !== 0 && typeof stats.uid === "number" && stats.uid !== 0 && stats.uid !== readerUid) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} owned by untrusted uid ${stats.uid} (reader uid ${readerUid}, not root); refusing to honor`
+    };
+  }
+  return { marker, managed: true };
+}
+function isManagedBox(root = spellguardRootDir()) {
+  return readManagedMarker(root).managed;
+}
 
 // src/lib/config-store.ts
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   closeSync,
   copyFileSync,
   existsSync,
+  constants as fsConstants,
+  fstatSync,
+  fsyncSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
+  readFileSync as readFileSync2,
+  readdirSync,
   renameSync,
   rmSync,
-  statSync,
+  statSync as statSync2,
+  symlinkSync,
   writeFileSync,
   writeSync
 } from "node:fs";
-import { homedir, platform } from "node:os";
-import { dirname as dirname2, join } from "node:path";
+import { homedir as homedir2, platform } from "node:os";
+import { dirname as dirname2, join as join2 } from "node:path";
 
 // src/lib/framework-slug.ts
 var FRAMEWORK_SLUG = "codex";
 
 // src/lib/config-store.ts
-function spellguardRootDir() {
+function spellguardRootDir2() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return xdg ? join(xdg, "spellguard") : join(homedir(), ".config", "spellguard");
+  return xdg ? join2(xdg, "spellguard") : join2(homedir2(), ".config", "spellguard");
 }
 function legacyConfigDir() {
-  return spellguardRootDir();
+  return spellguardRootDir2();
 }
 function defaultConfigDir() {
-  return join(spellguardRootDir(), FRAMEWORK_SLUG);
+  return join2(spellguardRootDir2(), FRAMEWORK_SLUG);
 }
 function defaultConfigPath() {
-  return join(defaultConfigDir(), "config.json");
+  return join2(defaultConfigDir(), "config.json");
+}
+function readPrivateConfigFile(path) {
+  const flags = fsConstants.O_RDONLY | (platform() === "win32" ? 0 : fsConstants.O_NOFOLLOW);
+  const fd = openSync(path, flags);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error("protected config path is not a file");
+    if (platform() !== "win32" && (stat.mode & 63) !== 0) {
+      throw new Error("protected config file permissions are too broad");
+    }
+    return readFileSync2(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
 }
 function gitTokensPath(dir = defaultConfigDir()) {
-  return join(dir, "git-tokens");
+  return join2(dir, "git-tokens");
 }
-function writeGitTokensFile(config, dir = defaultConfigDir()) {
+function servedTokens(config) {
+  const served = /* @__PURE__ */ new Set();
+  if (config.revoked) return served;
+  const entries = Object.values(config.githubCredentials ?? {});
+  for (const entry of entries) {
+    if (!entry.revoked && entry.scopedToken) served.add(entry.scopedToken);
+  }
+  if (config.scopedToken && (entries.length === 0 || served.has(config.scopedToken))) {
+    served.add(config.scopedToken);
+  }
+  return served;
+}
+function keepTokens(config, keep) {
+  const kept = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (key === "scopedToken") {
+      const token = value;
+      if (token !== void 0 && (!token || keep.has(token))) {
+        kept[key] = token;
+      }
+    } else if (key === "githubCredentials" && value) {
+      kept[key] = Object.fromEntries(
+        Object.entries(
+          value
+        ).map(([org, entry]) => {
+          if (!entry.scopedToken || keep.has(entry.scopedToken)) {
+            return [org, entry];
+          }
+          const { scopedToken: _dropped, ...withoutToken } = entry;
+          return [org, withoutToken];
+        })
+      );
+    } else {
+      kept[key] = value;
+    }
+  }
+  return kept;
+}
+function writeConfigSnapshot(path, next) {
+  const bak = `${path}.bak`;
+  let previous;
+  try {
+    previous = JSON.parse(readFileSync2(path, "utf-8"));
+  } catch {
+    previous = void 0;
+  }
+  if (previous === null || typeof previous !== "object") {
+    if (next.revoked) {
+      rmSync(bak, { force: true });
+      return;
+    }
+    copyFileSync(path, bak);
+  } else {
+    const snapshot = keepTokens(
+      previous,
+      servedTokens(next)
+    );
+    writeFileSync(bak, JSON.stringify(snapshot, null, 2), {
+      encoding: "utf-8",
+      mode: 384
+    });
+  }
+  if (platform() !== "win32") chmodSync(bak, 384);
+}
+function writeGitTokensFile(config, dir = defaultConfigDir(), options = {}) {
   const path = gitTokensPath(dir);
   const lines = [];
   let wildcardToken;
   let usableCount = 0;
   let keyedTotal = 0;
-  const keyed = config.githubCredentials;
+  const keyed = config.revoked ? void 0 : config.githubCredentials;
   if (keyed && Object.keys(keyed).length > 0) {
     keyedTotal = Object.keys(keyed).length;
     for (const [org, entry] of Object.entries(keyed)) {
@@ -1398,14 +2792,11 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   if (wildcardToken !== void 0 && usableCount === 1 && keyedTotal <= 1) {
     lines.push(`*	${wildcardToken}`);
   }
-  if (lines.length === 0) {
-    if (existsSync(path)) rmSync(path, { force: true });
-    return;
-  }
   mkdirSync(dirname2(path), { recursive: true, mode: 448 });
-  const content = `${lines.join("\n")}
+  const content = lines.length === 0 ? "" : `${lines.join("\n")}
 `;
-  const tmpPath = `${path}.tmp`;
+  let committed = true;
+  const tmpPath = options.onlyIfMissing ? `${path}.${randomUUID()}.tmp` : `${path}.tmp`;
   if (platform() !== "win32") {
     const fd = openSync(tmpPath, "w", 384);
     try {
@@ -1416,7 +2807,53 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   } else {
     writeFileSync(tmpPath, content, "utf-8");
   }
-  renameSync(tmpPath, path);
+  try {
+    if (options.onlyIfMissing) linkSync(tmpPath, path);
+    else renameSync(tmpPath, path);
+  } catch (error) {
+    if (!options.onlyIfMissing || !isAlreadyExistsError(error)) throw error;
+    committed = false;
+  } finally {
+    if (options.onlyIfMissing) rmSync(tmpPath, { force: true });
+  }
+  if (!committed) return;
+  const resetMarker = join2(
+    dirname2(path),
+    "github-grants",
+    "current",
+    ".reset-tombstone"
+  );
+  if (!config.revoked && config.scopedToken && existsSync(resetMarker)) {
+    rmSync(join2(dirname2(path), "github-grants"), {
+      recursive: true,
+      force: true
+    });
+  }
+}
+function isAlreadyExistsError(error) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+function healConfigMode(path, mode) {
+  if (mode === 384) return "ok";
+  const uid = process.getuid?.();
+  let ownerUid;
+  try {
+    ownerUid = statSync2(path).uid;
+  } catch {
+    return "unhealable";
+  }
+  if (uid === void 0 || ownerUid !== uid) return "unhealable";
+  try {
+    chmodSync(path, 384);
+  } catch {
+    return "unhealable";
+  }
+  try {
+    if ((statSync2(path).mode & 511) !== 384) return "unhealable";
+  } catch {
+    return "unhealable";
+  }
+  return "healed";
 }
 function mistypedGithubField(parsed) {
   if (parsed.scopedToken !== void 0 && typeof parsed.scopedToken !== "string")
@@ -1427,22 +2864,33 @@ function mistypedGithubField(parsed) {
     return "expiresAt";
   if (parsed.revokedMessage !== void 0 && typeof parsed.revokedMessage !== "string")
     return "revokedMessage";
+  if (parsed.githubReissue !== void 0 && (parsed.githubReissue === null || typeof parsed.githubReissue !== "object" || parsed.githubReissue.pending !== true))
+    return "githubReissue";
   return null;
 }
 function readConfig(path = defaultConfigPath()) {
   if (!existsSync(path)) return { config: null, reason: "missing" };
+  let permissionsHealed = false;
   if (platform() !== "win32") {
+    let mode;
     try {
-      const stat = statSync(path);
-      const mode = stat.mode & 511;
-      if (mode !== 384) return { config: null, reason: "wrong_permissions" };
+      mode = statSync2(path).mode & 511;
     } catch {
       return { config: null, reason: "missing" };
     }
+    const healed = healConfigMode(path, mode);
+    if (healed === "unhealable") {
+      return {
+        config: null,
+        reason: "wrong_permissions",
+        foundMode: mode.toString(8).padStart(4, "0")
+      };
+    }
+    permissionsHealed = healed === "healed";
   }
   let raw;
   try {
-    raw = readFileSync(path, "utf-8");
+    raw = readFileSync2(path, "utf-8");
   } catch {
     return { config: null, reason: "missing" };
   }
@@ -1483,18 +2931,18 @@ function readConfig(path = defaultConfigPath()) {
         return { config: null, reason: "malformed" };
       }
     }
-    return { config: parsed };
+    return permissionsHealed ? { config: parsed, permissionsHealed: true } : { config: parsed };
   } catch {
     return { config: null, reason: "malformed", malformedField: "json" };
   }
 }
-function writeConfig(config, path = defaultConfigPath()) {
+function writeConfig(config, path = defaultConfigPath(), testHooks = {}) {
   mkdirSync(dirname2(path), { recursive: true, mode: 448 });
-  const content = JSON.stringify(config, null, 2);
+  const persisted = keepTokens(config, servedTokens(config));
+  const content = JSON.stringify(persisted, null, 2);
   if (existsSync(path)) {
     try {
-      copyFileSync(path, `${path}.bak`);
-      if (platform() !== "win32") chmodSync(`${path}.bak`, 384);
+      writeConfigSnapshot(path, persisted);
     } catch {
     }
   }
@@ -1509,87 +2957,842 @@ function writeConfig(config, path = defaultConfigPath()) {
   } else {
     writeFileSync(tmpPath, content, "utf-8");
   }
+  writeGitTokensFile(persisted, dirname2(path));
+  testHooks.beforeConfigCommit?.();
   renameSync(tmpPath, path);
-  writeGitTokensFile(config, dirname2(path));
 }
-function markConfigRevoked(path = defaultConfigPath()) {
+function markConfigRevoked(path = defaultConfigPath(), testHooks = {}) {
   const result = readConfig(path);
   if (result.config) {
+    invalidateActiveGithubGrantGeneration(
+      dirname2(path),
+      testHooks,
+      result.config.agentId
+    );
+    testHooks.afterV5Invalidation?.();
     writeConfig({ ...result.config, revoked: true }, path);
   }
 }
+function syncPath(path) {
+  const fd = openSync(path, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+function requireRealDirectory(path) {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`unsafe GitHub generation directory: ${path}`);
+  }
+}
+function removeSiblingGenerations(generations, activeName) {
+  requireRealDirectory(generations);
+  for (const entry of readdirSync(generations, { withFileTypes: true })) {
+    if (entry.name === activeName) continue;
+    const candidate = join2(generations, entry.name);
+    if (dirname2(candidate) !== generations) {
+      throw new Error("unsafe GitHub generation cleanup target");
+    }
+    const stat = lstatSync(candidate);
+    if (stat.isDirectory() && !stat.isSymbolicLink()) {
+      rmSync(candidate, { recursive: true });
+    } else {
+      rmSync(candidate);
+    }
+  }
+  syncPath(generations);
+}
+function invalidateActiveGithubGrantGeneration(configDir, testHooks = {}, configuredAgentId) {
+  const root = join2(configDir, "github-grants");
+  const generations = join2(root, "generations");
+  const deliveryId = randomUUID();
+  const generationName = `0-${deliveryId}`;
+  const generation = join2(generations, generationName);
+  mkdirSync(root, { recursive: true, mode: 448 });
+  requireRealDirectory(root);
+  if (!existsSync(generations)) mkdirSync(generations, { mode: 448 });
+  requireRealDirectory(generations);
+  mkdirSync(generation, { mode: 448 });
+  mkdirSync(join2(generation, "tokens"), { mode: 448 });
+  let agentId = configuredAgentId;
+  if (!agentId) {
+    try {
+      const active = JSON.parse(
+        readPrivateConfigFile(join2(root, "current", "state.json"))
+      );
+      if (typeof active.agentId === "string") agentId = active.agentId;
+      else if (typeof active.grants?.[0]?.agent_id === "string")
+        agentId = active.grants[0].agent_id;
+    } catch {
+    }
+  }
+  writeFileSync(
+    join2(generation, "state.json"),
+    JSON.stringify({
+      protocolVersion: 5,
+      ...agentId ? { agentId } : {},
+      deliveryId,
+      grantSetRevision: "0",
+      grants: []
+    }),
+    { mode: 384 }
+  );
+  writeFileSync(join2(generation, "manifest.tsv"), "\n", { mode: 384 });
+  writeFileSync(join2(generation, ".reset-tombstone"), "", { mode: 384 });
+  syncPath(join2(generation, "state.json"));
+  syncPath(join2(generation, "manifest.tsv"));
+  syncPath(join2(generation, ".reset-tombstone"));
+  syncPath(join2(generation, "tokens"));
+  syncPath(generation);
+  syncPath(generations);
+  testHooks.beforeV5Activation?.();
+  const pendingCurrent = join2(root, `.current.${randomUUID()}.tmp`);
+  symlinkSync(join2("generations", generationName), pendingCurrent);
+  renameSync(pendingCurrent, join2(root, "current"));
+  syncPath(root);
+  testHooks.afterV5Activation?.();
+  testHooks.beforeV5Cleanup?.();
+  removeSiblingGenerations(generations, generationName);
+}
 
 // src/lib/daemon-spawn.ts
-import { spawn } from "node:child_process";
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname3, join as join2, sep } from "node:path";
+import {
+  execFileSync,
+  spawn
+} from "node:child_process";
+import { createHash, randomUUID as randomUUID2 } from "node:crypto";
+import {
+  chmodSync as chmodSync2,
+  existsSync as existsSync2,
+  mkdirSync as mkdirSync2,
+  readFileSync as readFileSync3,
+  realpathSync,
+  renameSync as renameSync2,
+  rmSync as rmSync2,
+  unlinkSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { platform as platform2 } from "node:os";
+import { basename, dirname as dirname3, join as join3, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+var HEALTH_SCHEMA_VERSION = 1;
+var DEFAULT_HEARTBEAT_MAX_AGE_MS = 5e3;
+var DEFAULT_READINESS_TIMEOUT_MS = 3e3;
+var DEFAULT_STOP_TIMEOUT_MS = 1e3;
+var RECONCILE_LOCK_TIMEOUT_MS = 4e3;
+var DEFAULT_STARTUP_COOLDOWN_MS = 1e4;
+var FINALIZATION_RESERVE_MS = 25;
+var FORCE_KILL_RESERVE_MS = 25;
+var FLOCK_PATHS = ["/usr/bin/flock", "/bin/flock"];
+var LOCK_HOLDER_SCRIPT = "process.stdout.write('locked\\n');process.stdin.resume();process.stdin.on('end',()=>process.exit(0));process.stdin.on('error',()=>process.exit(0))";
+function agentsDir(configDir) {
+  return join3(configDir, "agents");
+}
+function daemonPidFilePath(configDir, agentId) {
+  return join3(agentsDir(configDir), `${agentId}.pid`);
+}
+function daemonHealthFilePath(configDir, agentId) {
+  return join3(agentsDir(configDir), `${agentId}.health.json`);
+}
+function daemonLockPath(configDir, agentId) {
+  return join3(agentsDir(configDir), `${agentId}.reconcile.lock`);
+}
+function daemonStartupStatePath(configDir, agentId) {
+  return join3(agentsDir(configDir), `${agentId}.startup-state.json`);
+}
 function daemonScriptPath() {
   const here = dirname3(fileURLToPath(import.meta.url));
-  const devPath = join2(
+  const devPath = join3(
     here,
     "..",
     "..",
     "bin",
     "spellguard-credential-daemon.ts"
   );
-  const builtPath = join2(here, "spellguard-credential-daemon.mjs");
+  const builtPath = join3(here, "spellguard-credential-daemon.mjs");
   const runningFromDist = here.endsWith(`${sep}dist${sep}bin`) || here.endsWith("/dist/bin");
-  if (runningFromDist && existsSync2(builtPath)) return builtPath;
-  if (existsSync2(devPath)) return devPath;
-  return builtPath;
+  if (runningFromDist && existsSync2(builtPath)) return realpathSync(builtPath);
+  if (existsSync2(devPath)) return realpathSync(devPath);
+  return resolve(builtPath);
+}
+function daemonArtifactId(scriptPath = daemonScriptPath()) {
+  const canonicalPath = existsSync2(scriptPath) ? realpathSync(scriptPath) : resolve(scriptPath);
+  const hash = createHash("sha256");
+  hash.update(canonicalPath);
+  hash.update("\0");
+  hash.update(readFileSync3(canonicalPath));
+  return hash.digest("hex");
 }
 function readDaemonPid(pidPath) {
-  if (!existsSync2(pidPath)) return null;
   try {
-    const raw = readFileSync2(pidPath, "utf-8").trim();
+    const raw = readFileSync3(pidPath, "utf8").trim();
     const pid = Number.parseInt(raw, 10);
-    return Number.isFinite(pid) ? pid : null;
+    return Number.isInteger(pid) && pid > 1 ? pid : null;
   } catch {
     return null;
   }
 }
-function isDaemonAlive(pid) {
+function readDaemonHealth(configDir, agentId) {
+  try {
+    const value = JSON.parse(
+      readFileSync3(daemonHealthFilePath(configDir, agentId), "utf8")
+    );
+    if (!isDaemonHealthRecord(value)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+function isDaemonHealthRecord(value) {
+  if (!value || typeof value !== "object") return false;
+  const record = value;
+  return record.schemaVersion === HEALTH_SCHEMA_VERSION && typeof record.pid === "number" && typeof record.processStartToken === "string" && typeof record.agentId === "string" && typeof record.configDir === "string" && typeof record.scriptPath === "string" && typeof record.artifactId === "string" && typeof record.instanceId === "string" && typeof record.heartbeatAt === "string" && (record.processState === "starting" || record.processState === "ready") && (record.transportState === "connecting" || record.transportState === "connected" || record.transportState === "error") && (record.credentialState === "missing" || record.credentialState === "valid" || record.credentialState === "near_expiry" || record.credentialState === "refresh_pending" || record.credentialState === "expired" || record.credentialState === "revoked");
+}
+function readStartupAttempt(configDir, agentId) {
+  try {
+    const value = JSON.parse(
+      readFileSync3(daemonStartupStatePath(configDir, agentId), "utf8")
+    );
+    if (!value || typeof value !== "object") return null;
+    const record = value;
+    if (record.schemaVersion !== 1 || typeof record.artifactId !== "string" || typeof record.retryAfter !== "string") {
+      return null;
+    }
+    if (record.kind === "failure" && record.reason === "startup_failed" && typeof record.failedAt === "string") {
+      return {
+        schemaVersion: 1,
+        kind: "failure",
+        artifactId: record.artifactId,
+        failedAt: record.failedAt,
+        retryAfter: record.retryAfter,
+        reason: "startup_failed"
+      };
+    }
+    if (record.kind === "pending" && Number.isInteger(record.pid) && typeof record.pid === "number" && record.pid > 1 && typeof record.observedAt === "string") {
+      return {
+        schemaVersion: 1,
+        kind: "pending",
+        artifactId: record.artifactId,
+        pid: record.pid,
+        observedAt: record.observedAt,
+        retryAfter: record.retryAfter
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function writeStartupAttempt(configDir, agentId, record) {
+  const path = daemonStartupStatePath(configDir, agentId);
+  const tempPath = `${path}.${randomUUID2()}.tmp`;
+  writeFileSync2(tempPath, `${JSON.stringify(record)}
+`, { mode: 384 });
+  chmodSync2(tempPath, 384);
+  renameSync2(tempPath, path);
+}
+function clearStartupAttempt(configDir, agentId) {
+  rmSync2(daemonStartupStatePath(configDir, agentId), { force: true });
+}
+function activeStartupAttempt(configDir, agentId, artifactId) {
+  const record = readStartupAttempt(configDir, agentId);
+  if (record?.artifactId !== artifactId) return null;
+  const retryAfter = Date.parse(record.retryAfter);
+  return Number.isFinite(retryAfter) && retryAfter > Date.now() ? record : null;
+}
+async function ensureCredentialDaemonRunning(args) {
+  const { config } = args;
+  if (!config.agentSecret || !config.agentId) {
+    return { daemon: "skipped", reason: "missing_credentials" };
+  }
+  const configDir = resolve(args.configDir ?? defaultConfigDir());
+  const deadlineAtMs = args.deadlineAtMs ?? Date.now() + (args.reconcileTimeoutMs ?? RECONCILE_LOCK_TIMEOUT_MS) + (args.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS) + (args.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS);
+  const scopedArgs = { ...args, configDir, deadlineAtMs };
+  if (remainingMs(deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  mkdirSync2(agentsDir(configDir), { recursive: true, mode: 448 });
+  if (platform2() === "darwin") {
+    return reconcileUnderLock(scopedArgs, { isHeld: () => true }, false);
+  }
+  if (platform2() !== "linux") {
+    return { daemon: "unavailable", reason: "unsupported_platform" };
+  }
+  const lock = await acquireReconcileLock(
+    daemonLockPath(configDir, config.agentId),
+    Math.min(
+      deadlineAtMs - FINALIZATION_RESERVE_MS,
+      Date.now() + (args.reconcileTimeoutMs ?? RECONCILE_LOCK_TIMEOUT_MS)
+    )
+  );
+  if (!lock) {
+    return {
+      daemon: "unavailable",
+      reason: remainingMs(deadlineAtMs) <= FINALIZATION_RESERVE_MS ? "deadline_exhausted" : "reconcile_busy"
+    };
+  }
+  try {
+    return await reconcileUnderLock(scopedArgs, lock, true);
+  } finally {
+    lock.release();
+  }
+}
+async function reconcileUnderLock(args, permit, allowSafeReplacement) {
+  if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  const scriptPath = daemonScriptPath();
+  const artifactId = daemonArtifactId(scriptPath);
+  const classification = classifyDaemon({
+    agentId: args.config.agentId,
+    configDir: args.configDir,
+    scriptPath,
+    artifactId,
+    heartbeatMaxAgeMs: args.heartbeatMaxAgeMs ?? DEFAULT_HEARTBEAT_MAX_AGE_MS
+  });
+  if (classification.kind === "current" && classification.health) {
+    if (allowSafeReplacement && permit.isHeld() && remainingMs(args.deadlineAtMs) > FINALIZATION_RESERVE_MS) {
+      clearStartupAttempt(args.configDir, args.config.agentId);
+    }
+    return resultFromHealth("already-running", classification.health);
+  }
+  if (classification.kind === "starting" && classification.health) {
+    if (allowSafeReplacement && permit.isHeld() && remainingMs(args.deadlineAtMs) > FINALIZATION_RESERVE_MS) {
+      clearStartupAttempt(args.configDir, args.config.agentId);
+    }
+    return {
+      daemon: "starting",
+      pid: classification.health.pid,
+      transport: classification.health.transportState,
+      credentialState: classification.health.credentialState
+    };
+  }
+  if (!allowSafeReplacement && classification.kind !== "missing" && classification.kind !== "dead") {
+    return {
+      daemon: "unavailable",
+      reason: "unsupported_safe_replacement",
+      pid: classification.pid,
+      detail: "this platform leaves a live non-current daemon untouched because serialized safe replacement is unavailable"
+    };
+  }
+  if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  const startupAttempt = allowSafeReplacement ? activeStartupAttempt(args.configDir, args.config.agentId, artifactId) : null;
+  if (startupAttempt) {
+    return {
+      daemon: "unavailable",
+      reason: "startup_cooldown",
+      ...startupAttempt.kind === "pending" ? { pid: startupAttempt.pid } : {},
+      detail: startupAttempt.kind === "pending" ? `the previous daemon start is still pending; retry after ${startupAttempt.retryAfter}` : `daemon startup failed; retry after ${startupAttempt.retryAfter}`
+    };
+  }
+  if (classification.kind === "unverifiable") {
+    return {
+      daemon: "unavailable",
+      reason: "foreign_or_unverifiable",
+      pid: classification.pid,
+      detail: "a live daemon-like process could not be tied to this config root"
+    };
+  }
+  if (classification.kind === "foreign") {
+    if (!permit.isHeld()) return reconcileLockLost();
+    if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+      return deadlineExhausted();
+    }
+    if (classification.pid && !unlinkPidIfUnchanged(
+      daemonPidFilePath(args.configDir, args.config.agentId),
+      classification.pid
+    )) {
+      return {
+        daemon: "unavailable",
+        reason: "foreign_or_unverifiable",
+        pid: classification.pid,
+        detail: "daemon PID record changed during reconciliation"
+      };
+    }
+  }
+  let replacement;
+  if ((classification.kind === "obsolete" || classification.kind === "unhealthy") && classification.pid && classification.snapshot) {
+    const stopped = await stopOwnedProcess({
+      snapshot: classification.snapshot,
+      agentId: args.config.agentId,
+      configDir: args.configDir,
+      instanceId: classification.health?.instanceId,
+      deadlineAtMs: Math.min(
+        args.deadlineAtMs - FINALIZATION_RESERVE_MS,
+        Date.now() + (args.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS)
+      ),
+      canMutate: permit.isHeld
+    });
+    if (!stopped) {
+      return {
+        daemon: "unavailable",
+        reason: remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS ? "deadline_exhausted" : "stop_failed",
+        pid: classification.pid
+      };
+    }
+    replacement = { pid: classification.pid, reason: classification.kind };
+  }
+  if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  if (!permit.isHeld()) return reconcileLockLost();
+  removeStaleArtifacts(args.configDir, args.config.agentId);
+  const instanceId = randomUUID2();
+  const spawnFn = args.spawnDaemon ?? defaultSpawnDaemon;
+  const childEnv = { ...process.env };
+  if (scriptPath.endsWith(".ts")) {
+    childEnv.NODE_OPTIONS = [process.env.NODE_OPTIONS, "--import tsx"].filter(Boolean).join(" ");
+  }
+  if (!permit.isHeld()) return reconcileLockLost();
+  if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  const child = spawnFn(
+    process.execPath,
+    [
+      scriptPath,
+      args.config.agentId,
+      "--config-dir",
+      args.configDir,
+      "--instance-id",
+      instanceId,
+      "--artifact-id",
+      artifactId,
+      ...args.cwd ? ["--cwd", args.cwd] : []
+    ],
+    { detached: true, stdio: "ignore", env: childEnv }
+  );
+  if (!child) return { daemon: "spawned" };
+  if (!permit.isHeld()) return reconcileLockLost();
+  const cooldownMs = Math.max(
+    0,
+    args.startupCooldownMs ?? DEFAULT_STARTUP_COOLDOWN_MS
+  );
+  if (allowSafeReplacement && child.pid) {
+    const observedAt = /* @__PURE__ */ new Date();
+    writeStartupAttempt(args.configDir, args.config.agentId, {
+      schemaVersion: 1,
+      kind: "pending",
+      artifactId,
+      pid: child.pid,
+      observedAt: observedAt.toISOString(),
+      retryAfter: new Date(observedAt.getTime() + cooldownMs).toISOString()
+    });
+  }
+  if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  const readiness = await waitForReadiness({
+    child,
+    agentId: args.config.agentId,
+    configDir: args.configDir,
+    instanceId,
+    artifactId,
+    deadlineAtMs: Math.min(
+      args.deadlineAtMs - FINALIZATION_RESERVE_MS,
+      Date.now() + (args.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS)
+    )
+  });
+  if (!permit.isHeld()) return reconcileLockLost();
+  if (remainingMs(args.deadlineAtMs) <= FINALIZATION_RESERVE_MS) {
+    return deadlineExhausted();
+  }
+  if (readiness.kind === "failed") {
+    const now = /* @__PURE__ */ new Date();
+    const retryAfter = new Date(now.getTime() + cooldownMs).toISOString();
+    if (allowSafeReplacement && readiness.reason === "startup_failed") {
+      writeStartupAttempt(args.configDir, args.config.agentId, {
+        schemaVersion: 1,
+        kind: "failure",
+        artifactId,
+        failedAt: now.toISOString(),
+        retryAfter,
+        reason: "startup_failed"
+      });
+    }
+    return {
+      daemon: "unavailable",
+      reason: readiness.reason,
+      pid: child.pid,
+      exitCode: readiness.exitCode,
+      signal: readiness.signal
+    };
+  }
+  if (allowSafeReplacement) {
+    clearStartupAttempt(args.configDir, args.config.agentId);
+  }
+  if (readiness.kind === "starting") {
+    return {
+      daemon: "starting",
+      pid: readiness.health.pid,
+      transport: readiness.health.transportState,
+      credentialState: readiness.health.credentialState
+    };
+  }
+  if (replacement) {
+    return {
+      daemon: "restarted",
+      pid: readiness.health.pid,
+      replacedPid: replacement.pid,
+      reason: replacement.reason,
+      state: "ready",
+      transport: readiness.health.transportState,
+      credentialState: readiness.health.credentialState
+    };
+  }
+  return resultFromHealth("spawned", readiness.health);
+}
+function deadlineExhausted() {
+  return { daemon: "unavailable", reason: "deadline_exhausted" };
+}
+function reconcileLockLost() {
+  return {
+    daemon: "unavailable",
+    reason: "reconcile_busy",
+    detail: "the reconciliation lock holder exited before completion"
+  };
+}
+function resultFromHealth(daemon, health) {
+  const shared = {
+    pid: health.pid,
+    state: "ready",
+    transport: health.transportState,
+    credentialState: health.credentialState
+  };
+  return daemon === "already-running" ? { daemon: "already-running", ...shared } : { daemon: "spawned", ...shared };
+}
+function classifyDaemon(args) {
+  const pidPath = daemonPidFilePath(args.configDir, args.agentId);
+  const pid = readDaemonPid(pidPath);
+  if (!pid) return { kind: existsSync2(pidPath) ? "dead" : "missing" };
+  if (!processExists(pid)) return { kind: "dead", pid };
+  const snapshot = readProcessSnapshot(pid);
+  if (!snapshot) return { kind: "unverifiable", pid };
+  const health = readDaemonHealth(args.configDir, args.agentId);
+  const ownership = daemonProcessOwnership(
+    snapshot,
+    args.agentId,
+    args.configDir,
+    health
+  );
+  if (ownership !== "owned") {
+    return {
+      kind: ownership,
+      pid,
+      snapshot,
+      health: health ?? void 0
+    };
+  }
+  if (!health || health.pid !== pid) {
+    return { kind: "unhealthy", pid, snapshot, health: health ?? void 0 };
+  }
+  if (health.artifactId !== args.artifactId || resolve(health.scriptPath) !== resolve(args.scriptPath)) {
+    return { kind: "obsolete", pid, snapshot, health };
+  }
+  const heartbeatAge = Date.now() - Date.parse(health.heartbeatAt);
+  if (health.processState === "starting" && Number.isFinite(heartbeatAge) && heartbeatAge <= args.heartbeatMaxAgeMs && health.processStartToken === snapshot.startToken) {
+    return { kind: "starting", pid, snapshot, health };
+  }
+  if (health.processState !== "ready" || !Number.isFinite(heartbeatAge) || heartbeatAge > args.heartbeatMaxAgeMs || health.processStartToken !== snapshot.startToken) {
+    return { kind: "unhealthy", pid, snapshot, health };
+  }
+  return { kind: "current", pid, snapshot, health };
+}
+function processExists(pid) {
+  if (platform2() === "linux") {
+    try {
+      const stat = readFileSync3(`/proc/${pid}/stat`, "utf8");
+      const closeParen = stat.lastIndexOf(")");
+      if (closeParen >= 0) {
+        const state = stat.slice(closeParen + 2).trim().split(/\s+/, 1)[0];
+        if (state === "Z") return false;
+      }
+    } catch {
+    }
+  }
   try {
     process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+function readProcessSnapshot(pid) {
+  if (!processExists(pid)) return null;
+  if (platform2() === "linux") {
+    try {
+      const stat = readFileSync3(`/proc/${pid}/stat`, "utf8");
+      const closeParen = stat.lastIndexOf(")");
+      if (closeParen < 0) return null;
+      const fields = stat.slice(closeParen + 2).trim().split(/\s+/);
+      const startToken = fields[19];
+      if (!startToken) return null;
+      const argv = readFileSync3(`/proc/${pid}/cmdline`).toString("utf8").split("\0").filter(Boolean);
+      const environment = Object.fromEntries(
+        readFileSync3(`/proc/${pid}/environ`).toString("utf8").split("\0").filter(Boolean).map((entry) => {
+          const index = entry.indexOf("=");
+          return index < 0 ? [entry, ""] : [entry.slice(0, index), entry.slice(index + 1)];
+        })
+      );
+      return {
+        pid,
+        startToken,
+        argv,
+        commandLine: argv.join(" "),
+        environment
+      };
+    } catch {
+      return null;
+    }
+  }
+  if (platform2() === "darwin") {
+    try {
+      const startToken = execFileSync(
+        "ps",
+        ["-p", String(pid), "-o", "lstart="],
+        { encoding: "utf8" }
+      ).trim();
+      const commandLine = execFileSync(
+        "ps",
+        ["-ww", "-p", String(pid), "-o", "command="],
+        { encoding: "utf8" }
+      ).trim();
+      return {
+        pid,
+        startToken,
+        argv: parseObservedCommandLine(commandLine),
+        commandLine,
+        environment: null
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function parseObservedCommandLine(commandLine) {
+  if (!commandLine || /["'\\]/.test(commandLine)) return [];
+  return commandLine.split(/\s+/);
+}
+function daemonProcessOwnership(snapshot, agentId, configDir, health) {
+  if (health) {
+    if (health.pid !== snapshot.pid || health.processStartToken !== snapshot.startToken || health.agentId !== agentId || resolve(health.configDir) !== resolve(configDir)) {
+      return "foreign";
+    }
+  }
+  if (snapshot.argv.length === 0 || !snapshot.commandLine) {
+    return "unverifiable";
+  }
+  const scriptIndex = snapshot.argv.findIndex(
+    (arg) => /^spellguard-credential-daemon\.(?:mjs|ts)$/.test(basename(arg))
+  );
+  if (scriptIndex < 0 || snapshot.argv[scriptIndex + 1] !== agentId) {
+    return "foreign";
+  }
+  const configuredRoot = flagValue(snapshot.argv, "--config-dir");
+  if (configuredRoot) {
+    return resolve(configuredRoot) === resolve(configDir) ? "owned" : "foreign";
+  }
+  const environmentRoot = defaultConfigDirFromEnvironment(snapshot.environment);
+  if (!environmentRoot) return "unverifiable";
+  return resolve(environmentRoot) === resolve(configDir) ? "owned" : "foreign";
+}
+function signalOwnedCredentialDaemon(args) {
+  const first = readProcessSnapshot(args.pid);
+  const health = readDaemonHealth(args.configDir, args.agentId);
+  if (!first || daemonProcessOwnership(first, args.agentId, args.configDir, health) !== "owned") {
+    return false;
+  }
+  const second = readProcessSnapshot(args.pid);
+  if (!second || second.startToken !== first.startToken || daemonProcessOwnership(second, args.agentId, args.configDir, health) !== "owned") {
+    return false;
+  }
+  try {
+    process.kill(args.pid, args.signal);
     return true;
   } catch {
     return false;
   }
 }
-function ensureCredentialDaemonRunning(args) {
-  const { config } = args;
-  if (!config.agentSecret || !config.agentId) {
-    return { daemon: "skipped", reason: "missing_credentials" };
+function defaultConfigDirFromEnvironment(environment) {
+  if (!environment) return null;
+  if (environment.XDG_CONFIG_HOME) {
+    return join3(environment.XDG_CONFIG_HOME, "spellguard", "codex");
   }
-  const configDir = args.configDir ?? defaultConfigDir();
-  const pidDir = join2(configDir, "agents");
-  const pidPath = join2(pidDir, `${config.agentId}.pid`);
-  const existingPid = readDaemonPid(pidPath);
-  if (existingPid !== null && isDaemonAlive(existingPid)) {
-    return { daemon: "already-running", pid: existingPid };
+  const home = environment.HOME;
+  return home ? join3(home, ".config", "spellguard", "codex") : null;
+}
+function flagValue(argv, flag) {
+  const index = argv.indexOf(flag);
+  return index >= 0 && argv[index + 1] ? argv[index + 1] : null;
+}
+async function stopOwnedProcess(args) {
+  if (remainingMs(args.deadlineAtMs) <= 0 || !args.canMutate() || !sameOwnedProcess(args) || remainingMs(args.deadlineAtMs) <= 0) {
+    return false;
   }
-  const scriptPath = daemonScriptPath();
-  const spawnFn = args.spawnDaemon ?? defaultSpawnDaemon;
-  spawnFn(process.execPath, [scriptPath, config.agentId], {
-    detached: true,
-    stdio: "ignore",
-    env: {
-      ...process.env
-      // Codex daemon does not need an env file path — it updates git config
-      // directly via execFileSync in the credential handler.
+  try {
+    process.kill(args.snapshot.pid, "SIGTERM");
+  } catch {
+    return !processExists(args.snapshot.pid);
+  }
+  const gracefulDeadlineAtMs = Math.max(
+    Date.now(),
+    args.deadlineAtMs - FORCE_KILL_RESERVE_MS
+  );
+  if (await waitForProcessExit(args.snapshot.pid, gracefulDeadlineAtMs))
+    return true;
+  if (remainingMs(args.deadlineAtMs) <= 0 || !args.canMutate() || !sameOwnedProcess(args) || remainingMs(args.deadlineAtMs) <= 0) {
+    return false;
+  }
+  try {
+    process.kill(args.snapshot.pid, "SIGKILL");
+  } catch {
+    return !processExists(args.snapshot.pid);
+  }
+  return waitForProcessExit(args.snapshot.pid, args.deadlineAtMs);
+}
+function sameOwnedProcess(args) {
+  const current = readProcessSnapshot(args.snapshot.pid);
+  if (!current || current.startToken !== args.snapshot.startToken) return false;
+  const health = readDaemonHealth(args.configDir, args.agentId);
+  if (args.instanceId && health && health.instanceId !== args.instanceId) {
+    return false;
+  }
+  return daemonProcessOwnership(current, args.agentId, args.configDir, health) === "owned";
+}
+async function waitForProcessExit(pid, deadlineAtMs) {
+  while (remainingMs(deadlineAtMs) > 0) {
+    if (!processExists(pid)) return true;
+    await delay(Math.min(25, remainingMs(deadlineAtMs)));
+  }
+  return !processExists(pid);
+}
+function unlinkPidIfUnchanged(path, expectedPid) {
+  if (readDaemonPid(path) !== expectedPid) return false;
+  try {
+    unlinkSync(path);
+    return true;
+  } catch {
+    return !existsSync2(path);
+  }
+}
+function removeStaleArtifacts(configDir, agentId) {
+  rmSync2(daemonPidFilePath(configDir, agentId), { force: true });
+  rmSync2(daemonHealthFilePath(configDir, agentId), { force: true });
+}
+async function waitForReadiness(args) {
+  while (remainingMs(args.deadlineAtMs) > 0) {
+    const health2 = readDaemonHealth(args.configDir, args.agentId);
+    if (health2?.instanceId === args.instanceId && health2.artifactId === args.artifactId && health2.processState === "ready") {
+      return { kind: "ready", health: health2 };
     }
+    if (args.child.exitCode !== null || args.child.signalCode !== null) {
+      return {
+        kind: "failed",
+        reason: "startup_failed",
+        exitCode: args.child.exitCode,
+        signal: args.child.signalCode
+      };
+    }
+    await delay(Math.min(25, remainingMs(args.deadlineAtMs)));
+  }
+  const health = readDaemonHealth(args.configDir, args.agentId);
+  if (health?.instanceId === args.instanceId && health.artifactId === args.artifactId && health.processState === "starting" && processExists(health.pid)) {
+    return { kind: "starting", health };
+  }
+  return {
+    kind: "failed",
+    reason: "readiness_timeout",
+    exitCode: args.child.exitCode,
+    signal: args.child.signalCode
+  };
+}
+async function acquireReconcileLock(path, deadlineAtMs) {
+  const timeoutMs = remainingMs(deadlineAtMs);
+  if (timeoutMs <= 0) return null;
+  const flockPath = FLOCK_PATHS.find((candidate) => existsSync2(candidate));
+  if (!flockPath) return null;
+  writeFileSync2(path, "", { flag: "a", mode: 384 });
+  chmodSync2(path, 384);
+  const child = spawn(
+    flockPath,
+    [
+      "--wait",
+      String(Math.max(timeoutMs, 1) / 1e3),
+      "--no-fork",
+      path,
+      process.execPath,
+      "-e",
+      LOCK_HOLDER_SCRIPT
+    ],
+    { stdio: ["pipe", "pipe", "ignore"] }
+  );
+  return waitForLockHolder(child, deadlineAtMs);
+}
+async function waitForLockHolder(child, deadlineAtMs) {
+  return new Promise((resolveLock) => {
+    let settled = false;
+    let held = false;
+    let output = "";
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolveLock(result);
+    };
+    const fail = () => {
+      held = false;
+      child.stdin?.end();
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+      }
+      finish(null);
+    };
+    const timer = setTimeout(fail, remainingMs(deadlineAtMs));
+    child.once("error", fail);
+    child.stdin?.once("error", fail);
+    child.once("exit", () => {
+      held = false;
+      finish(null);
+    });
+    child.stdout?.on("data", (chunk) => {
+      output += chunk.toString();
+      if (!output.includes("locked\n")) return;
+      held = true;
+      finish({
+        isHeld: () => held && child.exitCode === null && child.signalCode === null,
+        release: () => {
+          if (!held) return;
+          held = false;
+          if (child.stdin?.writable) {
+            child.stdin.end();
+          } else if (child.exitCode === null && child.signalCode === null) {
+            child.kill("SIGTERM");
+          }
+        }
+      });
+    });
   });
-  return { daemon: "spawned" };
+}
+function delay(ms) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+function remainingMs(deadlineAtMs) {
+  return Math.max(0, deadlineAtMs - Date.now());
 }
 function defaultSpawnDaemon(execPath, args, opts) {
   const child = spawn(execPath, args, opts);
   child.unref();
+  return child;
 }
 
 // src/lib/plugin-sync.ts
-import { readFileSync as readFileSync3 } from "node:fs";
-import { dirname as dirname4, resolve } from "node:path";
+import { readFileSync as readFileSync4 } from "node:fs";
+import { dirname as dirname4, resolve as resolve2 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var FRAMEWORK = "codex";
 var TIMEOUT_MS = 5e3;
@@ -1597,7 +3800,7 @@ function readPluginVersion() {
   try {
     const here = dirname4(fileURLToPath2(import.meta.url));
     const pkg = JSON.parse(
-      readFileSync3(resolve(here, "..", "..", "package.json"), "utf8")
+      readFileSync4(resolve2(here, "..", "..", "package.json"), "utf8")
     );
     return pkg.version;
   } catch {
@@ -1616,7 +3819,10 @@ async function syncFrameworkIdentity(options) {
       // The plugin-sync route is authed with Authorization: Bearer
       // (requireAgentBearer), not the X-Spellguard-Agent-* headers.
       auth: "bearer",
-      fetchImpl: (input, init) => fetch(input, { ...init, signal: controller.signal })
+      fetchImpl: (input, init) => (options.fetchImpl ?? fetch)(input, {
+        ...init,
+        signal: controller.signal
+      })
     });
     const { error, response } = await api.POST("/agents/{id}/plugin-sync", {
       params: { path: { id: options.agentId } },
@@ -1635,7 +3841,7 @@ async function syncFrameworkIdentity(options) {
       );
       return;
     }
-    console.log(
+    console.error(
       JSON.stringify({
         event: "plugin_sync.ok",
         agentId: options.agentId
@@ -1691,8 +3897,8 @@ function renderMessage(input) {
 
 // src/lib/sqlite-self-install.ts
 import { spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as fsConstants, mkdirSync as mkdirSync2 } from "node:fs";
-import { dirname as dirname5, resolve as resolve2 } from "node:path";
+import { accessSync, constants as fsConstants2, mkdirSync as mkdirSync3 } from "node:fs";
+import { dirname as dirname5, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/lib/sqlite-backend.ts
@@ -1700,7 +3906,7 @@ import { createRequire } from "node:module";
 var localRequire = typeof __require === "function" ? __require : createRequire(import.meta.url);
 function suppressSqliteExperimentalWarning() {
   const original = process.emitWarning;
-  process.emitWarning = (warning, ...rest) => {
+  process.emitWarning = ((warning, ...rest) => {
     const optsOrType = rest[0];
     const type = typeof optsOrType === "object" && optsOrType !== null ? optsOrType.type : optsOrType;
     const name = typeof warning === "object" ? warning?.name : void 0;
@@ -1708,7 +3914,7 @@ function suppressSqliteExperimentalWarning() {
     const isSqliteExperimental = type === "ExperimentalWarning" || name === "ExperimentalWarning" || typeof message === "string" && message.includes("SQLite is an experimental");
     if (isSqliteExperimental) return;
     return original.call(process, warning, ...rest);
-  };
+  });
   return () => {
     process.emitWarning = original;
   };
@@ -1850,11 +4056,11 @@ var SELF_INSTALL_PACKAGES = [
 function resolvePluginRoot(overrideDir) {
   if (overrideDir) return overrideDir;
   const here = dirname5(fileURLToPath3(import.meta.url));
-  return resolve2(here, "..", "..");
+  return resolve3(here, "..", "..");
 }
 function isWritable(dir) {
   try {
-    accessSync(dir, fsConstants.W_OK);
+    accessSync(dir, fsConstants2.W_OK);
     return true;
   } catch {
     return false;
@@ -1865,7 +4071,7 @@ async function ensureSqliteBackend(opts = {}) {
   if (hasBackend()) return { status: "already" };
   const pluginRoot = resolvePluginRoot(opts.pluginRoot);
   try {
-    mkdirSync2(resolve2(pluginRoot, "node_modules"), { recursive: true });
+    mkdirSync3(resolve3(pluginRoot, "node_modules"), { recursive: true });
   } catch (err) {
     return {
       status: "skipped",
@@ -1941,34 +4147,45 @@ function defaultNpmInstall(args) {
 }
 
 // src/lib/stop-daemons.ts
-import { readFileSync as readFileSync4, readdirSync, unlinkSync } from "node:fs";
-import { join as join3 } from "node:path";
+import { readFileSync as readFileSync5, readdirSync as readdirSync2, unlinkSync as unlinkSync2 } from "node:fs";
+import { join as join4 } from "node:path";
 function stopLocalDaemons(opts) {
-  const dir = join3(opts?.configDir ?? defaultConfigDir(), "agents");
+  const dir = join4(opts?.configDir ?? defaultConfigDir(), "agents");
   const kill = opts?.killImpl ?? process.kill.bind(process);
   let entries;
   try {
-    entries = readdirSync(dir).filter((f) => f.endsWith(".pid"));
+    entries = readdirSync2(dir).filter((f) => f.endsWith(".pid"));
   } catch {
     return [];
   }
   const stopped = [];
   for (const f of entries) {
-    const p = join3(dir, f);
+    const p = join4(dir, f);
     let pid;
     try {
-      pid = Number.parseInt(readFileSync4(p, "utf8").trim(), 10);
+      pid = Number.parseInt(readFileSync5(p, "utf8").trim(), 10);
     } catch {
       continue;
     }
     if (!Number.isInteger(pid) || pid <= 0) continue;
+    const agentId = f.slice(0, -".pid".length);
+    const signalled = opts?.killImpl ? (() => {
+      try {
+        kill(pid, "SIGTERM");
+        return true;
+      } catch {
+        return false;
+      }
+    })() : signalOwnedCredentialDaemon({
+      pid,
+      agentId,
+      configDir: opts?.configDir ?? defaultConfigDir(),
+      signal: "SIGTERM"
+    });
+    if (!signalled) continue;
+    stopped.push(pid);
     try {
-      kill(pid, "SIGTERM");
-      stopped.push(pid);
-    } catch {
-    }
-    try {
-      unlinkSync(p);
+      unlinkSync2(p);
     } catch {
     }
   }
@@ -1994,7 +4211,8 @@ async function pollChannelToken(apiBaseUrl, nonce, opts = {}) {
           userId: body.userId,
           orgId: body.orgId,
           agentName: body.agentName,
-          reason: body.reason
+          reason: body.reason,
+          agentId: body.agentId
         };
       }
     } else if (res && res.status !== 404) {
@@ -2054,10 +4272,10 @@ async function promptExistingConfigChoice(opts) {
       input: opts.input ?? process.stdin,
       output: opts.output ?? process.stdout
     });
-    return new Promise((resolve4) => {
+    return new Promise((resolve5) => {
       rl.question(q, (answer) => {
         rl.close();
-        resolve4(answer);
+        resolve5(answer);
       });
     });
   };
@@ -2141,7 +4359,9 @@ async function runSpellguardSetup(args = {}) {
         lines.push(`  expires_at=${existing.config.expiresAt}`);
       }
       if (existing.config.scopeSummary) {
-        lines.push(`  repos=${existing.config.scopeSummary.repos.join(", ")}`);
+        lines.push(
+          `  scope=${describeGithubCredentialScope(existing.config.scopeSummary)}`
+        );
       } else {
         lines.push(
           "  github=not connected (complete the dashboard GitHub-App install to grant repo access)"
@@ -2175,7 +4395,7 @@ async function runSpellguardSetup(args = {}) {
 Re-running setup to RECONNECT this machine. In the browser, choose "Select an existing agent" to re-attach to your existing agent \u2014 it keeps the agent's history and restores its GitHub connection automatically. Only choose "Create a new agent" if you intend to provision a brand-new, separate agent.`
     });
   }
-  const agentId = args.agentIdOverride ?? reuseAgentId ?? crypto.randomUUID();
+  let agentId = args.agentIdOverride ?? reuseAgentId ?? crypto.randomUUID();
   const nonce = generateNonce();
   await registerInitiatingFramework(baseUrl, nonce, {
     ...args.fetchImpl ? { fetchImpl: args.fetchImpl } : {}
@@ -2204,6 +4424,7 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
   let orgId;
   let agentName;
   let statementOfReason;
+  let isReattach = false;
   try {
     const polled = await pollChannelToken(baseUrl, nonce, {
       fetchImpl: args.fetchImpl,
@@ -2214,6 +4435,10 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
     orgId = polled.orgId;
     agentName = polled.agentName;
     statementOfReason = polled.reason;
+    if (polled.agentId) {
+      agentId = polled.agentId;
+      isReattach = true;
+    }
   } catch (e) {
     clearInterval(interval);
     renderMessage({
@@ -2230,7 +4455,8 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
     orgId,
     agentName,
     statementOfReason,
-    WebSocketImpl: args.WebSocketImpl
+    WebSocketImpl: args.WebSocketImpl,
+    expectReBootstrap: isReattach
   });
   clearInterval(interval);
   if (!result.ok) {
@@ -2281,7 +4507,8 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
   } catch {
   }
   writeConfig(writtenConfig);
-  const daemonResult = ensureCredentialDaemonRunning({
+  const managed = (args.isManagedBox ?? isManagedBox)();
+  const daemonResult = managed ? { daemon: "skipped", reason: "managed_box" } : await ensureCredentialDaemonRunning({
     config: writtenConfig,
     spawnDaemon: args.spawnDaemon,
     configDir: args.daemonConfigDir
@@ -2305,7 +4532,26 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
     renderMessage({ level: "info", message: lines.join("\n") });
     return { ok: true, daemon: daemonResult, githubCredential: "bundled" };
   }
-  const daemonLine = daemonResult.daemon === "spawned" ? "  The credential daemon is now running and listening for it." : daemonResult.daemon === "already-running" ? `  The credential daemon is already running (pid ${daemonResult.pid}) and listening for it.` : `  WARNING: the credential daemon could not be started (${daemonResult.reason}); restart your Codex session so the session-start hook can start it.`;
+  const daemonLine = (() => {
+    switch (daemonResult.daemon) {
+      case "spawned":
+        return "  The credential daemon is running and listening for it.";
+      case "restarted":
+        return `  Spellguard replaced an obsolete or unhealthy credential daemon. The new daemon is running (pid ${daemonResult.pid}).`;
+      case "already-running":
+        return `  The credential daemon is already running (pid ${daemonResult.pid}) and listening for it.`;
+      case "starting":
+        return `  The credential daemon is starting (pid ${daemonResult.pid}); credential delivery is pending.`;
+      case "skipped":
+        return daemonResult.reason === "managed_box" ? "  The managed-box daemon owns credential delivery on this machine." : `  Credential-daemon startup was skipped (${daemonResult.reason}).`;
+      case "unavailable":
+        return `  WARNING: the credential daemon is unavailable (${daemonResult.reason}). Inspect the daemon log before requesting a new credential.`;
+      default: {
+        const exhaustive = daemonResult;
+        return exhaustive;
+      }
+    }
+  })();
   renderMessage({
     level: "info",
     message: [
@@ -2318,7 +4564,7 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
   });
   const waitMs = args.credentialWaitMs ?? DEFAULT_CREDENTIAL_WAIT_MS;
   let delivered = null;
-  if (daemonResult.daemon !== "skipped" && waitMs > 0) {
+  if ((daemonResult.daemon === "spawned" || daemonResult.daemon === "restarted" || daemonResult.daemon === "already-running") && waitMs > 0) {
     renderMessage({
       level: "info",
       message: `Spellguard: waiting up to ${Math.round(waitMs / 6e4)} minute(s) for the GitHub credential (Ctrl-C is safe \u2014 the daemon keeps listening)\u2026`
@@ -2332,7 +4578,7 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
     const author = delivered.gitAuthorName && delivered.gitAuthorEmail ? ` Commits will be authored as: ${delivered.gitAuthorName} <${delivered.gitAuthorEmail}>.` : "";
     renderMessage({
       level: "info",
-      message: `Spellguard: GitHub credential received \u2014 repos=[${delivered.scopeSummary.repos.join(", ")}].${author}
+      message: `Spellguard: GitHub credential received \u2014 scope=${describeGithubCredentialScope(delivered.scopeSummary)}.${author}
   IMPORTANT \u2014 restart your Codex session ONCE now so the git + gh credential
   helpers (wired via ~/.codex/config.toml, which Codex reads only at startup)
   take effect. After this one restart, token rotation needs no restart.`
@@ -2340,14 +4586,13 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
     return { ok: true, daemon: daemonResult, githubCredential: "delivered" };
   }
   renderMessage({
-    level: "info",
-    message: [
-      "Spellguard: GitHub credential not delivered yet \u2014 that is fine. The",
-      "  daemon keeps listening and writes it to your local config the moment",
-      "  the dashboard GitHub-App install completes. Once it lands, restart your",
-      "  Codex session ONCE so the git + gh helpers (wired via ~/.codex/config.toml,",
-      "  read only at startup) take effect. Re-run @spellguard-setup any time to",
-      "  check status."
+    level: daemonResult.daemon === "unavailable" ? "warn" : "info",
+    message: daemonResult.daemon === "unavailable" ? `Spellguard: GitHub credential is still missing because the credential daemon is unavailable (${daemonResult.reason}). Inspect the daemon log and installed plugin version before requesting a new credential.` : [
+      "Spellguard: GitHub credential not delivered yet. The daemon keeps",
+      "  listening and writes it to your local config when the dashboard",
+      "  GitHub App install completes. Once it lands, restart your Codex",
+      "  session once so Codex reads the git and gh helper settings from",
+      "  ~/.codex/config.toml. Re-run @spellguard-setup to check status."
     ].join("\n")
   });
   return { ok: true, daemon: daemonResult, githubCredential: "pending" };
@@ -2357,7 +4602,7 @@ async function waitForGithubCredential(timeoutMs, pollIntervalMs) {
   const deadline = Date.now() + timeoutMs;
   const started = Date.now();
   let lastProgressAt = started;
-  const delay = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
+  const delay2 = (ms) => new Promise((resolve5) => setTimeout(resolve5, ms));
   while (Date.now() < deadline) {
     const result = readConfig();
     if (result.config?.scopedToken) return result.config;
@@ -2369,7 +4614,7 @@ async function waitForGithubCredential(timeoutMs, pollIntervalMs) {
         message: `Spellguard: still waiting for the GitHub credential (${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s elapsed) \u2014 complete the dashboard "Connect GitHub" step.`
       });
     }
-    await delay(pollIntervalMs);
+    await delay2(pollIntervalMs);
   }
   return null;
 }
@@ -2402,7 +4647,7 @@ async function ensureAttributionBackend(opts) {
 }
 async function awaitBootstrapViaClient(opts) {
   const timeoutMs = opts.timeoutMs ?? 10 * 60 * 1e3;
-  return new Promise((resolve4) => {
+  return new Promise((resolve5) => {
     let settled = false;
     let client = null;
     const settle = (result) => {
@@ -2413,7 +4658,7 @@ async function awaitBootstrapViaClient(opts) {
         client?.close();
       } catch {
       }
-      resolve4(result);
+      resolve5(result);
     };
     const timer = setTimeout(() => {
       settle({
@@ -2435,7 +4680,10 @@ async function awaitBootstrapViaClient(opts) {
         // Record the correct agents.framework at creation (REQ-FI) instead of
         // the server's hardcoded default; plugin-sync reconciles to the same
         // canonical value on startup.
-        framework: FRAMEWORK
+        framework: FRAMEWORK,
+        // C10: on a select-existing reattach the server auto-delivers
+        // re_bootstrap — do not send (and get rejected on) a bootstrap_request.
+        ...opts.expectReBootstrap ? { expectReBootstrap: true } : {}
       }),
       onCredentialDelivered: (frame) => {
         if (frame.cause !== "bootstrap" && frame.cause !== "re_bootstrap") {
@@ -2523,20 +4771,20 @@ function buildServerErrorMessage(errMsg) {
 }
 
 // src/hooks/session-start.ts
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 
 // src/lib/codex-config-probe.ts
-import { existsSync as existsSync3, readFileSync as readFileSync5 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync3, readFileSync as readFileSync6 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { join as join5 } from "node:path";
 function probeCodexHooksFlag(opts = {}) {
-  const path = opts.configPath ?? join4(opts.homeDirOverride ?? homedir2(), ".codex", "config.toml");
+  const path = opts.configPath ?? join5(opts.homeDirOverride ?? homedir3(), ".codex", "config.toml");
   if (!existsSync3(path)) {
     return { state: "unknown", reason: "config.toml absent" };
   }
   let raw;
   try {
-    raw = readFileSync5(path, "utf-8");
+    raw = readFileSync6(path, "utf-8");
   } catch (err) {
     return { state: "unknown", reason: `read failed: ${String(err)}` };
   }
@@ -2562,27 +4810,27 @@ function probeCodexHooksFlag(opts = {}) {
 }
 
 // src/lib/codex-credential-helper-install.ts
-import { dirname as dirname6, join as join6 } from "node:path";
+import { dirname as dirname6, join as join7 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // src/lib/codex-shell-env-policy.ts
 import {
   existsSync as existsSync4,
-  mkdirSync as mkdirSync3,
-  readFileSync as readFileSync6,
-  renameSync as renameSync2,
-  writeFileSync as writeFileSync2
+  mkdirSync as mkdirSync4,
+  readFileSync as readFileSync7,
+  renameSync as renameSync3,
+  writeFileSync as writeFileSync3
 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join5 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { join as join6 } from "node:path";
 
 // ../../node_modules/smol-toml/dist/error.js
 function getLineColFromPtr(string, ptr) {
-  let lines = string.slice(0, ptr).split(/\r\n|\n|\r/g);
+  let lines = string.slice(0, ptr).split(/\r?\n/);
   return [lines.length, lines.pop().length + 1];
 }
 function makeCodeBlock(string, line, column) {
-  let lines = string.split(/\r\n|\n|\r/g);
+  let lines = string.split(/\r?\n/);
   let codeblock = "";
   let numberLen = (Math.log10(line + 1) | 0) + 1;
   for (let i = line - 1; i <= line + 1; i++) {
@@ -2600,7 +4848,7 @@ function makeCodeBlock(string, line, column) {
   }
   return codeblock;
 }
-var TomlError = class extends Error {
+var TomlError = class _TomlError extends Error {
   line;
   column;
   codeblock;
@@ -2614,116 +4862,165 @@ ${codeblock}`, options);
     this.column = column;
     this.codeblock = codeblock;
   }
+  /** @internal */
+  static x(message, ctx, ptr) {
+    throw new _TomlError(message, { toml: ctx.s, ptr: ptr ?? ctx.p });
+  }
 };
 
-// ../../node_modules/smol-toml/dist/util.js
-function isEscaped(str, ptr) {
-  let i = 0;
-  while (str[ptr - ++i] === "\\")
-    ;
-  return --i && i % 2;
-}
-function indexOfNewline(str, start = 0, end = str.length) {
-  let idx = str.indexOf("\n", start);
-  if (str[idx - 1] === "\r")
-    idx--;
-  return idx <= end ? idx : -1;
-}
-function skipComment(str, ptr) {
-  for (let i = ptr; i < str.length; i++) {
-    let c = str[i];
-    if (c === "\n")
-      return i;
-    if (c === "\r" && str[i + 1] === "\n")
-      return i + 1;
-    if (c < " " && c !== "	" || c === "\x7F") {
-      throw new TomlError("control characters are not allowed in comments", {
-        toml: str,
-        ptr
-      });
+// ../../node_modules/smol-toml/dist/primitive.js
+function parseString(ctx) {
+  let startPtr = ctx.p;
+  let c = ctx.s.charCodeAt(ctx.p++);
+  let first = c;
+  let isLiteral = c === 39;
+  let isMultiline = c === ctx.s.charCodeAt(ctx.p) && c === ctx.s.charCodeAt(ctx.p + 1);
+  if (isMultiline) {
+    if ((c = ctx.s.charCodeAt(ctx.p += 2)) === 10)
+      ctx.p++;
+    else if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)
+      ctx.p += 2;
+  }
+  let parsed = "";
+  let sliceStart = ctx.p;
+  let state = 0;
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    c = ctx.s.charCodeAt(ctx.p);
+    if (isMultiline && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)) {
+      state = state && 3;
+    } else if (c < 32 && c !== 9 || c === 127) {
+      TomlError.x("control characters are not allowed in strings", ctx);
+    } else if ((!state || state === 3) && c === first && (!isMultiline || ctx.s.charCodeAt(ctx.p + 1) === first && ctx.s.charCodeAt(ctx.p + 2) === first)) {
+      if (isMultiline) {
+        if (ctx.s.charCodeAt(ctx.p + 3) === first)
+          ctx.p++;
+        if (ctx.s.charCodeAt(ctx.p + 3) === first)
+          ctx.p++;
+      }
+      if (!state) {
+        let s = ctx.s.slice(sliceStart, ctx.p);
+        parsed = parsed ? parsed + s : s;
+      }
+      ctx.p += isMultiline ? 3 : 1;
+      return parsed;
+    } else if (!state) {
+      if (!isLiteral && c === 92) {
+        parsed += ctx.s.slice(sliceStart, sliceStart = ctx.p);
+        state = 1;
+      }
+    } else if (state === 1) {
+      if (c === 120 || c === 117 || c === 85) {
+        let errPtr = ctx.p++ - 1;
+        let value = 0;
+        let len = c === 120 ? 2 : c === 117 ? 4 : 8;
+        for (let j = 0; j < len; j++, ctx.p++) {
+          let hex = ctx.s.charCodeAt(ctx.p);
+          let digit = (
+            /* 0-9 */
+            hex >= 48 && hex <= 57 ? hex - 48 : (
+              /* A-F */
+              hex >= 65 && hex <= 70 ? hex - 65 + 10 : (
+                /* a-f */
+                hex >= 97 && hex <= 102 ? hex - 97 + 10 : -1
+              )
+            )
+          );
+          if (digit < 0)
+            TomlError.x("invalid non-hex character in unicode escape", ctx);
+          value = value << 4 | digit;
+        }
+        if (value < 0 || value > 1114111 || value >= 55296 && value <= 57343) {
+          TomlError.x("invalid unicode escape", ctx, errPtr);
+        }
+        parsed += String.fromCodePoint(value);
+        sliceStart = ctx.p--;
+        state = 0;
+      } else if (isMultiline && (c === 32 || c === 9)) {
+        state = 2;
+      } else {
+        if (c === 98)
+          parsed += "\b";
+        else if (c === 116)
+          parsed += "	";
+        else if (c === 110)
+          parsed += "\n";
+        else if (c === 102)
+          parsed += "\f";
+        else if (c === 114)
+          parsed += "\r";
+        else if (c === 101)
+          parsed += "\x1B";
+        else if (c === 34)
+          parsed += '"';
+        else if (c === 92)
+          parsed += "\\";
+        else
+          TomlError.x("unrecognised escape sequence", ctx);
+        sliceStart = ctx.p + 1;
+        state = 0;
+      }
+    } else if (c !== 32 && c !== 9) {
+      if (state === 2)
+        TomlError.x("invalid escape: only line-ending whitespace may be escaped", ctx, sliceStart);
+      state = !isLiteral && c === 92 ? 1 : 0;
+      sliceStart = ctx.p;
     }
   }
-  return str.length;
-}
-function skipVoid(str, ptr, banNewLines, banComments) {
-  let c;
-  while (1) {
-    while ((c = str[ptr]) === " " || c === "	" || !banNewLines && (c === "\n" || c === "\r" && str[ptr + 1] === "\n"))
-      ptr++;
-    if (banComments || c !== "#")
-      break;
-    ptr = skipComment(str, ptr);
-  }
-  return ptr;
-}
-function skipUntil(str, ptr, sep3, end, banNewLines = false) {
-  if (!end) {
-    ptr = indexOfNewline(str, ptr);
-    return ptr < 0 ? str.length : ptr;
-  }
-  for (let i = ptr; i < str.length; i++) {
-    let c = str[i];
-    if (c === "#") {
-      i = indexOfNewline(str, i);
-    } else if (c === sep3) {
-      return i + 1;
-    } else if (c === end || banNewLines && (c === "\n" || c === "\r" && str[i + 1] === "\n")) {
-      return i;
-    }
-  }
-  throw new TomlError("cannot find end of structure", {
-    toml: str,
-    ptr
-  });
-}
-function getStringEnd(str, seek) {
-  let first = str[seek];
-  let target = first === str[seek + 1] && str[seek + 1] === str[seek + 2] ? str.slice(seek, seek + 3) : first;
-  seek += target.length - 1;
-  do
-    seek = str.indexOf(target, ++seek);
-  while (seek > -1 && first !== "'" && isEscaped(str, seek));
-  if (seek > -1) {
-    seek += target.length;
-    if (target.length > 1) {
-      if (str[seek] === first)
-        seek++;
-      if (str[seek] === first)
-        seek++;
-    }
-  }
-  return seek;
+  TomlError.x("unfinished string", ctx, startPtr);
 }
 
 // ../../node_modules/smol-toml/dist/date.js
-var DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})?[T ]?(?:(\d{2}):\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[-+]\d{2}:\d{2})?$/i;
+var DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})?[Tt ]?(?:(\d{2}):\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|z|[-+]\d{2}:\d{2})?$/i;
 var TomlDate = class _TomlDate extends Date {
   #hasDate = false;
   #hasTime = false;
   #offset = null;
-  constructor(date) {
+  constructor(date, fasttype, unsafeDelim) {
     let hasDate = true;
     let hasTime = true;
     let offset = "Z";
+    let c;
     if (typeof date === "string") {
-      let match = date.match(DATE_TIME_RE);
-      if (match) {
-        if (!match[1]) {
-          hasDate = false;
-          date = `0000-01-01T${date}`;
+      if (fasttype)
+        prep: {
+          if (fasttype < 3) {
+            if (+date.slice(11, 13) > 23) {
+              date = "";
+              break prep;
+            }
+            if (fasttype === 2) {
+              offset = null;
+              date += "Z";
+            } else if ((c = date.charCodeAt(date.length - 1)) !== 90 && c !== 122) {
+              offset = date.slice(date.length - 6);
+            }
+            if (unsafeDelim)
+              date = date.slice(0, 10) + "T" + date.slice(11);
+          } else if (fasttype === 4) {
+            date = +date.slice(0, 2) > 23 ? "" : `0000-01-01T${date}Z`;
+          }
+          hasDate = fasttype !== 4;
+          hasTime = fasttype !== 3;
         }
-        hasTime = !!match[2];
-        hasTime && date[10] === " " && (date = date.replace(" ", "T"));
-        if (match[2] && +match[2] > 23) {
-          date = "";
+      else {
+        let match = date.match(DATE_TIME_RE);
+        if (match) {
+          if (!match[1]) {
+            hasDate = false;
+            date = `0000-01-01T${date}`;
+          }
+          hasTime = !!match[2];
+          hasTime && date[10] === " " && (date = date.replace(" ", "T"));
+          if (match[2] && +match[2] > 23) {
+            date = "";
+          } else {
+            offset = match[3] || null;
+            if (!offset && hasTime)
+              date += "Z";
+          }
         } else {
-          offset = match[3] || null;
-          date = date.toUpperCase();
-          if (!offset && hasTime)
-            date += "Z";
+          date = "";
         }
-      } else {
-        date = "";
       }
     }
     super(date);
@@ -2756,7 +5053,7 @@ var TomlDate = class _TomlDate extends Date {
       return iso.slice(11, 23);
     if (this.#offset === null)
       return iso.slice(0, -1);
-    if (this.#offset === "Z")
+    if (this.#offset === "Z" || this.#offset === "z")
       return iso;
     let offset = +this.#offset.slice(1, 3) * 60 + +this.#offset.slice(4, 6);
     offset = this.#offset[0] === "-" ? offset : -offset;
@@ -2787,362 +5084,359 @@ var TomlDate = class _TomlDate extends Date {
   }
 };
 
-// ../../node_modules/smol-toml/dist/primitive.js
-var INT_REGEX = /^((0x[0-9a-fA-F](_?[0-9a-fA-F])*)|(([+-]|0[ob])?\d(_?\d)*))$/;
-var FLOAT_REGEX = /^[+-]?\d(_?\d)*(\.\d(_?\d)*)?([eE][+-]?\d(_?\d)*)?$/;
-var LEADING_ZERO = /^[+-]?0[0-9_]/;
-var ESCAPE_REGEX = /^[0-9a-f]{2,8}$/i;
-var ESC_MAP = {
-  b: "\b",
-  t: "	",
-  n: "\n",
-  f: "\f",
-  r: "\r",
-  e: "\x1B",
-  '"': '"',
-  "\\": "\\"
-};
-function parseString(str, ptr = 0, endPtr = str.length) {
-  let isLiteral = str[ptr] === "'";
-  let isMultiline = str[ptr++] === str[ptr] && str[ptr] === str[ptr + 1];
-  if (isMultiline) {
-    endPtr -= 2;
-    if (str[ptr += 2] === "\r")
-      ptr++;
-    if (str[ptr] === "\n")
-      ptr++;
-  }
-  let tmp = 0;
-  let isEscape;
-  let parsed = "";
-  let sliceStart = ptr;
-  while (ptr < endPtr - 1) {
-    let c = str[ptr++];
-    if (c === "\n" || c === "\r" && str[ptr] === "\n") {
-      if (!isMultiline) {
-        throw new TomlError("newlines are not allowed in strings", {
-          toml: str,
-          ptr: ptr - 1
-        });
-      }
-    } else if (c < " " && c !== "	" || c === "\x7F") {
-      throw new TomlError("control characters are not allowed in strings", {
-        toml: str,
-        ptr: ptr - 1
-      });
-    }
-    if (isEscape) {
-      isEscape = false;
-      if (c === "x" || c === "u" || c === "U") {
-        let code = str.slice(ptr, ptr += c === "x" ? 2 : c === "u" ? 4 : 8);
-        if (!ESCAPE_REGEX.test(code)) {
-          throw new TomlError("invalid unicode escape", {
-            toml: str,
-            ptr: tmp
-          });
-        }
-        try {
-          parsed += String.fromCodePoint(parseInt(code, 16));
-        } catch {
-          throw new TomlError("invalid unicode escape", {
-            toml: str,
-            ptr: tmp
-          });
-        }
-      } else if (isMultiline && (c === "\n" || c === " " || c === "	" || c === "\r")) {
-        ptr = skipVoid(str, ptr - 1, true);
-        if (str[ptr] !== "\n" && str[ptr] !== "\r") {
-          throw new TomlError("invalid escape: only line-ending whitespace may be escaped", {
-            toml: str,
-            ptr: tmp
-          });
-        }
-        ptr = skipVoid(str, ptr);
-      } else if (c in ESC_MAP) {
-        parsed += ESC_MAP[c];
-      } else {
-        throw new TomlError("unrecognized escape sequence", {
-          toml: str,
-          ptr: tmp
-        });
-      }
-      sliceStart = ptr;
-    } else if (!isLiteral && c === "\\") {
-      tmp = ptr - 1;
-      isEscape = true;
-      parsed += str.slice(sliceStart, tmp);
-    }
-  }
-  return parsed + str.slice(sliceStart, endPtr - 1);
+// ../../node_modules/smol-toml/dist/extract.js
+function isDigit(char, base = 10) {
+  return base === 16 ? char > 47 && char < 58 || char > 64 && char < 71 || char > 96 && char < 103 : char > 47 && char < 48 + base;
 }
-function parseValue(value, toml, ptr, integersAsBigInt) {
-  if (value === "true")
-    return true;
-  if (value === "false")
-    return false;
-  if (value === "-inf")
-    return -Infinity;
-  if (value === "inf" || value === "+inf")
-    return Infinity;
-  if (value === "nan" || value === "+nan" || value === "-nan")
-    return NaN;
-  if (value === "-0")
-    return integersAsBigInt ? 0n : 0;
-  let isInt = INT_REGEX.test(value);
-  if (isInt || FLOAT_REGEX.test(value)) {
-    if (LEADING_ZERO.test(value)) {
-      throw new TomlError("leading zeroes are not allowed", {
-        toml,
-        ptr
-      });
+function isEndOfValue(char, delim) {
+  return char === 32 || char === 9 || char === 10 || char === 13 || // Structure end or next value delimiter
+  delim && (char === delim || char === 44) || // Comment
+  char === 35;
+}
+function extractValue(ctx, end) {
+  let errPtr = ctx.p;
+  let c = ctx.s.charCodeAt(ctx.p);
+  if (c === 91 || c === 123) {
+    ctx.d-- || TomlError.x("document contains excessively nested structures. aborting.", ctx);
+    let value = c === 91 ? parseArray(ctx) : parseInlineTable(ctx);
+    ctx.d++;
+    return value;
+  }
+  if (c === 34 || c === 39) {
+    return parseString(ctx);
+  }
+  if (c === 116) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 114 || ctx.s.charCodeAt(++ctx.p) !== 117 || ctx.s.charCodeAt(++ctx.p) !== 101)
+      TomlError.x("invalid value", ctx, errPtr);
+    return ctx.p++, true;
+  }
+  if (c === 102) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 97 || ctx.s.charCodeAt(++ctx.p) !== 108 || ctx.s.charCodeAt(++ctx.p) !== 115 || ctx.s.charCodeAt(++ctx.p) !== 101)
+      TomlError.x("invalid value", ctx, errPtr);
+    return ctx.p++, false;
+  }
+  if (c === 43 || c === 45) {
+    return parseNumber(ctx, ctx.p, ctx.s.charCodeAt(++ctx.p), 44 - c, end);
+  }
+  if (ctx.s.charCodeAt(ctx.p + 4) === 45 && ctx.s.charCodeAt(ctx.p + 7) === 45) {
+    return parseDate(ctx, c, end);
+  }
+  if (ctx.s.charCodeAt(ctx.p + 2) === 58) {
+    return parseTime(ctx, c, end);
+  }
+  return parseNumber(ctx, ctx.p, c, 0, end);
+}
+function parseNumber(ctx, startPtr, startChr, sign, endChr) {
+  let c = startChr;
+  let state = 0;
+  let hasUnderscores = false;
+  if (c === 105) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 110 || ctx.s.charCodeAt(++ctx.p) !== 102)
+      TomlError.x("invalid value", ctx, startPtr);
+    return ctx.p++, (sign || 1) / 0;
+  }
+  if (c === 110) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 97 || ctx.s.charCodeAt(++ctx.p) !== 110)
+      TomlError.x("invalid value", ctx, startPtr);
+    return ctx.p++, NaN;
+  }
+  if (c === 48) {
+    if (++ctx.p >= ctx.s.length || isEndOfValue(c = ctx.s.charCodeAt(ctx.p), endChr))
+      return ctx.bi === true ? 0n : 0;
+    if (!sign) {
+      if (c === 120)
+        return parseIntegerBaseN(ctx, startPtr, 16, endChr);
+      else if (c === 98)
+        return parseIntegerBaseN(ctx, startPtr, 2, endChr);
+      else if (c === 111)
+        return parseIntegerBaseN(ctx, startPtr, 8, endChr);
     }
-    value = value.replace(/_/g, "");
-    let numeric = +value;
-    if (isNaN(numeric)) {
-      throw new TomlError("invalid number", {
-        toml,
-        ptr
-      });
-    }
-    if (isInt) {
-      if ((isInt = !Number.isSafeInteger(numeric)) && !integersAsBigInt) {
-        throw new TomlError("integer value cannot be represented losslessly", {
-          toml,
-          ptr
-        });
+    if (c === 46)
+      state = 2;
+    else if (c === 101 || c === 69)
+      state = 4;
+    else
+      TomlError.x("illegal leading zero", ctx, startPtr);
+  } else if (!isDigit(c))
+    TomlError.x("invalid value", ctx, startPtr);
+  while (++ctx.p < ctx.s.length && (c = ctx.s.charCodeAt(ctx.p), !isEndOfValue(c, endChr))) {
+    if (!state)
+      state = 1;
+    if (c === 95) {
+      if (!(state & 1))
+        TomlError.x("illegal underscore", ctx);
+      state += 11;
+      hasUnderscores = true;
+    } else if (state === 1 && c === 46)
+      state = 2;
+    else if ((state === 1 || state === 3) && (c === 101 || c === 69))
+      state = 4;
+    else if (state === 4 && (c === 43 || c === 45)) {
+    } else if (!isDigit(c))
+      TomlError.x(`illegal character in numeric literal`, ctx);
+    else if (state > 9)
+      state -= 11;
+    else if (!(state & 1))
+      state++;
+  }
+  if (!state) {
+    let val = (startChr - 48) * (sign || 1);
+    return ctx.bi === true ? BigInt(val) : val;
+  }
+  if (!(state & 1))
+    TomlError.x("unfinished numeric value", ctx, startPtr);
+  let str = ctx.s.slice(startPtr, ctx.p);
+  if (hasUnderscores)
+    str = str.replaceAll("_", "");
+  return state > 1 ? parseFloat(str) : parseInteger(ctx, str, 10, startPtr);
+}
+function parseIntegerBaseN(ctx, startPtr, base, endChr) {
+  let c, underscore = 1;
+  while (++ctx.p < ctx.s.length && (c = ctx.s.charCodeAt(ctx.p), !isEndOfValue(c, endChr))) {
+    if (c === 95) {
+      if (underscore & 1)
+        TomlError.x("illegal underscore", ctx);
+      underscore = 3;
+    } else if (!isDigit(c, base))
+      TomlError.x(`illegal character in numeric literal`, ctx);
+    else if (underscore & 1)
+      underscore--;
+  }
+  if (underscore & 1)
+    TomlError.x("unfinished numeric value", ctx);
+  let str = ctx.s.slice(startPtr + 2, ctx.p);
+  if (underscore)
+    str = str.replaceAll("_", "");
+  return parseInteger(ctx, str, base, startPtr);
+}
+function parseInteger(ctx, str, base, startPtr) {
+  if (ctx.bi !== true)
+    int: {
+      let val = parseInt(str, base);
+      if (!Number.isSafeInteger(val)) {
+        if (ctx.bi)
+          break int;
+        TomlError.x("integer value cannot be represented losslessly", ctx, startPtr);
       }
-      if (isInt || integersAsBigInt === true)
-        numeric = BigInt(value);
+      return val;
     }
-    return numeric;
+  return base === 10 ? BigInt(str) : BigInt((base === 2 ? "0b" : base === 8 ? "0o" : "0x") + str);
+}
+function parseDate(ctx, c, endChr) {
+  let startPtr = ctx.p++, unsafeSeparator;
+  if (!isDigit(c) || !isDigit(ctx.s.charCodeAt(ctx.p++)) || !isDigit(ctx.s.charCodeAt(ctx.p++)) || !isDigit(ctx.s.charCodeAt(ctx.p++))) {
+    return parseNumber(ctx, ctx.p = startPtr, c, 0, endChr);
   }
-  const date = new TomlDate(value);
-  if (!date.isValid()) {
-    throw new TomlError("invalid value", {
-      toml,
-      ptr
-    });
+  ctx.p += 5;
+  if (!isDigit(ctx.s.charCodeAt(ctx.p++)))
+    TomlError.x("invalid date-time: date part is malformed", ctx, startPtr);
+  if (ctx.p >= ctx.s.length || ((c = ctx.s.charCodeAt(ctx.p)) !== 32 || (unsafeSeparator = true, !isDigit(ctx.s.charCodeAt(ctx.p + 1)))) && c !== 84 && c !== 116) {
+    let t2 = ctx.s.slice(startPtr, ctx.p);
+    return readDate(ctx, t2, 3, false, startPtr);
   }
-  return date;
+  if (ctx.s.charCodeAt(ctx.p += 3) !== 58)
+    TomlError.x("invalid date-time: time part is malformed", ctx, startPtr);
+  if (ctx.s.charCodeAt(ctx.p += 3) === 58)
+    ctx.p += 3;
+  if (ctx.s.charCodeAt(ctx.p) === 46)
+    while (isDigit(ctx.s.charCodeAt(++ctx.p)))
+      ;
+  if (c = ctx.s.charCodeAt(ctx.p)) {
+    if (c === 90 || c === 122) {
+      let t2 = ctx.s.slice(startPtr, ++ctx.p);
+      return readDate(ctx, t2, 1, unsafeSeparator, startPtr, "[+00:00]");
+    }
+    if (c === 43 || c === 45) {
+      let t2 = ctx.s.slice(startPtr, ctx.p += 6);
+      return readDate(ctx, t2, 1, unsafeSeparator, startPtr, !ctx.ld && "[" + ctx.s.slice(ctx.p - 6, ctx.p) + "]");
+    }
+  }
+  let t = ctx.s.slice(startPtr, ctx.p);
+  return readDate(ctx, t, 2, unsafeSeparator, startPtr);
+}
+function parseTime(ctx, c, endChr) {
+  let start = ctx.p;
+  if (!isDigit(c) || !isDigit(ctx.s.charCodeAt(++ctx.p))) {
+    return parseNumber(ctx, --ctx.p, c, 0, endChr);
+  }
+  if (ctx.s.charCodeAt(ctx.p += 4) === 58)
+    ctx.p += 3;
+  if (ctx.s.charCodeAt(ctx.p) === 46)
+    while (isDigit(ctx.s.charCodeAt(++ctx.p)))
+      ;
+  let t = ctx.s.slice(start, ctx.p);
+  return readDate(ctx, t, 4, false, start);
+}
+function readDate(ctx, str, type, unsafeDelim, errPtr, temporalSuffix) {
+  if (ctx.ld) {
+    let date = new TomlDate(str, type, unsafeDelim);
+    if (!date.isValid())
+      TomlError.x("invalid date", ctx, errPtr);
+    return date;
+  }
+  try {
+    if (temporalSuffix)
+      str += temporalSuffix;
+    switch (type) {
+      case 1:
+        return Temporal.ZonedDateTime.from(str);
+      case 2:
+        return Temporal.PlainDateTime.from(str);
+      case 3:
+        return Temporal.PlainDate.from(str);
+      case 4:
+        return Temporal.PlainTime.from(str);
+    }
+  } catch (e) {
+    TomlError.x(e instanceof Error ? e.message : "" + e, ctx, errPtr);
+  }
 }
 
-// ../../node_modules/smol-toml/dist/extract.js
-function sliceAndTrimEndOf(str, startPtr, endPtr) {
-  let value = str.slice(startPtr, endPtr);
-  let commentIdx = value.indexOf("#");
-  if (commentIdx > -1) {
-    skipComment(str, commentIdx);
-    value = value.slice(0, commentIdx);
+// ../../node_modules/smol-toml/dist/util.js
+function skipComment(ctx) {
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    let c = ctx.s.charCodeAt(ctx.p);
+    if (c === 10)
+      break;
+    if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10) {
+      ctx.p++;
+      break;
+    }
+    if (c < 32 && c !== 9 || c === 127) {
+      TomlError.x("control characters are not allowed in comments", ctx);
+    }
   }
-  return [value.trimEnd(), commentIdx];
 }
-function extractValue(str, ptr, end, depth, integersAsBigInt) {
-  if (depth === 0) {
-    throw new TomlError("document contains excessively nested structures. aborting.", {
-      toml: str,
-      ptr
-    });
+function skipVoid(ctx, banNewLines, banComments) {
+  let c;
+  while (ctx.p < ctx.s.length) {
+    while (ctx.p < ctx.s.length && ((c = ctx.s.charCodeAt(ctx.p)) === 32 || c === 9 || !banNewLines && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)))
+      ctx.p++;
+    if (banComments || c !== 35)
+      break;
+    skipComment(ctx);
   }
-  let c = str[ptr];
-  if (c === "[" || c === "{") {
-    let [value, endPtr2] = c === "[" ? parseArray(str, ptr, depth, integersAsBigInt) : parseInlineTable(str, ptr, depth, integersAsBigInt);
-    if (end) {
-      endPtr2 = skipVoid(str, endPtr2);
-      if (str[endPtr2] === ",")
-        endPtr2++;
-      else if (str[endPtr2] !== end) {
-        throw new TomlError("expected comma or end of structure", {
-          toml: str,
-          ptr: endPtr2
-        });
-      }
-    }
-    return [value, endPtr2];
-  }
-  let endPtr;
-  if (c === '"' || c === "'") {
-    endPtr = getStringEnd(str, ptr);
-    let parsed = parseString(str, ptr, endPtr);
-    if (end) {
-      endPtr = skipVoid(str, endPtr);
-      if (str[endPtr] && str[endPtr] !== "," && str[endPtr] !== end && str[endPtr] !== "\n" && str[endPtr] !== "\r") {
-        throw new TomlError("unexpected character encountered", {
-          toml: str,
-          ptr: endPtr
-        });
-      }
-      endPtr += +(str[endPtr] === ",");
-    }
-    return [parsed, endPtr];
-  }
-  endPtr = skipUntil(str, ptr, ",", end);
-  let slice = sliceAndTrimEndOf(str, ptr, endPtr - +(str[endPtr - 1] === ","));
-  if (!slice[0]) {
-    throw new TomlError("incomplete key-value declaration: no value specified", {
-      toml: str,
-      ptr
-    });
-  }
-  if (end && slice[1] > -1) {
-    endPtr = skipVoid(str, ptr + slice[1]);
-    endPtr += +(str[endPtr] === ",");
-  }
-  return [
-    parseValue(slice[0], str, ptr, integersAsBigInt),
-    endPtr
-  ];
 }
 
 // ../../node_modules/smol-toml/dist/struct.js
-var KEY_PART_RE = /^[a-zA-Z0-9-_]+[ \t]*$/;
-function parseKey(str, ptr, end = "=") {
-  let dot = ptr - 1;
+function parseKey(ctx, end = 61) {
+  let startPtr;
+  let state = 0;
   let parsed = [];
-  let endPtr = str.indexOf(end, ptr);
-  if (endPtr < 0) {
-    throw new TomlError("incomplete key-value: cannot find end of key", {
-      toml: str,
-      ptr
-    });
-  }
+  let sliceStart;
+  let c = ctx.s.charCodeAt(startPtr = ctx.p);
   do {
-    let c = str[ptr = ++dot];
-    if (c !== " " && c !== "	") {
-      if (c === '"' || c === "'") {
-        if (c === str[ptr + 1] && c === str[ptr + 2]) {
-          throw new TomlError("multiline strings are not allowed in keys", {
-            toml: str,
-            ptr
-          });
-        }
-        let eos = getStringEnd(str, ptr);
-        if (eos < 0) {
-          throw new TomlError("unfinished string encountered", {
-            toml: str,
-            ptr
-          });
-        }
-        dot = str.indexOf(".", eos);
-        let strEnd = str.slice(eos, dot < 0 || dot > endPtr ? endPtr : dot);
-        let newLine = indexOfNewline(strEnd);
-        if (newLine > -1) {
-          throw new TomlError("newlines are not allowed in keys", {
-            toml: str,
-            ptr: ptr + dot + newLine
-          });
-        }
-        if (strEnd.trimStart()) {
-          throw new TomlError("found extra tokens after the string part", {
-            toml: str,
-            ptr: eos
-          });
-        }
-        if (endPtr < eos) {
-          endPtr = str.indexOf(end, eos);
-          if (endPtr < 0) {
-            throw new TomlError("incomplete key-value: cannot find end of key", {
-              toml: str,
-              ptr
-            });
-          }
-        }
-        parsed.push(parseString(str, ptr, eos));
-      } else {
-        dot = str.indexOf(".", ptr);
-        let part = str.slice(ptr, dot < 0 || dot > endPtr ? endPtr : dot);
-        if (!KEY_PART_RE.test(part)) {
-          throw new TomlError("only letter, numbers, dashes and underscores are allowed in keys", {
-            toml: str,
-            ptr
-          });
-        }
-        parsed.push(part.trimEnd());
+    if (c === end) {
+      if (!state)
+        TomlError.x("unexpected end of key", ctx);
+      if (state === 1)
+        parsed.push(ctx.s.slice(sliceStart, ctx.p));
+      return ctx.p++, parsed;
+    } else if (c === 46) {
+      if (!state)
+        TomlError.x("illegal empty bare key", ctx);
+      if (state === 1)
+        parsed.push(ctx.s.slice(sliceStart, ctx.p));
+      state = 0;
+    } else if (!state && (c === 34 || c === 39)) {
+      if (c === ctx.s.charCodeAt(ctx.p + 1) && c === ctx.s.charCodeAt(ctx.p + 2))
+        TomlError.x("illegal quoted key: multiline strings are not allowed", ctx);
+      parsed.push(parseString(ctx));
+      state = 2;
+      ctx.p--;
+    } else if (c === 32 || c === 9) {
+      if (state === 1) {
+        parsed.push(ctx.s.slice(sliceStart, ctx.p));
+        state = 2;
       }
+    } else if (state === 2 || c < 48 && c !== 45 || c > 57 && c < 65 || c > 90 && c < 97 && c !== 95 || c > 122) {
+      TomlError.x("illegal character in key", ctx);
+    } else if (!state) {
+      state = 1;
+      sliceStart = ctx.p;
     }
-  } while (dot + 1 && dot < endPtr);
-  return [parsed, skipVoid(str, endPtr + 1, true, true)];
+  } while (c = ctx.s.charCodeAt(++ctx.p));
+  TomlError.x("incomplete key-value: cannot find end of key", ctx, startPtr);
 }
-function parseInlineTable(str, ptr, depth, integersAsBigInt) {
-  let res = {};
+function parseInlineTable(ctx) {
+  let startPtr = ctx.p++;
+  let res = /* @__PURE__ */ Object.create(null);
   let seen = /* @__PURE__ */ new Set();
   let c;
-  ptr++;
-  while ((c = str[ptr++]) !== "}" && c) {
-    if (c === ",") {
-      throw new TomlError("expected value, found comma", {
-        toml: str,
-        ptr: ptr - 1
-      });
-    } else if (c === "#")
-      ptr = skipComment(str, ptr);
-    else if (c !== " " && c !== "	" && c !== "\n" && c !== "\r") {
-      let k;
-      let t = res;
-      let hasOwn = false;
-      let [key, keyEndPtr] = parseKey(str, ptr - 1);
-      for (let i = 0; i < key.length; i++) {
-        if (i)
-          t = hasOwn ? t[k] : t[k] = {};
-        k = key[i];
-        if ((hasOwn = Object.hasOwn(t, k)) && (typeof t[k] !== "object" || seen.has(t[k]))) {
-          throw new TomlError("trying to redefine an already defined value", {
-            toml: str,
-            ptr
-          });
-        }
-        if (!hasOwn && k === "__proto__") {
-          Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
-        }
-      }
-      if (hasOwn) {
-        throw new TomlError("trying to redefine an already defined value", {
-          toml: str,
-          ptr
-        });
-      }
-      let [value, valueEndPtr] = extractValue(str, keyEndPtr, "}", depth - 1, integersAsBigInt);
-      seen.add(value);
-      t[k] = value;
-      ptr = valueEndPtr;
+  while (ctx.p < ctx.s.length) {
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p)) === 125) {
+      ctx.p++;
+      return res;
     }
+    let k;
+    let t = res;
+    let hasOwn = false;
+    let errPtr = ctx.p;
+    let key = parseKey(ctx);
+    for (let i = 0; i < key.length; i++) {
+      if (i)
+        t = hasOwn ? t[k] : t[k] = /* @__PURE__ */ Object.create(null);
+      k = key[i];
+      if ((hasOwn = Object.hasOwn(t, k)) && (typeof t[k] !== "object" || seen.has(t[k]))) {
+        TomlError.x("trying to redefine an already defined value", ctx, errPtr);
+      }
+      let unsafe = k === "__proto__";
+      if (ctx.uk && (unsafe || k === "constructor")) {
+        t = ctx.uk !== 1 && TomlError.x("document contains an unsafe property", ctx, errPtr);
+        break;
+      }
+      if (!hasOwn && unsafe) {
+        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
+      }
+    }
+    if (hasOwn) {
+      TomlError.x("trying to redefine an already defined value", ctx, errPtr);
+    }
+    skipVoid(ctx, true, true);
+    let value = extractValue(
+      ctx,
+      125
+      /* } */
+    );
+    if (t && typeof (t[k] = value) === "object")
+      seen.add(value);
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p++)) === 125) {
+      return res;
+    }
+    if (c !== 44)
+      TomlError.x("expected comma or end of structure", ctx, ctx.p - 1);
   }
-  if (!c) {
-    throw new TomlError("unfinished table encountered", {
-      toml: str,
-      ptr
-    });
-  }
-  return [res, ptr];
+  TomlError.x("unfinished table", ctx, startPtr);
 }
-function parseArray(str, ptr, depth, integersAsBigInt) {
+function parseArray(ctx) {
+  let startPtr = ctx.p++;
   let res = [];
   let c;
-  ptr++;
-  while ((c = str[ptr++]) !== "]" && c) {
-    if (c === ",") {
-      throw new TomlError("expected value, found comma", {
-        toml: str,
-        ptr: ptr - 1
-      });
-    } else if (c === "#")
-      ptr = skipComment(str, ptr);
-    else if (c !== " " && c !== "	" && c !== "\n" && c !== "\r") {
-      let e = extractValue(str, ptr - 1, "]", depth - 1, integersAsBigInt);
-      res.push(e[0]);
-      ptr = e[1];
+  while (ctx.p < ctx.s.length) {
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p)) === 93) {
+      ctx.p++;
+      return res;
     }
+    res.push(extractValue(
+      ctx,
+      93
+      /* ] */
+    ));
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p++)) === 93) {
+      return res;
+    }
+    if (c !== 44)
+      TomlError.x("expected comma or end of structure", ctx, ctx.p - 1);
   }
-  if (!c) {
-    throw new TomlError("unfinished array encountered", {
-      toml: str,
-      ptr
-    });
-  }
-  return [res, ptr];
+  TomlError.x("unfinished array", ctx, startPtr);
 }
 
 // ../../node_modules/smol-toml/dist/parse.js
-function peekTable(key, table, meta, type) {
+function peekTable(ctx, key, table, meta, type) {
   let t = table;
   let m = meta;
   let k;
@@ -3150,7 +5444,7 @@ function peekTable(key, table, meta, type) {
   let state;
   for (let i = 0; i < key.length; i++) {
     if (i) {
-      t = hasOwn ? t[k] : t[k] = {};
+      t = hasOwn ? t[k] : t[k] = /* @__PURE__ */ Object.create(null);
       m = (state = m[k]).c;
       if (type === 0 && (state.t === 1 || state.t === 2)) {
         return null;
@@ -3166,7 +5460,10 @@ function peekTable(key, table, meta, type) {
       return null;
     }
     if (!hasOwn) {
-      if (k === "__proto__") {
+      let unsafe = k === "__proto__";
+      if (ctx.uk && (unsafe || k === "constructor"))
+        return false;
+      if (unsafe) {
         Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
         Object.defineProperty(m, k, { enumerable: true, configurable: true, writable: true });
       }
@@ -3174,7 +5471,7 @@ function peekTable(key, table, meta, type) {
         t: i < key.length - 1 && type === 2 ? 3 : type,
         d: false,
         i: 0,
-        c: {}
+        c: /* @__PURE__ */ Object.create(null)
       };
     }
   }
@@ -3187,94 +5484,124 @@ function peekTable(key, table, meta, type) {
       state.d = true;
       t[k] = [];
     }
-    t[k].push(t = {});
-    state.c[state.i++] = state = { t: 1, d: false, i: 0, c: {} };
+    t[k].push(t = /* @__PURE__ */ Object.create(null));
+    state.c[state.i++] = state = { t: 1, d: false, i: 0, c: /* @__PURE__ */ Object.create(null) };
   }
   if (state.d) {
     return null;
   }
   state.d = true;
   if (type === 1) {
-    t = hasOwn ? t[k] : t[k] = {};
+    t = hasOwn ? t[k] : t[k] = /* @__PURE__ */ Object.create(null);
   } else if (type === 0 && hasOwn) {
     return null;
   }
   return [k, t, state.c];
 }
-function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
-  let res = {};
-  let meta = {};
+function validateTablePeek(ctx, peek, ptr) {
+  if (peek === null || ctx.uk === 2)
+    TomlError.x(peek === null ? "trying to redefine an already defined table or value" : "document contains an unsafe property", ctx, ptr);
+}
+function parse(toml, options = {}) {
+  let ctx = {
+    s: toml,
+    p: 0,
+    d: options.maxDepth ?? 1e3,
+    bi: options.integersAsBigInt ?? false,
+    ld: options.useLegacyDate ?? true,
+    uk: options.unsafeKeyBehaviour === "throw" ? 2 : options.unsafeKeyBehaviour === "drop" ? 1 : 0
+  };
+  let res = /* @__PURE__ */ Object.create(null);
+  let meta = /* @__PURE__ */ Object.create(null);
+  let tmp;
+  let skipping = false;
   let tbl = res;
   let m = meta;
-  for (let ptr = skipVoid(toml, 0); ptr < toml.length; ) {
-    if (toml[ptr] === "[") {
-      let isTableArray = toml[++ptr] === "[";
-      let k = parseKey(toml, ptr += +isTableArray, "]");
+  if (toml.charCodeAt(0) === 65279)
+    ctx.p++;
+  skipVoid(ctx);
+  while (ctx.p < toml.length) {
+    if (toml.charCodeAt(ctx.p) === 91) {
+      let isTableArray = toml.charCodeAt(++ctx.p) === 91;
+      tmp = ctx.p += +isTableArray;
+      skipping = false;
+      let k = parseKey(
+        ctx,
+        93
+        /* ] */
+      );
       if (isTableArray) {
-        if (toml[k[1] - 1] !== "]") {
-          throw new TomlError("expected end of table declaration", {
-            toml,
-            ptr: k[1] - 1
-          });
+        if (toml.charCodeAt(ctx.p) !== 93) {
+          TomlError.x("expected end of table array declaration", ctx);
         }
-        k[1]++;
+        ctx.p++;
       }
       let p = peekTable(
-        k[0],
+        ctx,
+        k,
         res,
         meta,
         isTableArray ? 2 : 1
         /* Type.EXPLICIT */
       );
       if (!p) {
-        throw new TomlError("trying to redefine an already defined table or value", {
-          toml,
-          ptr
-        });
+        validateTablePeek(ctx, p, tmp);
+        skipping = true;
+      } else {
+        m = p[2];
+        tbl = p[1];
       }
-      m = p[2];
-      tbl = p[1];
-      ptr = k[1];
     } else {
-      let k = parseKey(toml, ptr);
+      tmp = ctx.p;
+      let k = parseKey(ctx);
       let p = peekTable(
-        k[0],
+        ctx,
+        k,
         tbl,
         m,
         0
         /* Type.DOTTED */
       );
-      if (!p) {
-        throw new TomlError("trying to redefine an already defined table or value", {
-          toml,
-          ptr
-        });
-      }
-      let v = extractValue(toml, k[1], void 0, maxDepth, integersAsBigInt);
-      p[1][p[0]] = v[0];
-      ptr = v[1];
+      if (!p && !skipping)
+        validateTablePeek(ctx, p, tmp);
+      skipVoid(ctx, true, true);
+      let v = extractValue(ctx, void 0);
+      if (p && !skipping)
+        p[1][p[0]] = v;
     }
-    ptr = skipVoid(toml, ptr, true);
-    if (toml[ptr] && toml[ptr] !== "\n" && toml[ptr] !== "\r") {
-      throw new TomlError("each key-value declaration must be followed by an end-of-line", {
-        toml,
-        ptr
-      });
+    skipVoid(ctx, true);
+    if (ctx.p < toml.length && (tmp = toml.charCodeAt(ctx.p)) !== 10 && (tmp !== 13 || toml.charCodeAt(ctx.p + 1) !== 10)) {
+      TomlError.x("each key-value declaration must be followed by an end-of-line", ctx);
     }
-    ptr = skipVoid(toml, ptr);
+    skipVoid(ctx);
   }
   return res;
 }
 
 // ../../node_modules/smol-toml/dist/stringify.js
 var BARE_KEY = /^[a-z0-9-_]+$/i;
+var HAS_WELLFORMED = !!"".isWellFormed;
 function extendedTypeOf(obj) {
   let type = typeof obj;
   if (type === "object") {
     if (Array.isArray(obj))
       return "array";
-    if (obj instanceof Date)
+    if (typeof obj.getUTCDate === "function" && obj instanceof Date)
       return "date";
+    if (globalThis.Temporal) {
+      if (obj.until) {
+        if (obj instanceof Temporal.ZonedDateTime)
+          return "temporal/tz+uc";
+        if (obj instanceof Temporal.PlainDateTime || obj instanceof Temporal.PlainDate)
+          return "temporal/uc";
+        if (obj instanceof Temporal.PlainTime || obj instanceof Temporal.Instant)
+          return "temporal";
+        if (obj instanceof Temporal.PlainYearMonth)
+          return "temporal/x";
+      } else if (obj.toPlainDate && obj instanceof Temporal.PlainMonthDay || obj.negated && obj instanceof Temporal.Duration) {
+        return "temporal/x";
+      }
+    }
   }
   return type;
 }
@@ -3285,44 +5612,76 @@ function isArrayOfTables(obj) {
   }
   return obj.length != 0;
 }
-function formatString(s) {
-  return JSON.stringify(s).replace(/\x7f/g, "\\u007f");
+function formatWellFormedStringUnchecked(s) {
+  return JSON.stringify(s).replaceAll("\x7F", "\\u007f");
 }
-function stringifyValue(val, type, depth, numberAsFloat) {
+function formatString(s) {
+  return formatWellFormedStringUnchecked(HAS_WELLFORMED ? s.toWellFormed() : s);
+}
+function formatKey(s) {
+  if (BARE_KEY.test(s))
+    return s;
+  if (HAS_WELLFORMED && !s.isWellFormed())
+    throw new RangeError("key contains illegal lone surrogates");
+  return formatWellFormedStringUnchecked(s);
+}
+function stringifyValue(val, type, depth, numberAsFloat, strictTemporal) {
   if (depth === 0) {
     throw new Error("Could not stringify the object: maximum object depth exceeded");
   }
-  if (type === "number") {
-    if (isNaN(val))
-      return "nan";
-    if (val === Infinity)
-      return "inf";
-    if (val === -Infinity)
-      return "-inf";
-    if (numberAsFloat && Number.isInteger(val))
-      return val.toFixed(1);
-    return val.toString();
-  }
-  if (type === "bigint" || type === "boolean") {
-    return val.toString();
-  }
-  if (type === "string") {
-    return formatString(val);
-  }
-  if (type === "date") {
-    if (isNaN(val.getTime())) {
-      throw new TypeError("cannot serialize invalid date");
-    }
-    return val.toISOString();
-  }
-  if (type === "object") {
-    return stringifyInlineTable(val, depth, numberAsFloat);
-  }
-  if (type === "array") {
-    return stringifyArray(val, depth, numberAsFloat);
+  switch (type) {
+    // @ts-expect-error -- intentional fallthrough case
+    case "number":
+      if (isNaN(val))
+        return "nan";
+      if (val === Infinity)
+        return "inf";
+      if (val === -Infinity)
+        return "-inf";
+      if (Number.isInteger(val) && (numberAsFloat || !Number.isSafeInteger(val)))
+        return val.toFixed(1);
+    case "bigint":
+    case "boolean":
+    case "temporal":
+      return val.toString();
+    case "string":
+      return formatString(val);
+    case "date":
+      if (isNaN(val.getTime()))
+        throw new TypeError("cannot serialize invalid date");
+      return val.toISOString();
+    case "object":
+      return stringifyInlineTable(val, depth, numberAsFloat, strictTemporal);
+    case "array":
+      return stringifyArray(val, depth, numberAsFloat, strictTemporal);
+    // @ts-expect-error -- intentional fallthrough case
+    case "temporal/tz+uc":
+      if (strictTemporal) {
+        let tz = val.timeZoneId;
+        let tzc = tz.charCodeAt(0);
+        if (
+          // Classic offset
+          tzc !== 43 && tzc !== 45 && // Fast pre-check pass; see below for the actually accepted values
+          (tzc !== 85 && tzc !== 71 && tzc !== 90 && tzc !== 69 || // UTC and its aliases; Temporal implementations don't all canonicalise unfortunately
+          tz !== "UTC" && tz !== "UCT" && tz !== "Universal" && tz !== "Zulu" && // GMT is a TZ but it's for all intents and purposes equivalent to UTC. Safe to downgrade.
+          !tz.startsWith("GMT") && tz !== "Greenwich" && // Etc/* are all safe to downgrade to offset (either UTC, GMT, or offset)
+          !tz.startsWith("Etc/"))
+        ) {
+          throw new TypeError("Temporal objects with an IANA timezone are not allowed in Temporal strict mode");
+        }
+      }
+    case "temporal/uc":
+      if (strictTemporal && val.calendarId !== "iso8601")
+        throw new TypeError("Temporal objects with a non-default calendar are not allowed in Temporal strict mode");
+      return val.toString({
+        calendarName: "never",
+        timeZoneName: "never"
+      });
+    case "temporal/x":
+      throw new TypeError("Unsupported " + val[Symbol.toStringTag]);
   }
 }
-function stringifyInlineTable(obj, depth, numberAsFloat) {
+function stringifyInlineTable(obj, depth, numberAsFloat, strictTemporal) {
   let keys = Object.keys(obj);
   if (keys.length === 0)
     return "{}";
@@ -3331,13 +5690,11 @@ function stringifyInlineTable(obj, depth, numberAsFloat) {
     let k = keys[i];
     if (i)
       res += ", ";
-    res += BARE_KEY.test(k) ? k : formatString(k);
-    res += " = ";
-    res += stringifyValue(obj[k], extendedTypeOf(obj[k]), depth - 1, numberAsFloat);
+    res += formatKey(k) + " = " + stringifyValue(obj[k], extendedTypeOf(obj[k]), depth - 1, numberAsFloat, strictTemporal);
   }
   return res + " }";
 }
-function stringifyArray(array, depth, numberAsFloat) {
+function stringifyArray(array, depth, numberAsFloat, strictTemporal) {
   if (array.length === 0)
     return "[]";
   let res = "[ ";
@@ -3347,11 +5704,11 @@ function stringifyArray(array, depth, numberAsFloat) {
     if (array[i] === null || array[i] === void 0) {
       throw new TypeError("arrays cannot contain null or undefined values");
     }
-    res += stringifyValue(array[i], extendedTypeOf(array[i]), depth - 1, numberAsFloat);
+    res += stringifyValue(array[i], extendedTypeOf(array[i]), depth - 1, numberAsFloat, strictTemporal);
   }
   return res + " ]";
 }
-function stringifyArrayTable(array, key, depth, numberAsFloat) {
+function stringifyArrayTable(array, key, depth, numberAsFloat, strictTemporal) {
   if (depth === 0) {
     throw new Error("Could not stringify the object: maximum object depth exceeded");
   }
@@ -3359,11 +5716,11 @@ function stringifyArrayTable(array, key, depth, numberAsFloat) {
   for (let i = 0; i < array.length; i++) {
     res += `${res && "\n"}[[${key}]]
 `;
-    res += stringifyTable(0, array[i], key, depth, numberAsFloat);
+    res += stringifyTable(0, array[i], key, depth, numberAsFloat, strictTemporal);
   }
   return res;
 }
-function stringifyTable(tableKey, obj, prefix, depth, numberAsFloat) {
+function stringifyTable(tableKey, obj, prefix, depth, numberAsFloat, strictTemporal) {
   if (depth === 0) {
     throw new Error("Could not stringify the object: maximum object depth exceeded");
   }
@@ -3377,16 +5734,16 @@ function stringifyTable(tableKey, obj, prefix, depth, numberAsFloat) {
       if (type === "symbol" || type === "function") {
         throw new TypeError(`cannot serialize values of type '${type}'`);
       }
-      let key = BARE_KEY.test(k) ? k : formatString(k);
+      let key = formatKey(k);
       if (type === "array" && isArrayOfTables(obj[k])) {
-        tables += (tables && "\n") + stringifyArrayTable(obj[k], prefix ? `${prefix}.${key}` : key, depth - 1, numberAsFloat);
+        tables += (tables && "\n") + stringifyArrayTable(obj[k], prefix ? `${prefix}.${key}` : key, depth - 1, numberAsFloat, strictTemporal);
       } else if (type === "object") {
         let tblKey = prefix ? `${prefix}.${key}` : key;
-        tables += (tables && "\n") + stringifyTable(tblKey, obj[k], tblKey, depth - 1, numberAsFloat);
+        tables += (tables && "\n") + stringifyTable(tblKey, obj[k], tblKey, depth - 1, numberAsFloat, strictTemporal);
       } else {
         preamble += key;
         preamble += " = ";
-        preamble += stringifyValue(obj[k], type, depth, numberAsFloat);
+        preamble += stringifyValue(obj[k], type, depth, numberAsFloat, strictTemporal);
         preamble += "\n";
       }
     }
@@ -3397,11 +5754,11 @@ ${preamble}` : `[${tableKey}]`;
   return preamble && tables ? `${preamble}
 ${tables}` : preamble || tables;
 }
-function stringify(obj, { maxDepth = 1e3, numbersAsFloat = false } = {}) {
+function stringify(obj, { maxDepth = 1e3, numbersAsFloat = false, strictTemporal = false } = {}) {
   if (extendedTypeOf(obj) !== "object") {
     throw new TypeError("stringify can only be called with an object");
   }
-  let str = stringifyTable(0, obj, "", maxDepth, numbersAsFloat);
+  let str = stringifyTable(0, obj, "", maxDepth, numbersAsFloat, strictTemporal);
   if (str[str.length - 1] !== "\n")
     return str + "\n";
   return str;
@@ -3449,10 +5806,15 @@ function gitSlotKeys() {
   }
   return keys;
 }
-var MANAGED_SET_KEYS = [...gitSlotKeys(), "GH_CONFIG_DIR"];
+var MANAGED_SET_KEYS = [
+  ...gitSlotKeys(),
+  "GH_CONFIG_DIR",
+  "GH_TOKEN",
+  "GITHUB_TOKEN"
+];
 function configTomlPath(codexHome) {
-  const home = codexHome ?? process.env.CODEX_HOME ?? join5(homedir3(), ".codex");
-  return join5(home, "config.toml");
+  const home = codexHome ?? process.env.CODEX_HOME ?? join6(homedir4(), ".codex");
+  return join6(home, "config.toml");
 }
 function omit(obj, keys) {
   const drop = new Set(keys);
@@ -3498,7 +5860,7 @@ function readConfig2(path) {
   if (!existsSync4(path)) return { cfg: {}, exists: false, parsed: true };
   try {
     return {
-      cfg: parse(readFileSync6(path, "utf-8")),
+      cfg: parse(readFileSync7(path, "utf-8")),
       exists: true,
       parsed: true
     };
@@ -3507,11 +5869,11 @@ function readConfig2(path) {
   }
 }
 function writeConfig2(path, cfg) {
-  const dir = join5(path, "..");
-  mkdirSync3(dir, { recursive: true, mode: 448 });
+  const dir = join6(path, "..");
+  mkdirSync4(dir, { recursive: true, mode: 448 });
   const tmp = `${path}.spellguard.tmp`;
-  writeFileSync2(tmp, stringify(cfg), { mode: 384 });
-  renameSync2(tmp, path);
+  writeFileSync3(tmp, stringify(cfg), { mode: 384 });
+  renameSync3(tmp, path);
 }
 function installCodexShellEnvPolicy(args) {
   const path = configTomlPath(args.codexHome);
@@ -3531,7 +5893,12 @@ function installCodexShellEnvPolicy(args) {
       args.gitAuthorEmail,
       args.sshRewrite,
       args.sshRewriteRepo
-    )
+    ),
+    // Defense in depth: Codex's default shell policy strips token-shaped env
+    // names, but explicit empties ensure ambient GitHub auth can never outrank
+    // the pinned per-agent GH_CONFIG_DIR if that default changes.
+    GH_TOKEN: "",
+    GITHUB_TOKEN: ""
   };
   if (effectiveGh) nextSet.GH_CONFIG_DIR = effectiveGh;
   cfg.shell_environment_policy = {
@@ -3559,7 +5926,7 @@ function clearCodexShellEnvPolicy(args) {
 // src/lib/codex-credential-helper-install.ts
 function bundledHelperPath() {
   const here = dirname6(fileURLToPath4(import.meta.url));
-  return join6(here, "..", "..", "bin", "spellguard-git-helper");
+  return join7(here, "..", "..", "bin", "spellguard-git-helper");
 }
 function installCodexCredentialHelper(args) {
   try {
@@ -3585,25 +5952,25 @@ function clearCodexCredentialHelper(args) {
 // src/lib/env-file-writer.ts
 import {
   appendFileSync,
-  chmodSync as chmodSync2,
+  chmodSync as chmodSync3,
   copyFileSync as copyFileSync2,
   existsSync as existsSync5,
-  mkdirSync as mkdirSync4,
-  writeFileSync as writeFileSync3
+  mkdirSync as mkdirSync5,
+  writeFileSync as writeFileSync4
 } from "node:fs";
-import { dirname as dirname7, join as join7, resolve as resolve3 } from "node:path";
+import { dirname as dirname7, join as join8, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 var HERE = dirname7(fileURLToPath5(import.meta.url));
 function bundledHelperPath2() {
-  return resolve3(HERE, "..", "..", "bin", "spellguard-git-helper");
+  return resolve4(HERE, "..", "..", "bin", "spellguard-git-helper");
 }
 function ensureStableHelper(configDir) {
   const bundled = bundledHelperPath2();
   try {
-    const dest = join7(configDir, "bin", "spellguard-git-helper");
-    mkdirSync4(dirname7(dest), { recursive: true });
+    const dest = join8(configDir, "bin", "spellguard-git-helper");
+    mkdirSync5(dirname7(dest), { recursive: true });
     copyFileSync2(bundled, dest);
-    chmodSync2(dest, 493);
+    chmodSync3(dest, 493);
     return dest;
   } catch {
     return bundled;
@@ -3611,17 +5978,17 @@ function ensureStableHelper(configDir) {
 }
 function clearGitConfigEnv(envFilePath) {
   if (!envFilePath) return;
-  writeFileSync3(envFilePath, "export GIT_CONFIG_COUNT=0\n", "utf-8");
+  writeFileSync4(envFilePath, "export GIT_CONFIG_COUNT=0\n", "utf-8");
 }
 
 // src/lib/gh-config-dir.ts
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 function ghConfigDirPath(configDir, agentId) {
-  return join8(configDir, "gh", agentId);
+  return join9(configDir, "gh", agentId);
 }
 
 // src/lib/git-version-check.ts
-import { execFileSync } from "node:child_process";
+import { execFileSync as execFileSync2 } from "node:child_process";
 function parseGitVersion(stdout) {
   const m = stdout.match(/git version (\d+)\.(\d+)\.(\d+)/);
   if (!m) return null;
@@ -3634,7 +6001,7 @@ function isGitVersionSupported(v) {
 }
 function detectGitVersion() {
   try {
-    const out = execFileSync("git", ["--version"], { encoding: "utf-8" });
+    const out = execFileSync2("git", ["--version"], { encoding: "utf-8" });
     return parseGitVersion(out);
   } catch {
     return null;
@@ -3642,14 +6009,14 @@ function detectGitVersion() {
 }
 
 // src/lib/heal-leaked-global-gitconfig.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync6, mkdirSync as mkdirSync5, writeFileSync as writeFileSync4 } from "node:fs";
+import { execFileSync as execFileSync3 } from "node:child_process";
+import { existsSync as existsSync6, mkdirSync as mkdirSync6, writeFileSync as writeFileSync5 } from "node:fs";
 import { dirname as dirname8 } from "node:path";
 var SPELLGUARD_HELPER_MARK = "spellguard-git-helper";
 var SPELLGUARD_AUTHOR_RE = /\(spellguard:/i;
 function readGlobal(key) {
   try {
-    return execFileSync2("git", ["config", "--global", "--get", key], {
+    return execFileSync3("git", ["config", "--global", "--get", key], {
       stdio: ["ignore", "pipe", "ignore"]
     }).toString().trim();
   } catch {
@@ -3658,7 +6025,7 @@ function readGlobal(key) {
 }
 function unsetGlobalAll(key) {
   try {
-    execFileSync2("git", ["config", "--global", "--unset-all", key], {
+    execFileSync3("git", ["config", "--global", "--unset-all", key], {
       stdio: "ignore"
     });
   } catch {
@@ -3680,8 +6047,8 @@ function healLeakedGlobalGitConfig(markerPath) {
   } catch {
   }
   try {
-    mkdirSync5(dirname8(markerPath), { recursive: true, mode: 448 });
-    writeFileSync4(
+    mkdirSync6(dirname8(markerPath), { recursive: true, mode: 448 });
+    writeFileSync5(
       markerPath,
       "spellguard codex: one-time global ~/.gitconfig leak heal complete\n",
       { mode: 384 }
@@ -3694,21 +6061,21 @@ function healLeakedGlobalGitConfig(markerPath) {
 import {
   copyFileSync as copyFileSync3,
   existsSync as existsSync7,
-  mkdirSync as mkdirSync6,
-  renameSync as renameSync3,
-  rmSync as rmSync2,
-  writeFileSync as writeFileSync5
+  mkdirSync as mkdirSync7,
+  renameSync as renameSync4,
+  rmSync as rmSync3,
+  writeFileSync as writeFileSync6
 } from "node:fs";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 function moveFile(src, dst) {
   if (!existsSync7(src)) return false;
   try {
-    renameSync3(src, dst);
+    renameSync4(src, dst);
     return true;
   } catch {
     try {
       copyFileSync3(src, dst);
-      rmSync2(src, { force: true });
+      rmSync3(src, { force: true });
       return true;
     } catch {
       return false;
@@ -3718,14 +6085,14 @@ function moveFile(src, dst) {
 function migrateLegacyConfig(opts = {}) {
   const legacyDir = opts.legacyDir ?? legacyConfigDir();
   const frameworkDir = opts.frameworkDir ?? defaultConfigDir();
-  const marker = join9(legacyDir, ".migrated");
+  const marker = join10(legacyDir, ".migrated");
   if (existsSync7(marker))
     return { migrated: false, reason: "already-migrated" };
-  const legacyConfig = join9(legacyDir, "config.json");
+  const legacyConfig = join10(legacyDir, "config.json");
   if (!existsSync7(legacyConfig)) {
     return { migrated: false, reason: "no-legacy-config" };
   }
-  const frameworkConfig = join9(frameworkDir, "config.json");
+  const frameworkConfig = join10(frameworkDir, "config.json");
   if (existsSync7(frameworkConfig)) {
     return { migrated: false, reason: "framework-already-configured" };
   }
@@ -3734,19 +6101,19 @@ function migrateLegacyConfig(opts = {}) {
     stop(legacyDir);
   } catch {
   }
-  mkdirSync6(frameworkDir, { recursive: true, mode: 448 });
+  mkdirSync7(frameworkDir, { recursive: true, mode: 448 });
   if (!moveFile(legacyConfig, frameworkConfig)) {
     return { migrated: false, reason: "move-failed" };
   }
-  moveFile(join9(legacyDir, "git-tokens"), join9(frameworkDir, "git-tokens"));
-  const legacyAgents = join9(legacyDir, "agents");
+  moveFile(join10(legacyDir, "git-tokens"), join10(frameworkDir, "git-tokens"));
+  const legacyAgents = join10(legacyDir, "agents");
   if (existsSync7(legacyAgents)) {
     try {
-      renameSync3(legacyAgents, join9(frameworkDir, "agents"));
+      renameSync4(legacyAgents, join10(frameworkDir, "agents"));
     } catch {
     }
   }
-  writeFileSync5(
+  writeFileSync6(
     marker,
     "spellguard: legacy single-slot config migrated into a per-framework dir\n",
     { mode: 384 }
@@ -3771,7 +6138,7 @@ function isPlatformSupported(info) {
 }
 
 // src/lib/ssh-remote-detect.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
+import { execFileSync as execFileSync4 } from "node:child_process";
 
 // src/lib/git-remote-canonicalizer.ts
 var GITHUB_HOST_ALIASES = /* @__PURE__ */ new Set(["github.com", "ssh.github.com"]);
@@ -3853,7 +6220,7 @@ function detectSshRemoteFromOutput(output) {
 }
 function detectSshRemote(cwd) {
   try {
-    const out = execFileSync3("git", ["remote", "-v"], {
+    const out = execFileSync4("git", ["remote", "-v"], {
       encoding: "utf-8",
       cwd
     });
@@ -3864,7 +6231,7 @@ function detectSshRemote(cwd) {
 }
 function detectSshRemoteAfterRewrite(cwd, repo) {
   try {
-    const out = execFileSync3("git", ["remote", "-v"], {
+    const out = execFileSync4("git", ["remote", "-v"], {
       encoding: "utf-8",
       cwd,
       env: { ...process.env, ...insteadOfGitConfigEnv(repo) }
@@ -3882,6 +6249,7 @@ function repoIdentityFromSshDetection(result) {
 
 // src/hooks/session-start.ts
 async function runSessionStart(deps = {}) {
+  const ensureDaemonRunning = deps.ensureDaemonRunning ?? ensureCredentialDaemonRunning;
   const hooksFlag = probeCodexHooksFlag();
   if (hooksFlag.state === "disabled") {
     renderMessage({
@@ -3916,12 +6284,15 @@ async function runSessionStart(deps = {}) {
     });
     return { ok: false, reason: "git_version_too_old" };
   }
-  healLeakedGlobalGitConfig(
-    join10(
-      deps.configDir ?? defaultConfigDir(),
-      ".codex-global-gitconfig-healed"
-    )
-  );
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+  if (!managed) {
+    healLeakedGlobalGitConfig(
+      join11(
+        deps.configDir ?? defaultConfigDir(),
+        ".codex-global-gitconfig-healed"
+      )
+    );
+  }
   if (!deps.readConfigImpl) migrateLegacyConfig();
   const readResult = (deps.readConfigImpl ?? readConfig)();
   if (!readResult.config) {
@@ -3932,17 +6303,31 @@ async function runSessionStart(deps = {}) {
       });
       return { ok: false, reason: "malformed" };
     }
+    if (readResult.reason === "wrong_permissions") {
+      renderMessage({
+        level: "error",
+        message: `Spellguard: ${defaultConfigPath()} has mode ${readResult.foundMode ?? "other than 0600"} and is owned by another user, so it could not be read or repaired. Your agent identity is intact \u2014 fix the owner/mode (\`chown\` it back to you, then \`chmod 600\`) rather than re-running \`@spellguard-setup\`.`
+      });
+      return { ok: false, reason: "wrong_permissions" };
+    }
     renderMessage({
       level: "info",
       message: "Spellguard not configured \u2014 run `@spellguard-setup` to provision a credential."
     });
     return { ok: false, reason: readResult.reason ?? "missing" };
   }
+  if (readResult.permissionsHealed) {
+    renderMessage({
+      level: "warn",
+      message: `Spellguard: ${defaultConfigPath()} had unsafe permissions; Spellguard restored mode 0600 automatically.`
+    });
+  }
   if (readResult.config.agentId && readResult.config.spellguardBaseUrl && readResult.config.agentSecret) {
     void syncFrameworkIdentity({
       agentId: readResult.config.agentId,
       managementUrl: readResult.config.spellguardBaseUrl,
-      agentSecret: readResult.config.agentSecret
+      agentSecret: readResult.config.agentSecret,
+      fetchImpl: deps.fetchImpl
     });
   }
   const cwd = deps.cwd ?? process.cwd();
@@ -3974,6 +6359,7 @@ async function runSessionStart(deps = {}) {
   const configDir = deps.configDir ?? defaultConfigDir();
   const ghConfigDir = ghConfigDirPath(configDir, readResult.config.agentId);
   const writeEnvFile = () => {
+    if (managed) return;
     if (deps.writeEnvFileImpl) {
       deps.writeEnvFileImpl();
     } else {
@@ -3988,26 +6374,39 @@ async function runSessionStart(deps = {}) {
   };
   writeEnvFile();
   if (readResult.config.revoked) {
-    renderMessage({
-      level: "error",
-      message: readResult.config.revokedMessage ? `Spellguard: ${readResult.config.revokedMessage}` : "Spellguard: this credential has been revoked. Run `@spellguard-setup` to provision a new one."
-    });
-    return { ok: false, reason: "revoked" };
-  }
-  if (!readResult.config.scopedTokenId || !readResult.config.scopedToken || !readResult.config.expiresAt || !readResult.config.scopeSummary) {
-    const daemonResult2 = ensureCredentialDaemonRunning({
+    const daemonResult2 = managed ? { daemon: "skipped", reason: "managed_box" } : await ensureDaemonRunning({
       config: readResult.config,
       spawnDaemon: deps.spawnDaemon,
-      configDir: deps.configDir
+      configDir: deps.configDir,
+      cwd
     });
     renderMessage({
-      level: "info",
-      message: "Spellguard: agent identity present; GitHub not yet connected. Open your Spellguard dashboard and complete the GitHub App install on this agent \u2014 the credential daemon will pick up the token over the channel and update your local config automatically. Git operations remain unprotected until the credential lands."
+      level: "error",
+      message: readResult.config.revokedMessage ? `Spellguard: ${readResult.config.revokedMessage}` : daemonResult2.daemon === "unavailable" ? `Spellguard: this credential has been revoked, and the credential daemon is unavailable (${daemonResult2.reason}). Inspect the daemon log and installed plugin version before requesting a replacement.` : "Spellguard: this credential has been revoked. Spellguard is waiting for a replacement credential; if git stays blocked, run `spellguard doctor --repair` (non-destructive) before re-running `@spellguard-setup`."
+    });
+    return { ok: false, reason: "revoked", daemonResult: daemonResult2 };
+  }
+  if (!readResult.config.scopedTokenId || !readResult.config.scopedToken || !readResult.config.expiresAt || !readResult.config.scopeSummary) {
+    const daemonResult2 = managed ? { daemon: "skipped", reason: "managed_box" } : await ensureDaemonRunning({
+      config: readResult.config,
+      spawnDaemon: deps.spawnDaemon,
+      configDir: deps.configDir,
+      cwd
+    });
+    renderMessage({
+      level: daemonResult2.daemon === "unavailable" ? "error" : "info",
+      message: daemonResult2.daemon === "unavailable" ? `Spellguard: agent identity is present, but GitHub is not connected and the credential daemon is unavailable (${daemonResult2.reason}). Inspect the daemon log and installed plugin version. Do not request a new credential until the local process state is understood.` : "Spellguard: agent identity present; GitHub not yet connected. Open your Spellguard dashboard and complete the GitHub App install on this agent. The credential owner will write the token to your local config when it arrives. Git operations remain unprotected until the credential lands."
     });
     return { ok: true, daemonResult: daemonResult2, reason: "identity_only" };
   }
   const initialConfig = readResult.config;
   const scopedTokenId = initialConfig.scopedTokenId;
+  const daemonResult = managed ? { daemon: "skipped", reason: "managed_box" } : await ensureDaemonRunning({
+    config: initialConfig,
+    spawnDaemon: deps.spawnDaemon,
+    configDir: deps.configDir,
+    cwd
+  });
   const baseUrl = readResult.config.spellguardBaseUrl;
   const agentId = readResult.config.agentId;
   const agentSecret = readResult.config.agentSecret;
@@ -4019,22 +6418,29 @@ async function runSessionStart(deps = {}) {
     agentSecret,
     fetchImpl
   });
-  const { data, error, response } = await api.GET(
-    "/credentials/github/status",
-    {
+  let statusResult;
+  try {
+    statusResult = await api.GET("/credentials/github/status", {
       params: { query: { scoped_token_id: scopedTokenId } },
       headers: scopedTokenForProbe ? { "X-Spellguard-Scoped-Token": scopedTokenForProbe } : void 0
-    }
-  );
+    });
+  } catch {
+    renderMessage({
+      level: "error",
+      message: "Spellguard: could not verify credential status because the control-plane transport failed. The local credential state is unchanged. Inspect the daemon and retry before requesting a new credential."
+    });
+    return { ok: false, reason: "status_failed", daemonResult };
+  }
+  const { data, error, response } = statusResult;
   if (error) {
     const httpStatus = response?.status;
     const needsReconnect = isAgentGoneStatus(httpStatus);
     renderMessage({
       level: "error",
-      message: needsReconnect ? `Spellguard: your agent is no longer recognized by the server (HTTP ${httpStatus}). This usually means the credential was revoked or the Spellguard environment was reset. Run \`@spellguard-setup\` to reconnect this agent.` : `Spellguard: could not verify your credential with the server (${error.error?.code ?? error.error?.message ?? "unknown error"}). This is usually transient \u2014 check your connection and restart the session. If it persists, run \`@spellguard-setup\`.`
+      message: needsReconnect ? `Spellguard: your agent is no longer recognized by the server (HTTP ${httpStatus}). This usually means the credential was revoked or the Spellguard environment was reset. Run \`@spellguard-setup\` to reconnect this agent.` : `Spellguard: could not verify credential status with the server (${error.error?.code ?? error.error?.message ?? "unknown error"}). The local credential state is unchanged. Inspect the daemon and retry before requesting a new credential.`
       // openapi-fetch error envelope: { error: { code, message } }
     });
-    return { ok: false, reason: "status_failed" };
+    return { ok: false, reason: "status_failed", daemonResult };
   }
   const status = data.status;
   if (status === "revoked") {
@@ -4043,7 +6449,7 @@ async function runSessionStart(deps = {}) {
       level: "error",
       message: "Spellguard: this credential has been revoked. Run `@spellguard-setup` to provision a new one."
     });
-    return { ok: false, reason: "revoked" };
+    return { ok: false, reason: "revoked", daemonResult };
   }
   let activeConfig = initialConfig;
   if (status === "near_expiry") {
@@ -4052,33 +6458,32 @@ async function runSessionStart(deps = {}) {
       message: "Spellguard: credential approaching expiry; daemon will refresh in background."
     });
   }
-  const daemonResult = ensureCredentialDaemonRunning({
-    config: activeConfig,
-    spawnDaemon: deps.spawnDaemon,
-    configDir: deps.configDir
-  });
   if (status === "expired") {
     const pollFn = deps.pollForFreshCredential ?? defaultPollForFreshCredential;
     const fresh = await pollFn(activeConfig.expiresAt, 5e3);
     if (!fresh) {
+      const daemonHealth = readDaemonHealth(configDir, activeConfig.agentId);
+      const daemonDetail = daemonResult.daemon === "unavailable" ? `The credential daemon is unavailable (${daemonResult.reason}).` : daemonHealth?.transportState === "error" ? "The credential daemon is running, but its control-plane transport is failing." : "The credential daemon is running and the refresh is still pending.";
       renderMessage({
         level: "error",
-        message: "Spellguard: credential has expired and the daemon could not obtain a fresh one within 5 s. Check your network connection and try again."
+        message: `Spellguard: credential is expired. ${daemonDetail} No replacement arrived within 5 seconds. Inspect the daemon log and verify actual git or gh access before requesting a new credential.`
       });
       return { ok: false, reason: "expired_no_refresh", daemonResult };
     }
     activeConfig = fresh;
   }
-  if (deps.writeEnvFileImpl) {
-    deps.writeEnvFileImpl();
-  } else {
-    installCodexCredentialHelper({
-      gitAuthorName: activeConfig.gitAuthorName,
-      gitAuthorEmail: activeConfig.gitAuthorEmail,
-      ghConfigDir,
-      helperPath: ensureStableHelper(configDir),
-      sshRewriteRepo
-    });
+  if (!managed) {
+    if (deps.writeEnvFileImpl) {
+      deps.writeEnvFileImpl();
+    } else {
+      installCodexCredentialHelper({
+        gitAuthorName: activeConfig.gitAuthorName,
+        gitAuthorEmail: activeConfig.gitAuthorEmail,
+        ghConfigDir,
+        helperPath: ensureStableHelper(configDir),
+        sshRewriteRepo
+      });
+    }
   }
   const minutesLeft = Math.max(
     0,
@@ -4086,18 +6491,19 @@ async function runSessionStart(deps = {}) {
       (new Date(activeConfig.expiresAt).getTime() - Date.now()) / 6e4
     )
   );
+  const scopeText = activeConfig.scopeSummary.mode === "all" ? `scope=${describeGithubCredentialScope(activeConfig.scopeSummary)}` : `repos=${activeConfig.scopeSummary.repos.length}`;
   renderMessage({
     level: "info",
-    message: `Spellguard: agent credentials injected \u2014 agent=${activeConfig.agentId}, repos=${activeConfig.scopeSummary.repos.length}, expires in ${minutesLeft} minutes`
+    message: `Spellguard: agent credentials injected \u2014 agent=${activeConfig.agentId}, ${scopeText}, expires in ${minutesLeft} minutes`
   });
   return { ok: true, daemonResult };
 }
 async function defaultPollForFreshCredential(initialExpiresAt, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   const initialTs = new Date(initialExpiresAt).getTime();
-  const delay = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
+  const delay2 = (ms) => new Promise((resolve5) => setTimeout(resolve5, ms));
   while (Date.now() < deadline) {
-    await delay(500);
+    await delay2(500);
     const result = readConfig();
     if (result.config?.expiresAt && new Date(result.config.expiresAt).getTime() > initialTs) {
       return result.config;
@@ -4107,37 +6513,37 @@ async function defaultPollForFreshCredential(initialExpiresAt, timeoutMs) {
 }
 
 // src/hooks/pre-tool-use-observation.ts
-import { homedir as homedir5 } from "node:os";
-import { join as join13 } from "node:path";
+import { homedir as homedir6 } from "node:os";
+import { join as join14 } from "node:path";
 
 // src/lib/bash-command-timing.ts
 import {
-  chmodSync as chmodSync3,
-  mkdirSync as mkdirSync7,
-  readFileSync as readFileSync7,
-  readdirSync as readdirSync2,
-  rmSync as rmSync3,
-  statSync as statSync2,
-  writeFileSync as writeFileSync6
+  chmodSync as chmodSync4,
+  mkdirSync as mkdirSync8,
+  readFileSync as readFileSync8,
+  readdirSync as readdirSync3,
+  rmSync as rmSync4,
+  statSync as statSync3,
+  writeFileSync as writeFileSync7
 } from "node:fs";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 var TIMING_SUBDIR = "bash-timing";
 var STALE_MS = 60 * 60 * 1e3;
 function safeKey(key) {
   return key.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 200) || "nokey";
 }
 function timingDir(rootDir) {
-  return join11(rootDir, TIMING_SUBDIR);
+  return join12(rootDir, TIMING_SUBDIR);
 }
 function markBashCommandStart(input) {
   try {
     const dir = timingDir(input.rootDir);
-    mkdirSync7(dir, { recursive: true });
+    mkdirSync8(dir, { recursive: true });
     try {
-      chmodSync3(dir, 448);
+      chmodSync4(dir, 448);
     } catch {
     }
-    writeFileSync6(join11(dir, `${safeKey(input.key)}.txt`), String(input.nowMs), {
+    writeFileSync7(join12(dir, `${safeKey(input.key)}.txt`), String(input.nowMs), {
       mode: 384
     });
   } catch {
@@ -4145,17 +6551,17 @@ function markBashCommandStart(input) {
 }
 function consumeBashCommandStart(input) {
   const dir = timingDir(input.rootDir);
-  const file = join11(dir, `${safeKey(input.key)}.txt`);
+  const file = join12(dir, `${safeKey(input.key)}.txt`);
   let result = null;
   try {
-    const raw = readFileSync7(file, "utf8").trim();
+    const raw = readFileSync8(file, "utf8").trim();
     const n = Number(raw);
     if (Number.isFinite(n)) result = n;
   } catch {
     result = null;
   }
   try {
-    rmSync3(file, { force: true });
+    rmSync4(file, { force: true });
   } catch {
   }
   pruneStale(dir, input.nowMs);
@@ -4163,10 +6569,10 @@ function consumeBashCommandStart(input) {
 }
 function pruneStale(dir, nowMs) {
   try {
-    for (const entry of readdirSync2(dir)) {
-      const p = join11(dir, entry);
+    for (const entry of readdirSync3(dir)) {
+      const p = join12(dir, entry);
       try {
-        if (nowMs - statSync2(p).mtimeMs > STALE_MS) rmSync3(p, { force: true });
+        if (nowMs - statSync3(p).mtimeMs > STALE_MS) rmSync4(p, { force: true });
       } catch {
       }
     }
@@ -4175,79 +6581,567 @@ function pruneStale(dir, nowMs) {
 }
 
 // src/lib/git-command-parser.ts
-var SEGMENT_RE = /&&|\|\||;|\|/g;
-var PUSH_RE = /^git\s+push(?:\s|$)/;
-var CHECKOUT_NEW_BRANCH_RE = /^git\s+checkout\s+-[bB]\s+\S/;
-var SWITCH_NEW_BRANCH_RE = /^git\s+switch\s+-[bBc]\s+\S/;
-var COMMIT_RE = /^git\s+commit(?:\s|$)/;
-var COMMIT_HELP_RE = /(?:^|\s)(--help|-h)(?:\s|$)/;
-function detectGitOp(cmd) {
-  if (typeof cmd !== "string" || cmd.length === 0) return null;
-  const segments = cmd.split(SEGMENT_RE);
-  for (const rawSegment of segments) {
-    const segment = rawSegment.trim();
-    if (segment.length === 0) continue;
-    if (PUSH_RE.test(segment)) return "push";
-    if (CHECKOUT_NEW_BRANCH_RE.test(segment)) return "checkout_new_branch";
-    if (SWITCH_NEW_BRANCH_RE.test(segment)) return "switch_new_branch";
-    if (COMMIT_RE.test(segment) && !COMMIT_HELP_RE.test(segment))
-      return "commit";
+var WHITESPACE = /\s/;
+var SHELL_WRAPPERS = ["sh", "bash", "zsh", "dash", "ksh"];
+var SHELL_COMMAND_FLAG_RE = /^-[A-Za-z]*c$/;
+function nestedShellPayload(words) {
+  for (const shell of SHELL_WRAPPERS) {
+    const shellIndex = commandWordIndex(words, shell);
+    if (shellIndex < 0) continue;
+    for (let index = shellIndex + 1; index < words.length; index++) {
+      if (SHELL_COMMAND_FLAG_RE.test(words[index])) {
+        return words[index + 1] ?? null;
+      }
+    }
+    return null;
+  }
+  const evalIndex = commandWordIndex(words, "eval");
+  if (evalIndex >= 0 && words.length > evalIndex + 1) {
+    return words.slice(evalIndex + 1).join(" ");
   }
   return null;
 }
-var MATERIALIZE_RES = [
-  /^git\s+merge(?:\s|$)/,
-  /^git\s+rebase(?:\s|$)/,
-  /^git\s+cherry-pick(?:\s|$)/,
-  /^git\s+revert(?:\s|$)/,
-  /^git\s+pull(?:\s|$)/,
-  /^git\s+reset(?:\s|$)/,
-  /^git\s+restore(?:\s|$)/,
-  /^git\s+stash\s+(?:pop|apply)(?:\s|$)/
-];
-var NEW_BRANCH_FLAG_RE = /\s-[bBcC](?:\s|$)/;
-var CHECKOUT_RE = /^git\s+checkout(?:\s|$)/;
-var SWITCH_RE = /^git\s+switch(?:\s|$)/;
-var OPT_VAL = `(?:[^\\s'"]|'[^']*'|"[^"]*")+`;
-var GIT_GLOBAL_OPT_RE = new RegExp(
-  `^(?:-C\\s+${OPT_VAL}|--git-dir(?:=${OPT_VAL}|\\s+${OPT_VAL})|--work-tree(?:=${OPT_VAL}|\\s+${OPT_VAL})|--namespace(?:=${OPT_VAL}|\\s+${OPT_VAL})|-c\\s+${OPT_VAL}|--no-pager|--paginate|-p|--bare)\\s+`
-);
-var SUDO_ENV_PREFIX_RE = /^(?:sudo\s+)?(?:env\s+(?:\w+=\S+\s+)+)?/;
-function stripGitGlobalPrefix(segment) {
-  const s = segment.replace(SUDO_ENV_PREFIX_RE, "");
-  const m = /^git\s+/.exec(s);
-  if (!m) return segment;
-  let rest = s.slice(m[0].length);
-  let prev;
-  do {
-    prev = rest;
-    rest = rest.replace(GIT_GLOBAL_OPT_RE, "");
-  } while (rest !== prev);
-  return `git ${rest}`;
+function tokenizeShellCommand(command, depth = 0) {
+  if (typeof command !== "string") return null;
+  const segments = [];
+  let words = [];
+  let current = "";
+  let started = false;
+  let failed = false;
+  const heredocs = [];
+  let index = 0;
+  const flushWord = () => {
+    if (!started) return;
+    words.push(current);
+    current = "";
+    started = false;
+  };
+  const flushSegment = () => {
+    flushWord();
+    const segment = { words };
+    if (depth === 0) {
+      const payload = nestedShellPayload(words);
+      if (payload !== null) {
+        const nested = tokenizeShellCommand(payload, depth + 1);
+        if (!nested) failed = true;
+        else segment.nested = nested;
+      }
+    }
+    segments.push(segment);
+    words = [];
+  };
+  const append = (value) => {
+    current += value;
+    started = true;
+  };
+  const readWord = (from) => {
+    let cursor = from;
+    while (cursor < command.length && WHITESPACE.test(command[cursor])) {
+      if (command[cursor] === "\n") return { value: "", next: cursor };
+      cursor++;
+    }
+    let value = "";
+    while (cursor < command.length) {
+      const char = command[cursor];
+      if (WHITESPACE.test(char) || isSeparatorStart(command, cursor)) break;
+      if (char === "\\") {
+        if (cursor + 1 >= command.length) return null;
+        value += command[cursor + 1];
+        cursor += 2;
+        continue;
+      }
+      if (char === "'" || char === '"') {
+        const end = command.indexOf(char, cursor + 1);
+        if (end < 0) return null;
+        value += command.slice(cursor + 1, end);
+        cursor = end + 1;
+        continue;
+      }
+      value += char;
+      cursor++;
+    }
+    return { value, next: cursor };
+  };
+  const consumeHeredocBodies = (from) => {
+    let cursor = from;
+    while (heredocs.length > 0) {
+      const doc = heredocs.shift();
+      if (!doc) break;
+      for (; ; ) {
+        const end = command.indexOf("\n", cursor);
+        const raw = command.slice(cursor, end < 0 ? command.length : end);
+        const line = doc.stripTabs ? raw.replace(/^\t+/, "") : raw;
+        cursor = end < 0 ? command.length : end + 1;
+        if (line === doc.delimiter || end < 0) break;
+      }
+    }
+    return cursor;
+  };
+  while (index < command.length) {
+    const char = command[index];
+    if (char === "\n") {
+      flushSegment();
+      index = consumeHeredocBodies(index + 1);
+      continue;
+    }
+    if (char === "#" && !started) {
+      const end = command.indexOf("\n", index);
+      index = end < 0 ? command.length : end;
+      continue;
+    }
+    if (char === "\\") {
+      if (index + 1 >= command.length) return null;
+      if (command[index + 1] === "\n") {
+        index += 2;
+        continue;
+      }
+      append(command[index + 1]);
+      index += 2;
+      continue;
+    }
+    if (char === "'") {
+      const end = command.indexOf("'", index + 1);
+      if (end < 0) return null;
+      append(command.slice(index + 1, end));
+      index = end + 1;
+      continue;
+    }
+    if (char === '"') {
+      const scanned = scanDoubleQuoted(command, index);
+      if (!scanned) return null;
+      append(scanned.value);
+      index = scanned.next;
+      continue;
+    }
+    if (char === "$" && command[index + 1] === "'") {
+      const scanned = scanDollarQuoted(command, index + 1);
+      if (!scanned) return null;
+      append(scanned.value);
+      index = scanned.next;
+      continue;
+    }
+    if (char === "`") {
+      const end = command.indexOf("`", index + 1);
+      if (end < 0) return null;
+      append(command.slice(index, end + 1));
+      index = end + 1;
+      continue;
+    }
+    if (char === "$" && command[index + 1] === "(") {
+      const end = matchingParenthesis(command, index + 1);
+      if (end < 0) return null;
+      append(command.slice(index, end + 1));
+      index = end + 1;
+      continue;
+    }
+    const redirection = scanRedirection(command, index, current, started);
+    if (redirection) {
+      if (redirection.consumedFdDigits) {
+        current = current.slice(0, current.length - redirection.fdDigits);
+        started = current.length > 0;
+      }
+      flushWord();
+      if (redirection.heredoc) {
+        const delimiter = readWord(redirection.next);
+        if (!delimiter) return null;
+        heredocs.push({
+          delimiter: delimiter.value,
+          stripTabs: redirection.stripTabs
+        });
+        index = delimiter.next;
+        continue;
+      }
+      const target = readWord(redirection.next);
+      if (!target) return null;
+      index = target.next;
+      continue;
+    }
+    const separator = separatorAt(command, index);
+    if (separator) {
+      flushSegment();
+      if (separator === "(" || separator === ")") {
+        segments.push({
+          words: [],
+          subshell: separator === "(" ? "open" : "close"
+        });
+      }
+      index += separator.length;
+      continue;
+    }
+    if (WHITESPACE.test(char)) {
+      flushWord();
+      index++;
+      continue;
+    }
+    append(char);
+    index++;
+  }
+  flushSegment();
+  return failed ? null : segments;
 }
+function scanDoubleQuoted(command, start) {
+  let value = "";
+  let index = start + 1;
+  while (index < command.length) {
+    const char = command[index];
+    if (char === "\\" && index + 1 < command.length) {
+      value += command[index + 1];
+      index += 2;
+      continue;
+    }
+    if (char === "$" && command[index + 1] === "(") {
+      const end = matchingParenthesis(command, index + 1);
+      if (end < 0) return null;
+      value += command.slice(index, end + 1);
+      index = end + 1;
+      continue;
+    }
+    if (char === '"') return { value, next: index + 1 };
+    value += char;
+    index++;
+  }
+  return null;
+}
+function scanDollarQuoted(command, start) {
+  let value = "";
+  let index = start + 1;
+  while (index < command.length) {
+    const char = command[index];
+    if (char === "\\" && index + 1 < command.length) {
+      value += command[index + 1];
+      index += 2;
+      continue;
+    }
+    if (char === "'") return { value, next: index + 1 };
+    value += char;
+    index++;
+  }
+  return null;
+}
+function matchingParenthesis(command, open) {
+  let depth = 0;
+  for (let index = open; index < command.length; index++) {
+    const char = command[index];
+    if (char === "\\") {
+      index++;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const end = command.indexOf(char, index + 1);
+      if (end < 0) return -1;
+      index = end;
+      continue;
+    }
+    if (char === "(") depth++;
+    else if (char === ")") {
+      depth--;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+var SEPARATORS = ["&&", "||", ";;", ";", "|&", "|", "&", "(", ")"];
+function separatorAt(command, index) {
+  for (const separator of SEPARATORS) {
+    if (command.startsWith(separator, index)) return separator;
+  }
+  return null;
+}
+function isSeparatorStart(command, index) {
+  return separatorAt(command, index) !== null;
+}
+function scanRedirection(command, index, current, started) {
+  const char = command[index];
+  const isFdPrefixed = started && /^\d+$/.test(current);
+  if (char === "&") {
+    if (command[index + 1] !== ">") return null;
+    return {
+      next: index + (command.startsWith("&>>", index) ? 3 : 2),
+      heredoc: false,
+      stripTabs: false,
+      consumedFdDigits: false,
+      fdDigits: 0
+    };
+  }
+  if (char !== "<" && char !== ">") return null;
+  const fdDigits = isFdPrefixed ? current.length : 0;
+  if (command.startsWith("<<<", index)) {
+    return {
+      next: index + 3,
+      heredoc: false,
+      stripTabs: false,
+      consumedFdDigits: isFdPrefixed,
+      fdDigits
+    };
+  }
+  if (command.startsWith("<<", index)) {
+    const stripTabs = command[index + 2] === "-";
+    return {
+      next: index + (stripTabs ? 3 : 2),
+      heredoc: true,
+      stripTabs,
+      consumedFdDigits: isFdPrefixed,
+      fdDigits
+    };
+  }
+  let length = 1;
+  const next = command[index + 1];
+  if (next === ">" || next === "&" || next === "|") length = 2;
+  return {
+    next: index + length,
+    heredoc: false,
+    stripTabs: false,
+    consumedFdDigits: isFdPrefixed,
+    fdDigits
+  };
+}
+var ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
+var OPENING_RESERVED_WORDS = /* @__PURE__ */ new Set([
+  "{",
+  "!",
+  "if",
+  "then",
+  "else",
+  "elif",
+  "do",
+  "while",
+  "until"
+]);
+var PREFIX_VALUE_OPTIONS = /* @__PURE__ */ new Map([
+  [
+    "sudo",
+    /* @__PURE__ */ new Set(["-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U", "-T"])
+  ],
+  ["env", /* @__PURE__ */ new Set(["-u", "-C", "-S", "--unset", "--chdir"])],
+  ["command", /* @__PURE__ */ new Set()],
+  ["exec", /* @__PURE__ */ new Set(["-a"])],
+  ["time", /* @__PURE__ */ new Set(["-f", "-o"])],
+  ["nohup", /* @__PURE__ */ new Set()],
+  ["timeout", /* @__PURE__ */ new Set(["-s", "-k", "--signal", "--kill-after"])],
+  [
+    "xargs",
+    /* @__PURE__ */ new Set([
+      "-n",
+      "-L",
+      "-I",
+      "-P",
+      "-s",
+      "-d",
+      "-E",
+      "-a",
+      "--max-args",
+      "--max-lines",
+      "--replace",
+      "--max-procs",
+      "--max-chars",
+      "--delimiter",
+      "--eof",
+      "--arg-file"
+    ])
+  ]
+]);
+function skipPrefixOptions(words, index, valueOptions) {
+  let at = index;
+  while (at < words.length && words[at].startsWith("-") && words[at] !== "-") {
+    if (words[at] === "--") return at + 1;
+    at += valueOptions.has(words[at]) ? 2 : 1;
+  }
+  return at;
+}
+function commandWordIndex(words, name) {
+  let index = skipOpeners(words, 0);
+  let next = skipCommandPrefix(words, index);
+  while (next !== index) {
+    if (next < 0) return -1;
+    index = skipOpeners(words, next);
+    next = skipCommandPrefix(words, index);
+  }
+  return words[index] === name ? index : -1;
+}
+function skipOpeners(words, index) {
+  let at = index;
+  while (at < words.length && (OPENING_RESERVED_WORDS.has(words[at]) || ENV_ASSIGNMENT_RE.test(words[at] ?? ""))) {
+    at++;
+  }
+  return at;
+}
+function skipCommandPrefix(words, index) {
+  const prefix = words[index];
+  const valueOptions = PREFIX_VALUE_OPTIONS.get(prefix);
+  if (!valueOptions) return index;
+  if (prefix === "command" && isLookupOnly(words, index + 1)) return -1;
+  const end = skipPrefixOptions(words, index + 1, valueOptions);
+  return prefix === "timeout" ? end + 1 : end;
+}
+function isLookupOnly(words, index) {
+  for (let at = index; words[at]?.startsWith("-"); at++) {
+    if (/^-[A-Za-z]*[vV]/.test(words[at])) return true;
+  }
+  return false;
+}
+var GIT_GLOBAL_VALUE_OPTIONS = /* @__PURE__ */ new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--exec-path",
+  "--config-env"
+]);
+var GIT_GLOBAL_FLAGS = /* @__PURE__ */ new Set([
+  "--no-pager",
+  "--paginate",
+  "-p",
+  "--bare",
+  "--no-replace-objects",
+  "--literal-pathspecs",
+  "--glob-pathspecs",
+  "--noglob-pathspecs",
+  "--icase-pathspecs",
+  "--no-optional-locks"
+]);
+var GIT_DIRECTORY_OPTIONS = /* @__PURE__ */ new Set(["-C"]);
+function parseGitCommand(words) {
+  const gitIndex = commandWordIndex(words, "git");
+  if (gitIndex < 0) return null;
+  const chdirs = [];
+  let redirected = false;
+  let index = gitIndex + 1;
+  while (index < words.length) {
+    const word = words[index];
+    if (!word.startsWith("-")) break;
+    const [name] = word.split("=", 1);
+    if (GIT_GLOBAL_FLAGS.has(word)) {
+      index++;
+      continue;
+    }
+    if (word.includes("=") && GIT_GLOBAL_VALUE_OPTIONS.has(name)) {
+      if (!GIT_DIRECTORY_OPTIONS.has(name)) redirected = true;
+      else chdirs.push(word.slice(name.length + 1));
+      index++;
+      continue;
+    }
+    if (word.startsWith("-C") && word.length > 2) {
+      chdirs.push(word.slice(2));
+      index++;
+      continue;
+    }
+    if (GIT_GLOBAL_VALUE_OPTIONS.has(word)) {
+      const value = words[index + 1];
+      if (value === void 0) return { chdirs, redirected: true, args: [] };
+      if (GIT_DIRECTORY_OPTIONS.has(word)) chdirs.push(value);
+      else redirected = true;
+      index += 2;
+      continue;
+    }
+    redirected = true;
+    index++;
+  }
+  const subcommand = words[index];
+  return {
+    chdirs,
+    redirected,
+    subcommand,
+    args: subcommand === void 0 ? [] : words.slice(index + 1)
+  };
+}
+function hasNewBranchFlag(args, flags) {
+  for (let index = 0; index < args.length; index++) {
+    if (args[index] === "--") return false;
+    if (flags.includes(args[index])) {
+      const name = args[index + 1];
+      return name !== void 0 && name.length > 0 && !name.startsWith("-");
+    }
+  }
+  return false;
+}
+function flattenShellSegments(segments) {
+  return segments.flatMap(
+    (segment) => segment.nested ? [segment, ...segment.nested] : [segment]
+  );
+}
+function segmentGitOp(words) {
+  const git = parseGitCommand(words);
+  if (!git?.subcommand) return null;
+  if (git.subcommand === "push") return "push";
+  if (git.subcommand === "checkout" && hasNewBranchFlag(git.args, ["-b", "-B"]))
+    return "checkout_new_branch";
+  if (git.subcommand === "switch" && hasNewBranchFlag(git.args, ["-b", "-B", "-c"]))
+    return "switch_new_branch";
+  if (git.subcommand === "commit" && !git.args.includes("--help") && !git.args.includes("-h"))
+    return "commit";
+  return null;
+}
+var UNPARSEABLE_GIT_SCAN = /\bgit\b[^\n;&|]*\b(?:push|commit|checkout|switch)\b/;
+var UNPARSEABLE_GH_SCAN = /\bgh\b[^\n;&|]*\bpr\s+create\b/;
+var UNPARSEABLE_MATERIALIZE_SCAN = /\bgit\b[^\n;&|]*\b(?:merge|rebase|cherry-pick|revert|pull|reset|restore|stash|checkout|switch)\b/;
+var UNPARSEABLE_AMEND_SCAN = /--amend\b/;
+function detectGitOp(cmd) {
+  if (typeof cmd !== "string" || cmd.length === 0) return null;
+  const segments = tokenizeShellCommand(cmd);
+  if (!segments) return UNPARSEABLE_GIT_SCAN.test(cmd) ? "unparseable" : null;
+  for (const segment of flattenShellSegments(segments)) {
+    const op = segmentGitOp(segment.words);
+    if (op) return op;
+  }
+  return null;
+}
+function detectGhPrCreate(cmd) {
+  if (typeof cmd !== "string" || cmd.length === 0) return false;
+  const segments = tokenizeShellCommand(cmd);
+  if (!segments) return UNPARSEABLE_GH_SCAN.test(cmd);
+  return flattenShellSegments(segments).some(
+    (segment) => isGhPrCreate(segment.words)
+  );
+}
+function isGhPrCreate(words) {
+  const ghIndex = commandWordIndex(words, "gh");
+  if (ghIndex < 0) return false;
+  const prIndex = words.indexOf("pr", ghIndex + 1);
+  return prIndex > 0 && words[prIndex + 1] === "create";
+}
+var MATERIALIZING_SUBCOMMANDS = /* @__PURE__ */ new Set([
+  "merge",
+  "rebase",
+  "cherry-pick",
+  "revert",
+  "pull",
+  "reset",
+  "restore"
+]);
+var NEW_BRANCH_FLAGS = ["-b", "-B", "-c", "-C"];
 function detectTreeMaterializingGitOp(cmd) {
   if (typeof cmd !== "string" || cmd.length === 0) return false;
-  for (const rawSegment of cmd.split(SEGMENT_RE)) {
-    const segment = stripGitGlobalPrefix(rawSegment.trim());
-    if (segment.length === 0) continue;
-    if (MATERIALIZE_RES.some((re) => re.test(segment))) return true;
-    if ((CHECKOUT_RE.test(segment) || SWITCH_RE.test(segment)) && !NEW_BRANCH_FLAG_RE.test(segment))
-      return true;
-  }
-  return false;
+  const segments = tokenizeShellCommand(cmd);
+  if (!segments) return UNPARSEABLE_MATERIALIZE_SCAN.test(cmd);
+  return flattenShellSegments(segments).some(({ words }) => {
+    const git = parseGitCommand(words);
+    if (!git?.subcommand) return false;
+    if (MATERIALIZING_SUBCOMMANDS.has(git.subcommand)) return true;
+    if (git.subcommand === "stash")
+      return git.args[0] === "pop" || git.args[0] === "apply";
+    if (git.subcommand !== "checkout" && git.subcommand !== "switch")
+      return false;
+    return !git.args.some((arg) => NEW_BRANCH_FLAGS.includes(arg));
+  });
 }
-var AMEND_RE = /(?:^|\s)--amend(?:\s|$|=)/;
 function isAmendCommit(cmd) {
   if (typeof cmd !== "string" || cmd.length === 0) return false;
-  for (const rawSegment of cmd.split(SEGMENT_RE)) {
-    const segment = rawSegment.trim();
-    if (COMMIT_RE.test(segment) && AMEND_RE.test(segment)) return true;
+  const segments = tokenizeShellCommand(cmd);
+  if (!segments) {
+    return UNPARSEABLE_GIT_SCAN.test(cmd) && UNPARSEABLE_AMEND_SCAN.test(cmd);
   }
-  return false;
+  return flattenShellSegments(segments).some(({ words }) => {
+    const git = parseGitCommand(words);
+    if (git?.subcommand !== "commit") return false;
+    return git.args.some(
+      (arg) => arg === "--amend" || arg.startsWith("--amend=")
+    );
+  });
 }
 
 // src/lib/observation-emitter.ts
-import { randomUUID } from "node:crypto";
+import { randomUUID as randomUUID3 } from "node:crypto";
 var WHITELIST_TARGET_FIELDS = [
   "owner",
   "repo",
@@ -4279,7 +7173,7 @@ function buildObservationEvent(input) {
     }
   }
   return {
-    event_uuid: input.eventUuid ?? randomUUID(),
+    event_uuid: input.eventUuid ?? randomUUID3(),
     agent_id: input.agentId,
     scoped_token_id: input.scopedTokenId,
     operation_type: input.operationType,
@@ -4292,6 +7186,7 @@ var ObservationQueue = class {
   constructor(opts) {
     this.opts = opts;
   }
+  opts;
   buf = [];
   enqueue(event) {
     this.buf.push(event);
@@ -4342,11 +7237,11 @@ async function emitOrQueue(event, queue, opts) {
 }
 
 // src/lib/observation-pipeline.ts
-import { homedir as homedir4 } from "node:os";
-import { join as join12 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { join as join13 } from "node:path";
 
 // src/lib/observation-scope.ts
-import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync9 } from "node:fs";
 import yaml from "js-yaml";
 var STALENESS_MS = 24 * 60 * 60 * 1e3;
 function tupleKey(t) {
@@ -4365,7 +7260,7 @@ function loadUserAllowlist(path) {
   if (!existsSync8(path)) return { allowlist: [] };
   let raw;
   try {
-    raw = readFileSync8(path, "utf-8");
+    raw = readFileSync9(path, "utf-8");
   } catch (e) {
     return {
       allowlist: [],
@@ -4398,19 +7293,19 @@ function loadUserAllowlist(path) {
 
 // src/lib/scope-cache.ts
 import {
-  chmodSync as chmodSync4,
+  chmodSync as chmodSync5,
   existsSync as existsSync9,
-  mkdirSync as mkdirSync8,
-  readFileSync as readFileSync9,
-  writeFileSync as writeFileSync7
+  mkdirSync as mkdirSync9,
+  readFileSync as readFileSync10,
+  writeFileSync as writeFileSync8
 } from "node:fs";
-import { platform as platform2 } from "node:os";
+import { platform as platform3 } from "node:os";
 import { dirname as dirname9 } from "node:path";
 var REFRESH_INTERVAL_MS = 30 * 60 * 1e3;
 function readScopeCache(path) {
   if (!existsSync9(path)) return null;
   try {
-    const raw = readFileSync9(path, "utf-8");
+    const raw = readFileSync10(path, "utf-8");
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.serverScope) || typeof parsed.refreshedAt !== "number")
       return null;
@@ -4420,10 +7315,10 @@ function readScopeCache(path) {
   }
 }
 function writeScopeCache(path, scope) {
-  mkdirSync8(dirname9(path), { recursive: true });
-  writeFileSync7(path, JSON.stringify(scope), { mode: 384 });
-  if (platform2() !== "win32") {
-    chmodSync4(path, 384);
+  mkdirSync9(dirname9(path), { recursive: true });
+  writeFileSync8(path, JSON.stringify(scope), { mode: 384 });
+  if (platform3() !== "win32") {
+    chmodSync5(path, 384);
   }
 }
 function shouldRefreshCache(cache, now = Date.now()) {
@@ -4434,16 +7329,16 @@ function shouldRefreshCache(cache, now = Date.now()) {
 // src/lib/observation-pipeline.ts
 function defaultScopeCachePath() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return join12(
-    xdg ?? join12(homedir4(), ".config"),
+  return join13(
+    xdg ?? join13(homedir5(), ".config"),
     "spellguard",
     "observation-scope.json"
   );
 }
 function defaultAllowlistPath() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return join12(
-    xdg ?? join12(homedir4(), ".config"),
+  return join13(
+    xdg ?? join13(homedir5(), ".config"),
     "spellguard",
     "observation.yaml"
   );
@@ -4496,14 +7391,48 @@ async function observeGitOperation(input, deps) {
 
 // src/hooks/pre-tool-use-observation.ts
 function detectGitOperation(toolName, args) {
-  if (toolName !== "Bash" && toolName !== "bash") return null;
+  if (!isBashTool(toolName)) return null;
   const cmd = args.join(" ");
   const op = detectGitOp(cmd);
   if (op === "push") return "push";
   if (op === "checkout_new_branch" || op === "switch_new_branch")
     return "branch_create";
-  if (/(^|&&|;|\|\|)\s*gh\s+pr\s+create(\s|$)/.test(cmd)) return "pr_open";
+  if (detectGhPrCreate(cmd)) return "pr_open";
   return null;
+}
+function unattributedMessage(input) {
+  const parts = [
+    "Spellguard could not work out which GitHub repository this command writes to, so it cannot check the credential for that repository."
+  ];
+  if (input.githubTargetReason) {
+    parts.push(
+      `Spellguard could not attribute it because ${input.githubTargetReason}.`
+    );
+  }
+  parts.push(
+    "Re-run the GitHub step as its own command, naming the target explicitly \u2014 for example `git -C /absolute/path/to/worktree push origin <branch>` or `gh pr create --repo OWNER/REPO` \u2014 and keep the intended repository unchanged.",
+    "This is NOT a credential failure: credential checks still apply, and nothing needs repairing or re-authorizing."
+  );
+  return parts.join(" ");
+}
+function credentialDecision(input) {
+  const state = input.githubCredentialState ?? (input.localCredentialAvailable === false ? "unavailable" : void 0);
+  if (state === void 0 || state === "available" || state === "expired") {
+    return null;
+  }
+  if (state === "unattributed") {
+    return { decision: "block", message: unattributedMessage(input) };
+  }
+  return {
+    decision: "block",
+    message: "Spellguard credential unavailable for this GitHub target. Mutation is blocked until a matching credential is available."
+  };
+}
+function isBashTool(toolName) {
+  return toolName === "Bash" || toolName === "bash";
+}
+function isAgentAuthoredFileTool(toolName) {
+  return toolName === "apply_patch";
 }
 function resolveRemoteUrl(input) {
   if (input.remoteUrl) return input.remoteUrl;
@@ -4579,15 +7508,25 @@ async function runPreToolUseCodex(input) {
   return toCodexPreToolUseOutput(decision);
 }
 async function runPreToolUse(input) {
-  if (input.toolName === "Bash" || input.toolName === "bash") {
+  if (isBashTool(input.toolName) || isAgentAuthoredFileTool(input.toolName)) {
     markBashCommandStart({
-      rootDir: input.editsRootDir ?? join13(homedir5(), ".spellguard"),
+      rootDir: input.editsRootDir ?? join14(homedir6(), ".spellguard"),
       key: input.toolUseId || input.clientSessionId,
       nowMs: Date.now()
     });
   }
   const op = detectGitOperation(input.toolName, input.toolArgs);
+  const unreadable = op === null && isBashTool(input.toolName) && detectGitOp(input.toolArgs.join(" ")) === "unparseable";
+  if (unreadable) return credentialDecision(input) ?? { decision: "skip" };
   if (!op) return { decision: "skip" };
+  if (input.githubTargetContext === "execution-directory-missing") {
+    return {
+      decision: "block",
+      message: "Codex did not supply the command execution directory. The session directory is not a reliable GitHub target. Retry with git -C /absolute/worktree push ... or gh pr create --repo OWNER/REPO. Keep the intended repository unchanged. Credential checks still apply; do not repair credentials based on this message."
+    };
+  }
+  const credential = credentialDecision(input);
+  if (credential) return credential;
   const baseUrl = input.spellguardBaseUrl ?? input.endpoint.replace(/\/v1\/observations\/?$/, "");
   const fetchImpl = input.statusFetchImpl ?? fetch;
   const verdict = await probeStatus({
@@ -4608,18 +7547,18 @@ async function runPreToolUse(input) {
 }
 
 // src/hooks/post-tool-use-observation.ts
-import { execFileSync as execFileSync6, execSync } from "node:child_process";
-import { homedir as homedir6 } from "node:os";
-import { join as join16 } from "node:path";
+import { execFileSync as execFileSync7, execSync } from "node:child_process";
+import { homedir as homedir7 } from "node:os";
+import { join as join17 } from "node:path";
 
 // src/lib/bash-edit-capture.ts
-import { execFileSync as execFileSync4 } from "node:child_process";
-import { lstatSync, readFileSync as readFileSync10, realpathSync, statSync as statSync3 } from "node:fs";
-import { join as join15, posix, sep as sep2 } from "node:path";
+import { execFileSync as execFileSync5 } from "node:child_process";
+import { lstatSync as lstatSync2, readFileSync as readFileSync11, realpathSync as realpathSync2, statSync as statSync4 } from "node:fs";
+import { join as join16, posix, sep as sep2 } from "node:path";
 
 // src/lib/edit-store.ts
-import { chmodSync as chmodSync5, existsSync as existsSync10, mkdirSync as mkdirSync9 } from "node:fs";
-import { join as join14 } from "node:path";
+import { chmodSync as chmodSync6, existsSync as existsSync10, mkdirSync as mkdirSync10 } from "node:fs";
+import { join as join15 } from "node:path";
 var backend = loadSqliteBackend();
 var warnedDegraded = false;
 function noopStore() {
@@ -4643,9 +7582,9 @@ function noopStore() {
 }
 function openEditStore(opts) {
   if (!backend) return noopStore();
-  mkdirSync9(opts.rootDir, { recursive: true });
+  mkdirSync10(opts.rootDir, { recursive: true });
   tryChmod(opts.rootDir, 448);
-  const dbPath = join14(opts.rootDir, "edits.db");
+  const dbPath = join15(opts.rootDir, "edits.db");
   const db = backend.open(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
@@ -4703,7 +7642,7 @@ function openEditStore(opts) {
 }
 function tryChmod(path, mode) {
   try {
-    chmodSync5(path, mode);
+    chmodSync6(path, mode);
   } catch {
   }
 }
@@ -4728,7 +7667,7 @@ var SECRET_FILE_RES = [
 function defaultGitExec(gitRoot) {
   return (args) => {
     try {
-      return execFileSync4("git", args, {
+      return execFileSync5("git", args, {
         cwd: gitRoot,
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
@@ -4741,28 +7680,28 @@ function defaultGitExec(gitRoot) {
 }
 function defaultReadFileBytes(absPath) {
   try {
-    return readFileSync10(absPath);
+    return readFileSync11(absPath);
   } catch {
     return null;
   }
 }
 function defaultStatMtimeMs(absPath) {
   try {
-    return statSync3(absPath).mtimeMs;
+    return statSync4(absPath).mtimeMs;
   } catch {
     return null;
   }
 }
 function defaultIsSymlink(absPath) {
   try {
-    return lstatSync(absPath).isSymbolicLink();
+    return lstatSync2(absPath).isSymbolicLink();
   } catch {
     return false;
   }
 }
 function defaultRealPath(p) {
   try {
-    return realpathSync(p);
+    return realpathSync2(p);
   } catch {
     return null;
   }
@@ -4842,7 +7781,7 @@ function selectFreshPaths(paths, gitRoot, realGitRoot, deps, windowStartMs) {
   const fresh = [];
   for (const path of paths) {
     if (isSecretPath(path)) continue;
-    const abs = join15(gitRoot, path);
+    const abs = join16(gitRoot, path);
     if (deps.isSymlink(abs)) continue;
     const real = deps.realPath(abs);
     if (real === null) continue;
@@ -4882,7 +7821,7 @@ async function recordFreshEdits(args) {
   for (const path of freshPaths) {
     const contentAfter = readReconcilableText(
       readFileBytes,
-      join15(input.gitRoot, path)
+      join16(input.gitRoot, path)
     );
     if (contentAfter === null) continue;
     const key = normalizeKey(path);
@@ -5164,10 +8103,10 @@ async function emitCommitObservation(input) {
 }
 
 // src/lib/git-root.ts
-import { execFileSync as execFileSync5 } from "node:child_process";
+import { execFileSync as execFileSync6 } from "node:child_process";
 function resolveGitRoot(cwd) {
   try {
-    return execFileSync5("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+    return execFileSync6("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
     }).trim();
@@ -5261,38 +8200,18 @@ async function recordEditFromToolUse(input) {
 
 // src/hooks/post-tool-use-observation.ts
 async function runPostToolUse(input) {
-  if (input.toolName === "Edit" || input.toolName === "Write") {
-    const editStore = openEditStore({
-      rootDir: input.editsRootDir ?? join16(homedir6(), ".spellguard")
-    });
-    try {
-      try {
-        const workingDir = resolveGitRoot(input.cwd);
-        await recordEditFromToolUse({
-          store: editStore,
-          sessionContext: {
-            sessionId: input.clientSessionId,
-            agentId: input.agentId,
-            workingDir
-          },
-          toolName: input.toolName,
-          toolInput: input.toolInput ?? {}
-        });
-      } catch (err) {
-        console.error("[post-tool-use] edit-store record failed:", err);
-      }
-    } finally {
-      editStore.close();
-    }
-  }
-  if (input.toolName !== "Bash" && input.toolName !== "bash") {
+  await recordStructuredEdit(input);
+  const isBash = isBashTool2(input.toolName);
+  const isApplyPatch = input.toolName === "apply_patch";
+  if (!isBash && !isApplyPatch) {
     return { decision: "skip" };
   }
   const cmd = input.toolArgs.join(" ");
-  const op = detectGitOp(cmd);
+  const op = isBash ? detectGitOp(cmd) : null;
   const isCommit = op === "commit";
-  await captureBashEditsForCommand(input, cmd, isCommit);
-  if (!isCommit) return { decision: "skip" };
+  await captureToolEditsForCommand(input, cmd, isCommit);
+  if (!isBash || !isCommit) return { decision: "skip" };
+  if (input.localCredentialAvailable === false) return { decision: "skip" };
   const exec = input.execImpl ?? ((c, opts) => execSync(c, { ...opts, encoding: "utf8" }).toString().trim());
   let sha;
   let branch;
@@ -5334,64 +8253,15 @@ async function runPostToolUse(input) {
       queue
     }
   );
-  try {
-    const editStoreRoot = input.editsRootDir ?? join16(homedir6(), ".spellguard");
-    const commitStore = openEditStore({ rootDir: editStoreRoot });
-    try {
-      const gitRoot = resolveGitRoot(input.cwd);
-      await emitCommitObservation({
-        store: commitStore,
-        diffProvider: async (s) => {
-          try {
-            const out = execFileSync6("git", ["show", s], {
-              cwd: gitRoot,
-              encoding: "utf8",
-              maxBuffer: 64 * 1024 * 1024,
-              stdio: ["ignore", "pipe", "ignore"]
-            });
-            return parseShowDiff(out);
-          } catch {
-            return {};
-          }
-        },
-        fetch,
-        apiBase: baseUrl,
-        agentId: input.agentId,
-        agentSecret: input.agentSecret,
-        workingDir: gitRoot,
-        remoteUrl,
-        commitEvent: {
-          sha,
-          branch,
-          // Pull authored/committed-at + author/committer identity from git
-          // so the row carries the same metadata as the daemon-watcher path
-          // would. `git log -1 --pretty=...%n` produces fields separated by
-          // a fixed delimiter that's unlikely to appear in any of them.
-          authoredAt: tryGitField(exec, input.cwd, "%aI"),
-          authorName: tryGitFieldOptional(exec, input.cwd, "%an"),
-          authorEmail: tryGitFieldOptional(exec, input.cwd, "%ae"),
-          committedAt: tryGitFieldOptional(exec, input.cwd, "%cI"),
-          committerName: tryGitFieldOptional(exec, input.cwd, "%cn"),
-          committerEmail: tryGitFieldOptional(exec, input.cwd, "%ce"),
-          message,
-          parentSha: tryGitFieldOptional(exec, input.cwd, "%P")?.split(" ")[0] ?? null,
-          parentShas: tryGitFieldOptional(exec, input.cwd, "%P")?.split(" ").filter((s) => s.length > 0) ?? [],
-          workingDir: gitRoot
-        },
-        sessionContext: {
-          sessionId: input.clientSessionId,
-          agentId: input.agentId
-        }
-      });
-    } finally {
-      commitStore.close();
-    }
-  } catch (err) {
-    process.stderr.write(
-      `[post-tool-use] emitCommitObservation failed: ${err?.message ?? err}
-`
-    );
-  }
+  await emitRichCommitObservation({
+    input,
+    exec,
+    baseUrl,
+    remoteUrl,
+    sha,
+    branch,
+    message
+  });
   return { decision: "allow", observation };
 }
 function tryGitField(exec, cwd, fmt) {
@@ -5405,8 +8275,8 @@ function tryGitFieldOptional(exec, cwd, fmt) {
   const v = tryGitField(exec, cwd, fmt);
   return v.length === 0 ? null : v;
 }
-async function captureBashEditsForCommand(input, cmd, isCommit) {
-  const editsRoot = input.editsRootDir ?? join16(homedir6(), ".spellguard");
+async function captureToolEditsForCommand(input, cmd, isCommit) {
+  const editsRoot = input.editsRootDir ?? join17(homedir7(), ".spellguard");
   const commandStartedAtMs = consumeBashCommandStart({
     rootDir: editsRoot,
     key: input.toolUseId || input.clientSessionId,
@@ -5425,9 +8295,12 @@ async function captureBashEditsForCommand(input, cmd, isCommit) {
     skipCommittedSet
   });
 }
+function isBashTool2(toolName) {
+  return toolName === "Bash" || toolName === "bash";
+}
 function headHasMultipleParents(cwd) {
   try {
-    execFileSync6("git", ["rev-parse", "--verify", "--quiet", "HEAD^2"], {
+    execFileSync7("git", ["rev-parse", "--verify", "--quiet", "HEAD^2"], {
       cwd,
       stdio: ["ignore", "ignore", "ignore"]
     });
@@ -5436,22 +8309,106 @@ function headHasMultipleParents(cwd) {
     return false;
   }
 }
+async function emitRichCommitObservation(args) {
+  const { input, exec, baseUrl, remoteUrl, sha, branch, message } = args;
+  try {
+    const editStoreRoot = input.editsRootDir ?? join17(homedir7(), ".spellguard");
+    const commitStore = openEditStore({ rootDir: editStoreRoot });
+    try {
+      const gitRoot = resolveGitRoot(input.cwd);
+      const parentText = tryGitFieldOptional(exec, input.cwd, "%P");
+      await emitCommitObservation({
+        store: commitStore,
+        diffProvider: async (s) => gitShowDiff(gitRoot, s),
+        fetch,
+        apiBase: baseUrl,
+        agentId: input.agentId,
+        agentSecret: input.agentSecret,
+        workingDir: gitRoot,
+        remoteUrl,
+        commitEvent: {
+          sha,
+          branch,
+          authoredAt: tryGitField(exec, input.cwd, "%aI"),
+          authorName: tryGitFieldOptional(exec, input.cwd, "%an"),
+          authorEmail: tryGitFieldOptional(exec, input.cwd, "%ae"),
+          committedAt: tryGitFieldOptional(exec, input.cwd, "%cI"),
+          committerName: tryGitFieldOptional(exec, input.cwd, "%cn"),
+          committerEmail: tryGitFieldOptional(exec, input.cwd, "%ce"),
+          message,
+          parentSha: parentText?.split(" ")[0] ?? null,
+          parentShas: parentText?.split(" ").filter((s) => s.length > 0) ?? [],
+          workingDir: gitRoot
+        },
+        sessionContext: {
+          sessionId: input.clientSessionId,
+          agentId: input.agentId
+        }
+      });
+    } finally {
+      commitStore.close();
+    }
+  } catch (err) {
+    process.stderr.write(
+      `[post-tool-use] emitCommitObservation failed: ${err?.message ?? err}
+`
+    );
+  }
+}
+function gitShowDiff(gitRoot, sha) {
+  try {
+    const out = execFileSync7("git", ["show", sha], {
+      cwd: gitRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return parseShowDiff(out);
+  } catch {
+    return {};
+  }
+}
+async function recordStructuredEdit(input) {
+  if (input.toolName !== "Edit" && input.toolName !== "Write") return;
+  const editStore = openEditStore({
+    rootDir: input.editsRootDir ?? join17(homedir7(), ".spellguard")
+  });
+  try {
+    try {
+      const workingDir = resolveGitRoot(input.cwd);
+      await recordEditFromToolUse({
+        store: editStore,
+        sessionContext: {
+          sessionId: input.clientSessionId,
+          agentId: input.agentId,
+          workingDir
+        },
+        toolName: input.toolName,
+        toolInput: input.toolInput ?? {}
+      });
+    } catch (err) {
+      console.error("[post-tool-use] edit-store record failed:", err);
+    }
+  } finally {
+    editStore.close();
+  }
+}
 
 // src/monitors/credential-monitor.ts
-import { homedir as homedir7 } from "node:os";
-import { join as join17 } from "node:path";
+import { homedir as homedir8 } from "node:os";
+import { join as join18 } from "node:path";
 function defaultScopeCachePath2() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return join17(
-    xdg ?? join17(homedir7(), ".config"),
+  return join18(
+    xdg ?? join18(homedir8(), ".config"),
     "spellguard",
     "observation-scope.json"
   );
 }
 function defaultAllowlistPath2() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return join17(
-    xdg ?? join17(homedir7(), ".config"),
+  return join18(
+    xdg ?? join18(homedir8(), ".config"),
     "spellguard",
     "observation.yaml"
   );
@@ -5551,237 +8508,13 @@ export {
 /*! Bundled license information:
 
 smol-toml/dist/error.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
-smol-toml/dist/util.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
-smol-toml/dist/date.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/primitive.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
+smol-toml/dist/date.js:
 smol-toml/dist/extract.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
+smol-toml/dist/util.js:
 smol-toml/dist/struct.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/parse.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/stringify.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/index.js:
   (*!
    * Copyright (c) Squirrel Chat et al., All rights reserved.

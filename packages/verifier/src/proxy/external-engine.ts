@@ -12,7 +12,7 @@
  *   - externalEndpoint: the URL to POST to (required)
  *   - externalTimeout: request timeout in ms (default 5000)
  *   - externalMtlsCert: reserved for future mTLS support
- *   - failBehavior: what to do on error ('allow' | 'block' | 'warn', default 'allow')
+ *   - failBehavior: what to do on error ('allow' | 'block' | 'warn', default 'block')
  */
 
 import type {
@@ -20,6 +20,37 @@ import type {
   PolicyEngine,
   PolicyEvalContext,
 } from './policy-evaluator-types';
+
+/**
+ * The Spellguard guard engine (management's `/v1/guard-engine/evaluate`, which
+ * forwards the `guard-*` policies to the GPU pool) authenticates each
+ * evaluation with a key in `config.key`. That key is the
+ * Verifier's own secret (`GUARD_ENGINE_POLICY_KEY`), never part of a binding:
+ * it is added to the request only when the endpoint sits on the guard
+ * engine's own origin (`GUARD_ENGINE_BASE_URL`), so a customer's external
+ * endpoint never receives it, and nothing in management's database holds it.
+ */
+export function guardEngineKeyFor(
+  endpoint: string,
+  env: Record<string, string | undefined>,
+): string | null {
+  const key = env.GUARD_ENGINE_POLICY_KEY?.trim();
+  return key && onGuardEngineOrigin(endpoint, env) ? key : null;
+}
+
+/** Whether `endpoint` sits on the configured guard engine's origin, exactly. */
+function onGuardEngineOrigin(
+  endpoint: string,
+  env: Record<string, string | undefined>,
+): boolean {
+  const base = env.GUARD_ENGINE_BASE_URL?.trim();
+  if (!base) return false;
+  try {
+    return new URL(endpoint).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
 
 export class ExternalEngine implements PolicyEngine {
   readonly name = 'external';
@@ -31,6 +62,11 @@ export class ExternalEngine implements PolicyEngine {
     }
 
     const timeout = ctx.binding.externalTimeout ?? 5000;
+    const guardKey = guardEngineKeyFor(endpoint, process.env);
+    const config = guardKey
+      ? { ...(ctx.binding.config ?? {}), key: guardKey }
+      : ctx.binding.config;
+    const headers = { 'Content-Type': 'application/json' };
 
     try {
       const controller = new AbortController();
@@ -38,12 +74,13 @@ export class ExternalEngine implements PolicyEngine {
 
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           content: ctx.content,
           policyId: ctx.binding.policyId,
           policySlug: ctx.binding.policySlug,
-          config: ctx.binding.config,
+          ...(guardKey && ctx.agentId ? { agentId: ctx.agentId } : {}),
+          config,
         }),
         signal: controller.signal,
       });
@@ -95,7 +132,7 @@ export class ExternalEngine implements PolicyEngine {
     ctx: PolicyEvalContext,
     message: string,
   ): PolicyDetection[] {
-    const behavior = ctx.binding.failBehavior ?? 'allow';
+    const behavior = ctx.binding.failBehavior ?? 'block';
 
     if (behavior === 'block') {
       return [

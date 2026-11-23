@@ -82,7 +82,9 @@ set +a
 
 MISSING=()
 [ -z "${SLACK_CHANNEL_ID:-}" ] && MISSING+=("SLACK_CHANNEL_ID")
-[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ] && MISSING+=("CLOUDFLARE_TUNNEL_TOKEN")
+# The tunnel token is required only when the tunnel runs: --no-tunnel (Socket
+# Mode) starts without one.
+[ "$SKIP_TUNNEL" = false ] && [ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ] && MISSING+=("CLOUDFLARE_TUNNEL_TOKEN (or start with --no-tunnel)")
 
 # Check for at least one bot token (first bot in the file)
 HAS_BOT_TOKEN=false

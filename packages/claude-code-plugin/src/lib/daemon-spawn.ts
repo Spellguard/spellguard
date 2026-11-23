@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { type SpawnOptions, spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { type SpawnOptions, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { platform } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type SpellguardConfig, defaultConfigDir } from './config-store';
 
@@ -49,7 +60,7 @@ export interface EnsureDaemonArgs {
 }
 
 /** Resolve the daemon script path relative to this module's install location. */
-function daemonScriptPath(): string {
+export function daemonScriptPath(): string {
   // This module lives at packages/claude-code-plugin/src/lib/daemon-spawn.ts
   // The daemon lives at    packages/claude-code-plugin/bin/spellguard-credential-daemon.ts
   // After bundling:        dist/bin/<entry>.mjs → dist/bin/spellguard-credential-daemon.mjs
@@ -85,6 +96,113 @@ function daemonScriptPath(): string {
   // without a rebuild.
   if (existsSync(devPath)) return devPath;
   return builtPath;
+}
+
+export type DaemonTransportState = 'connecting' | 'connected' | 'error';
+export type DaemonCredentialState =
+  | 'missing'
+  | 'valid'
+  | 'near_expiry'
+  | 'refresh_pending'
+  | 'expired'
+  | 'revoked';
+
+export function daemonArtifactId(scriptPath = daemonScriptPath()): string {
+  const canonicalPath = existsSync(scriptPath)
+    ? realpathSync(scriptPath)
+    : resolve(scriptPath);
+  const hash = createHash('sha256');
+  hash.update(canonicalPath);
+  hash.update('\0');
+  hash.update(readFileSync(canonicalPath));
+  return hash.digest('hex');
+}
+
+export function startDaemonHealthReporter(args: {
+  agentId: string;
+  configDir: string;
+  scriptPath: string;
+  artifactId: string;
+  instanceId: string;
+  credentialState: DaemonCredentialState;
+  heartbeatIntervalMs?: number;
+}) {
+  const path = join(args.configDir, 'agents', `${args.agentId}.health.json`);
+  const processStartToken = readSelfStartToken();
+  if (!processStartToken)
+    throw new Error('could not read daemon process identity');
+  let record = {
+    schemaVersion: 1 as const,
+    pid: process.pid,
+    processStartToken,
+    agentId: args.agentId,
+    configDir: resolve(args.configDir),
+    scriptPath: resolve(args.scriptPath),
+    artifactId: args.artifactId,
+    instanceId: args.instanceId,
+    heartbeatAt: new Date().toISOString(),
+    processState: 'starting' as 'starting' | 'ready',
+    transportState: 'connecting' as DaemonTransportState,
+    transportError: undefined as string | undefined,
+    credentialState: args.credentialState,
+  };
+  const flush = () => {
+    record = { ...record, heartbeatAt: new Date().toISOString() };
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const tempPath = `${path}.${args.instanceId}.tmp`;
+    writeFileSync(tempPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    chmodSync(tempPath, 0o600);
+    renameSync(tempPath, path);
+  };
+  flush();
+  const interval = setInterval(flush, args.heartbeatIntervalMs ?? 1_000);
+  interval.unref();
+  return {
+    markReady: () => {
+      record = { ...record, processState: 'ready' };
+      flush();
+    },
+    setTransport: (state: DaemonTransportState, error?: string) => {
+      record = { ...record, transportState: state, transportError: error };
+      flush();
+    },
+    setCredentialState: (state: DaemonCredentialState) => {
+      record = { ...record, credentialState: state };
+      flush();
+    },
+    close: () => {
+      clearInterval(interval);
+      try {
+        const current = JSON.parse(readFileSync(path, 'utf8')) as {
+          instanceId?: unknown;
+        };
+        if (current.instanceId === args.instanceId) unlinkSync(path);
+      } catch {
+        // A replacement daemon may already own the path.
+      }
+    },
+  };
+}
+
+function readSelfStartToken(): string | null {
+  try {
+    if (platform() === 'linux') {
+      const stat = readFileSync(`/proc/${process.pid}/stat`, 'utf8');
+      const fields = stat
+        .slice(stat.lastIndexOf(')') + 2)
+        .trim()
+        .split(/\s+/);
+      return fields[19] ?? null;
+    }
+    if (platform() === 'darwin') {
+      return execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='], {
+        encoding: 'utf8',
+      }).trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 /** Read the PID stored in the daemon's PID file, or null if absent/invalid. */

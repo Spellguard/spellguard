@@ -34,7 +34,8 @@
  * a data-read pattern (DB query, file read, memory access) and the current
  * message is an outbound write to a network endpoint (HTTP POST, webhook).
  *
- * Uses ctx.recentMessages to inspect the recent message sequence.
+ * Uses ctx.recentMessages, which the tool legs fill with the agent's recent
+ * tool calls (`evaluateToolCallPolicies`).
  *
  * Config:
  *   readPatterns?: string[]    — additional regex patterns indicating a read
@@ -49,6 +50,7 @@ import {
   INJECTION_MEDIUM_COMMON,
   buildInjectionDetections,
 } from './injection-patterns';
+import { invokedCallText } from './message-buffer';
 import type {
   PolicyDetection,
   PolicyEngine,
@@ -256,7 +258,9 @@ function evaluateExfilFlowDetection(ctx: PolicyEvalContext): PolicyDetection[] {
     ...compilePatterns(extraWritePatterns),
   ];
 
-  const currentIsWrite = allWritePatterns.some((re) => re.test(ctx.content));
+  const current = invokedCallText(ctx);
+  if (current === null) return [];
+  const currentIsWrite = allWritePatterns.some((re) => re.test(current));
   if (!currentIsWrite) return [];
 
   // Look for a recent read operation in message history

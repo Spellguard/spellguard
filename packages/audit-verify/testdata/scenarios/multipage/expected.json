@@ -1,0 +1,19 @@
+{
+  "now": "2026-12-21T17:17:04.000Z",
+  "allowed_buckets": ["spellguard-audit-checkpoints-test"],
+  "ok": true,
+  "counts": {
+    "ok": 3,
+    "pending": 0,
+    "deleted": 0,
+    "missing": 0,
+    "tampered": 0
+  },
+  "signatures": {
+    "valid": 0,
+    "unsigned": 3,
+    "unverified": 0,
+    "invalid": 0
+  },
+  "codes": []
+}

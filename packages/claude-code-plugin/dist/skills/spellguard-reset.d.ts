@@ -1,21 +1,3 @@
-/**
- * /spellguard-reset — clean machine teardown (plan Task 0.2, I10).
- *
- * Until now there was NO way to cleanly tear an agent down from a machine:
- * local teardown meant kill-the-daemon + rm-the-config by hand, and the
- * server side needed manual SQL. This command does, in order:
- *
- *   1. `DELETE /v1/agents/self` (agent-secret auth) — soft-deletes the
- *      agent server-side, revokes its credentials, fans out
- *      credential_revoked frames. MUST run first: it needs the secret that
- *      step 3 deletes. 401/404/network failures are tolerated — the server
- *      side may already be gone (dashboard delete, env reset).
- *   2. Stop local credential daemons (pidfile-driven SIGTERM).
- *   3. Delete the local config.
- *
- * Idempotent and lost-secret tolerant by design: every step degrades to a
- * no-op rather than failing the teardown.
- */
 import { type AuthSupersededCloseReason } from '@spellguard/agent-control';
 import { type ReadConfigResult } from '../lib/config-store';
 /**
@@ -36,15 +18,20 @@ export interface SupersededWipeArgs {
     envFilePath?: string;
     /** Per-agent gh session dir whose pinned hosts.yml is cleared. */
     ghConfigDir?: string;
-    /** Daemon-maintained GH_TOKEN file (`<configDir>/gh-token`) to clear. */
-    ghTokenFile?: string;
+    /**
+     * LEGACY plaintext token file (`<configDir>/gh-token`) to unlink. Nothing
+     * writes it since #767 — the login-shell export it fed was removed because it
+     * froze `gh` on a start-time token — but a machine set up by an older plugin
+     * still carries one, and a superseded agent must not leave it on disk.
+     */
+    legacyGhTokenFile?: string;
     /** Override the credential-wipe core (tests). */
     markConfigSupersededImpl?: (message: string) => void;
     /** Override the env-file clear (tests). */
     clearGitConfigEnvImpl?: (envFilePath: string) => void;
     /** Override the gh-session clear (tests). */
     clearGhSessionConfigImpl?: (dir: string) => void;
-    /** Override the GH_TOKEN-file clear (tests). */
+    /** Override the legacy token-file unlink (tests). */
     clearGhTokenFileImpl?: (path: string) => void;
 }
 /**

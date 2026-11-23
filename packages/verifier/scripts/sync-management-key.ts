@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * sync-management-key — copy MANAGEMENT_PUBLIC_KEY from the management
+ * sync-management-key — copy the management public keys from the management
  * worker's `.dev.vars` into the Verifier's `.env` so the two stay in lockstep
  * on local-dev stacks.
  *
+ * There are TWO independent keys to keep aligned:
+ *   MANAGEMENT_SIGNING_PUBLIC_KEY  (Ed25519) — verifies management JWTs
+ *   MANAGEMENT_ARCHIVE_PUBLIC_KEY  (X25519)  — archive-encryption recipient
+ * They are not interchangeable; see the note in main().
+ *
  * Why: the Verifier's `/v1/mcp/evaluate` (and related) endpoints verify the
- * `X-Spellguard-Management-Token` JWT against MANAGEMENT_PUBLIC_KEY. If the
+ * `X-Spellguard-Management-Token` JWT against the SIGNING key. If the
  * management worker signs with one Ed25519 key and the Verifier verifies
  * against a different one, every plugin policy-evaluate call returns
  * `401 Invalid management token` and the embedded Spellguard plugin
@@ -69,28 +74,51 @@ function main(): void {
   }
 
   const mgmtContent = readFileSync(MANAGEMENT_DEV_VARS, 'utf-8');
-  const pubKey = extractEnvValue(mgmtContent, 'MANAGEMENT_PUBLIC_KEY');
-  if (!pubKey) {
+  const legacyPub = extractEnvValue(mgmtContent, 'MANAGEMENT_PUBLIC_KEY');
+  const signingPub =
+    extractEnvValue(mgmtContent, 'MANAGEMENT_SIGNING_PUBLIC_KEY') || legacyPub;
+  const archivePub = extractEnvValue(
+    mgmtContent,
+    'MANAGEMENT_ARCHIVE_PUBLIC_KEY',
+  );
+
+  // Two independent public halves now. The archive key is deliberately NOT
+  // defaulted to the signing key: MANAGEMENT_ARCHIVE_PUBLIC_KEY is a native
+  // X25519 value the Verifier never converts, so copying an Ed25519 key into it
+  // would install a key that cannot decrypt anything. When the management side
+  // has no dedicated archive key, sync the LEGACY variable instead and let the
+  // Verifier perform the Ed25519→X25519 derivation it has always done.
+  const pairs: Array<[string, string]> = [];
+  if (signingPub) pairs.push(['MANAGEMENT_SIGNING_PUBLIC_KEY', signingPub]);
+  if (archivePub) {
+    pairs.push(['MANAGEMENT_ARCHIVE_PUBLIC_KEY', archivePub]);
+  } else if (legacyPub) {
+    pairs.push(['MANAGEMENT_PUBLIC_KEY', legacyPub]);
+  }
+
+  if (pairs.length === 0) {
     console.error(
-      '[sync-management-key] FAIL: MANAGEMENT_PUBLIC_KEY not found in management .dev.vars',
+      '[sync-management-key] FAIL: no management public key found in management .dev.vars ' +
+        '(looked for MANAGEMENT_SIGNING_PUBLIC_KEY, MANAGEMENT_ARCHIVE_PUBLIC_KEY, MANAGEMENT_PUBLIC_KEY)',
     );
     process.exit(1);
   }
 
-  const verifierContent = readFileSync(VERIFIER_ENV, 'utf-8');
-  const current = extractEnvValue(verifierContent, 'MANAGEMENT_PUBLIC_KEY');
-  if (current === pubKey) {
+  let verifierContent = readFileSync(VERIFIER_ENV, 'utf-8');
+  const changed: string[] = [];
+  for (const [name, value] of pairs) {
+    if (extractEnvValue(verifierContent, name) === value) continue;
+    verifierContent = upsertEnvValue(verifierContent, name, value);
+    changed.push(name);
+  }
+
+  if (changed.length === 0) {
     console.log('[sync-management-key] OK — already in sync');
     return;
   }
 
-  const updated = upsertEnvValue(
-    verifierContent,
-    'MANAGEMENT_PUBLIC_KEY',
-    pubKey,
-  );
-  writeFileSync(VERIFIER_ENV, updated, 'utf-8');
-  console.log('[sync-management-key] OK — MANAGEMENT_PUBLIC_KEY updated');
+  writeFileSync(VERIFIER_ENV, verifierContent, 'utf-8');
+  console.log(`[sync-management-key] OK — updated ${changed.join(', ')}`);
 }
 
 main();

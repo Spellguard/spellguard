@@ -18,7 +18,7 @@ than being duplicated per framework:
 | --- | --- |
 | `client.ts` | `AgentControlClient` — the PartySocket transport, reconnect/resume, Hello/Ack handling, and the `secret` / `nonce` / `managed-bootstrap` start modes. |
 | `protocol.ts` | The wire frames, credential descriptors, config descriptor, and close codes. **Types only — no runtime.** |
-| `claim-flow.ts` | `runManagedBootstrap` — the managed-provisioning first-boot orchestrator (Lightsail / Railway), built on top of `AgentControlClient`. |
+| `claim-flow.ts` | `runManagedBootstrap` — the managed-provisioning first-boot orchestrator (an EC2 box), built on top of `AgentControlClient`. |
 
 Framework-specific credential **handlers** (which write a particular agent's
 on-disk config or mutate its git credential helper) deliberately do **not**

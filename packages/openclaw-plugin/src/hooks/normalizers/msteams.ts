@@ -77,11 +77,18 @@ export const msteamsNormalizer: ContentNormalizer = (
   //    `\b` word boundary on the tag name means namespaced placeholders
   //    like `<media:document>` (opaque Adaptive Card placeholders from
   //    OpenClaw — Tier 2 extraction is deferred) pass through untouched.
-  normalized = normalized.replace(
-    /<\/?(?:b|i|em|strong|u|span|div|p)\b[^>]*>/gi,
-    '',
-  );
-  normalized = normalized.replace(/<br\s*\/?>/gi, '');
+  //    Repeat until stable: removing one tag can expose another that was
+  //    written across it (`<b<i>>` → `<b>`), the case CodeQL's
+  //    js/incomplete-multi-character-sanitization check flags. One regex
+  //    for both tag kinds, so the replacement's own result feeds the next
+  //    pass: that is the loop CodeQL recognizes as stripping to a fixpoint.
+  //    The output is plain text for policy evaluation, never rendered.
+  const FORMATTING_OR_LINE_BREAK_TAG =
+    /<\/?(?:b|i|em|strong|u|span|div|p)\b[^>]*>|<br\s*\/?>/gi;
+  for (let previous = ''; previous !== normalized; ) {
+    previous = normalized;
+    normalized = normalized.replace(FORMATTING_OR_LINE_BREAK_TAG, '');
+  }
 
   // 6. Markdown formatting.
   //    Apply in order so bold (**) gets stripped before italic (*)

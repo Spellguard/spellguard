@@ -35,6 +35,7 @@ export async function syncFrameworkIdentity(options: {
   agentId: string;
   managementUrl: string;
   agentSecret: string;
+  fetchImpl?: typeof fetch;
 }): Promise<void> {
   const base = options.managementUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '');
   const controller = new AbortController();
@@ -49,7 +50,10 @@ export async function syncFrameworkIdentity(options: {
       // (requireAgentBearer), not the X-Spellguard-Agent-* headers.
       auth: 'bearer',
       fetchImpl: (input, init) =>
-        fetch(input, { ...init, signal: controller.signal }),
+        (options.fetchImpl ?? fetch)(input, {
+          ...init,
+          signal: controller.signal,
+        }),
     });
     const { error, response } = await api.POST('/agents/{id}/plugin-sync', {
       params: { path: { id: options.agentId } },
@@ -70,7 +74,7 @@ export async function syncFrameworkIdentity(options: {
       return;
     }
 
-    console.log(
+    console.error(
       JSON.stringify({
         event: 'plugin_sync.ok',
         agentId: options.agentId,

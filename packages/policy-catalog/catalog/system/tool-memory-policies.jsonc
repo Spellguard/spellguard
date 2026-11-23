@@ -1,3 +1,6 @@
+// Memory/RAG TOOL policies — scoped `tools` ON PURPOSE (see
+// tool-database-policies.jsonc for the full rationale): these engines inspect
+// retrieved memory and RAG payloads returned by a tool, not agent prose.
 {
   "policies": [
     {
@@ -10,6 +13,7 @@
       "failBehavior": "block",
       "config": {},
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 92
@@ -29,11 +33,6 @@
       "severity": "low",
       "failBehavior": "block",
       "config": {},
-      "defaultBinding": {
-        "direction": "both",
-        "effect": "block",
-        "priority": 80
-      },
       "provenance": {
         "source": "extracted:policy-memory-engine",
         "dateAdded": "2026-03-16",
@@ -52,6 +51,7 @@
         "sensitivity": "medium"
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 91

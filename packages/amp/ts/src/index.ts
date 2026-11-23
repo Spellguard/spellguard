@@ -8,7 +8,7 @@
  * This package provides:
  * - Message commitment generation for tamper-evident audit trails
  * - Channel management for agent-to-agent communication
- * - Pluggable backends for commitment logging (memory, Rekor)
+ * - Pluggable backends for commitment logging (memory, Rekor, none)
  * - Pluggable backends for message archiving (memory, S3)
  * - Client-side encryption utilities
  *
@@ -29,10 +29,9 @@
  * @example
  * ```typescript
  * // Client-side: Encrypt messages for Verifier
- * import { encryptForVerifier, verifyArchiveIntegrity } from '@spellguard/amp';
+ * import { encryptForVerifier } from '@spellguard/amp';
  *
  * const encrypted = encryptForVerifier(payload, sessionPublicKey);
- * const isValid = await verifyArchiveIntegrity(commitment, archive);
  * ```
  */
 
@@ -75,8 +74,6 @@ export {
   hashPayload,
 } from './client/encrypt';
 
-export { verifyArchiveIntegrity } from './client/verify';
-
 // ═══════════════════════════════════════════════════════════════════
 // Server-side
 // ═══════════════════════════════════════════════════════════════════
@@ -116,9 +113,13 @@ export {
   // Backend implementations
   memoryCommitmentBackend,
   memoryArchiveBackend,
+  noneCommitmentBackend,
   rekorBackend,
   s3Backend,
+  // The SHA-256 of each archived message object, for signed audit records
+  archiveDigestFor,
   // Testing utilities
+  clearArchiveDigests,
   clearMemoryBackends,
   getAllCommitments,
   getArchiveCount,
@@ -154,3 +155,90 @@ export type {
   TransportName,
   VerifiedClaims,
 } from './profile/index';
+
+// Shared policy registry (management, dashboard and Verifier).
+export {
+  AGENT_CONDUCT_MODEL_IDS,
+  CREATABLE_POLICY_TYPES,
+  DECISION_MODEL_IDS,
+  DECISION_MODELS,
+  DECISION_POLICY_TYPES,
+  DEFAULT_DECISION_MODEL_ID,
+  DEFAULT_DOCUMENT_READER_ID,
+  DOCUMENT_READER_IDS,
+  DOCUMENT_READERS,
+  decisionModelIdsFor,
+  getDecisionModel,
+  getDocumentReader,
+  getPolicyType,
+  isConfiguredPolicyType,
+  POLICY_TYPE_REGISTRY,
+  POLICY_TYPES,
+} from './policy-types';
+export type {
+  DecisionModel,
+  DecisionModelId,
+  DecisionModelProvider,
+  DecisionPolicyType,
+  DocumentReader,
+  DocumentReaderId,
+  DocumentReaderProvider,
+  PolicyAuthoringMode,
+  PolicyEngineFamily,
+  PolicyType,
+  PolicyTypeRegistryEntry,
+} from './policy-types';
+
+// Computed values and their expressions (the Verifier's engines and the
+// policy readers that refuse a bad expression at save).
+export {
+  MAX_EXPRESSION_LENGTH,
+  computeValue,
+  computeValues,
+  expressionNames,
+  parseExpression,
+} from './computed-values';
+export type { ComputedResult, Expression } from './computed-values';
+
+// The agent-conduct profile reader (management and Verifier).
+export {
+  AGENT_CONDUCT_CHANNELS,
+  AGENT_CONDUCT_CHECKS,
+  AGENT_CONDUCT_DEFAULT_THRESHOLDS,
+  AGENT_CONDUCT_EFFECTS,
+  AGENT_CONDUCT_FACT_KINDS,
+  AGENT_CONDUCT_KEYS,
+  AGENT_CONDUCT_LIMITS,
+  AGENT_CONDUCT_OBSERVED_CHANNELS,
+  AGENT_CONDUCT_PROBLEMS,
+  AGENT_CONDUCT_TRUST_LEVELS,
+  AGENT_CONDUCT_UNOBSERVED_CHANNELS,
+  readAgentConductProfile,
+  readAgentConductStructure,
+} from './agent-conduct';
+export type {
+  AgentConductChannel,
+  AgentConductCheck,
+  AgentConductEffect,
+  AgentConductFact,
+  AgentConductFactKind,
+  AgentConductLimit,
+  AgentConductMatch,
+  AgentConductOutputRule,
+  AgentConductProfile,
+  AgentConductReadResult,
+  AgentConductSource,
+  AgentConductTrust,
+  PatternCompiler,
+} from './agent-conduct';
+
+// Document limits for message attachments (management and Verifier).
+export {
+  DOCUMENT_LIMIT_CEILING,
+  DOCUMENT_LIMIT_DEFAULTS,
+  DOCUMENT_LIMIT_FLOOR,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  effectiveDocumentLimits,
+  ocrUnitsAllowed,
+} from './document-limits';
+export type { DocumentLimits } from './document-limits';

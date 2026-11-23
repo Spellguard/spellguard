@@ -5,19 +5,22 @@ import { join } from 'node:path';
 /**
  * PreToolUse hook — observes git-mutating tool calls and emits observations.
  *
- * Claude Code's runtime can call this hook before each tool execution. We filter
+ * Codex's runtime calls this hook before each tool execution. We filter
  * for git-mutating commands (push, pr_open via `gh pr create`, branch creation)
  * and emit a scope-filtered observation via the observation pipeline.
  *
  * Includes a status-check fallback — when a git op is detected we
  * also probe `/v1/credentials/github/status`. On status=revoked or
- * HTTP 401/403/404/410 we return a block decision to Claude Code. Per the
- * fail-closed policy for credential states, network timeouts also return
- * `allow` so we don't hard-block the user when the control plane is
- * unreachable — the local credential-monitor + on-disk revoked flag remain
- * the authoritative enforcement path.
+ * HTTP 401/403/404/410 we emit a Codex `permissionDecision: 'deny'`.
  *
- * Note: this hook runs as a fresh node process per call (Claude Code's hook
+ * This probe FAILS OPEN on anything inconclusive: a timeout, a network error,
+ * and any other non-terminal 4xx/5xx all return `allow`, so a control plane
+ * that is unreachable does not hard-block the user. The fail-CLOSED guarantee
+ * for credential state lives elsewhere — in the local credential-monitor and
+ * the on-disk revoked flag, which are the authoritative enforcement path. This
+ * hook is a fast terminal-state backstop on top of them, not the gate.
+ *
+ * Note: this hook runs as a fresh node process per call (Codex's hook
  * runtime spawns a new process from `bin/run-pre-tool-use.mjs` each time),
  * so an in-memory rate-limit cache is dead code. The broker's per-route
  * rate limit (RATE_LIMITER_STRICT, see workers/services/github/rate-limit.ts)
@@ -31,8 +34,13 @@ import {
   isAgentGoneStatus,
 } from '@spellguard/agent-control';
 import { markBashCommandStart } from '../lib/bash-command-timing';
-import { type GitOp, detectGitOp } from '../lib/git-command-parser';
+import {
+  type GitOp,
+  detectGhPrCreate,
+  detectGitOp,
+} from '../lib/git-command-parser';
 import { canonicalizeGitRemote } from '../lib/git-remote-canonicalizer';
+import type { GithubCredentialState } from '../lib/github-grant-generation';
 import { ObservationQueue } from '../lib/observation-emitter';
 import type { OperationType } from '../lib/observation-emitter';
 import {
@@ -47,6 +55,24 @@ export interface PreToolUseInput {
   remoteUrl?: string;
   agentId: string;
   scopedTokenId: string;
+  /**
+   * @deprecated Superseded by `githubCredentialState`, which distinguishes the
+   * four ways there is no usable credential. Still honoured when the newer
+   * field is absent. False when config is identity-only, locally revoked, or
+   * V5 is unusable.
+   */
+  localCredentialAvailable?: boolean;
+  /**
+   * The credential answer for this command's GitHub targets. `expired` passes
+   * through: git runs, the Spellguard credential helper refreshes on use, and a
+   * token that cannot be refreshed fails closed at git or at GitHub. Blocking
+   * it here made the dead-daemon recovery path unreachable from a coding-agent
+   * session (#781).
+   */
+  githubCredentialState?: GithubCredentialState;
+  /** Why attribution failed, when `githubCredentialState` is `unattributed`. */
+  githubTargetReason?: string;
+  githubTargetContext?: 'resolved' | 'execution-directory-missing';
   clientSessionId: string;
   endpoint: string;
   agentSecret: string;
@@ -84,16 +110,69 @@ export function detectGitOperation(
   toolName: string,
   args: string[],
 ): OperationType | null {
-  if (toolName !== 'Bash' && toolName !== 'bash') return null;
+  if (!isBashTool(toolName)) return null;
   const cmd = args.join(' ');
   const op = detectGitOp(cmd);
   if (op === 'push') return 'push';
   if (op === 'checkout_new_branch' || op === 'switch_new_branch')
     return 'branch_create';
-  // gh pr create is outside detectGitOp's scope (it's not a `git` subcommand).
-  // Use a separate anchored match.
-  if (/(^|&&|;|\|\|)\s*gh\s+pr\s+create(\s|$)/.test(cmd)) return 'pr_open';
+  // gh pr create is outside detectGitOp's scope (it's not a `git` subcommand),
+  // but it reads the SAME tokenized segments so the classifier and the
+  // attribution resolver cannot disagree about what a command runs.
+  if (detectGhPrCreate(cmd)) return 'pr_open';
   return null;
+}
+
+/**
+ * The block an agent sees when Spellguard cannot tell which repository a
+ * command writes to. It must name what could not be attributed and how to
+ * re-phrase the command, and must never read as a credential failure — the
+ * old text sent operators hunting a credential problem that did not exist
+ * (#793). Modelled on Codex's `execution-directory-missing` precedent.
+ */
+function unattributedMessage(input: PreToolUseInput): string {
+  const parts = [
+    'Spellguard could not work out which GitHub repository this command writes to, so it cannot check the credential for that repository.',
+  ];
+  if (input.githubTargetReason) {
+    parts.push(
+      `Spellguard could not attribute it because ${input.githubTargetReason}.`,
+    );
+  }
+  parts.push(
+    'Re-run the GitHub step as its own command, naming the target explicitly — for example `git -C /absolute/path/to/worktree push origin <branch>` or `gh pr create --repo OWNER/REPO` — and keep the intended repository unchanged.',
+    'This is NOT a credential failure: credential checks still apply, and nothing needs repairing or re-authorizing.',
+  );
+  return parts.join(' ');
+}
+
+/**
+ * Collapse the credential answer into a decision. `expired` is deliberately
+ * NOT a block: see `PreToolUseInput.githubCredentialState`.
+ */
+function credentialDecision(input: PreToolUseInput): PreToolUseDecision | null {
+  const state =
+    input.githubCredentialState ??
+    (input.localCredentialAvailable === false ? 'unavailable' : undefined);
+  if (state === undefined || state === 'available' || state === 'expired') {
+    return null;
+  }
+  if (state === 'unattributed') {
+    return { decision: 'block', message: unattributedMessage(input) };
+  }
+  return {
+    decision: 'block',
+    message:
+      'Spellguard credential unavailable for this GitHub target. Mutation is blocked until a matching credential is available.',
+  };
+}
+
+function isBashTool(toolName: string): boolean {
+  return toolName === 'Bash' || toolName === 'bash';
+}
+
+function isAgentAuthoredFileTool(toolName: string): boolean {
+  return toolName === 'apply_patch';
 }
 
 function resolveRemoteUrl(input: PreToolUseInput): string | null {
@@ -154,6 +233,22 @@ async function probeStatus(args: {
  * Kept exported so tests and legacy callers can exercise observation logic
  * without triggering the status-check probe. New call sites should prefer
  * `runPreToolUse`, which is the runtime entrypoint (see plugin.json).
+ */
+/**
+ * KNOWN ATTRIBUTION GAP (#781, item 4). When `githubCredentialState` is
+ * `expired`, the scoped token id on this observation is the id of the grant the
+ * pull-on-use refresh is about to SUPERSEDE — git runs next, the credential
+ * helper mints a successor, and the push travels on that successor's token. The
+ * observation therefore names the predecessor.
+ *
+ * It is not corrected after the fact. PostToolUse re-reads the V5 generation
+ * from disk in a fresh process, so it would see the successor id, but it emits
+ * an observation only for `commit`; there is no post-push observation to carry
+ * the corrected id, and adding a second push observation would double-count
+ * every push. Recording the predecessor id is also the useful half of the fact:
+ * it is the id the server can follow to the successor it minted. Closing the
+ * gap properly needs a refresh-aware field on the observation contract, which
+ * is a server-side change and out of this plugin's scope.
  */
 export async function emitPreToolUseObservation(
   input: PreToolUseInput,
@@ -267,7 +362,7 @@ export async function runPreToolUse(
   // below, which returns early for non-git commands like heredocs). The
   // PostToolUse Bash-edit capture consumes this to window which files this
   // command authored. Best-effort — never throws.
-  if (input.toolName === 'Bash' || input.toolName === 'bash') {
+  if (isBashTool(input.toolName) || isAgentAuthoredFileTool(input.toolName)) {
     markBashCommandStart({
       rootDir: input.editsRootDir ?? join(homedir(), '.spellguard'),
       key: input.toolUseId || input.clientSessionId,
@@ -276,7 +371,29 @@ export async function runPreToolUse(
   }
 
   const op = detectGitOperation(input.toolName, input.toolArgs);
+  // A command the tokenizer could not read AT ALL, whose raw text mentions a
+  // git mutation, is not "no git op here" — it is "I do not know what this
+  // runs". `detectGitOp` answers `'unparseable'` for exactly that case, and the
+  // adapter has already resolved the command as `unattributed`. Treating it as
+  // "no op" switched the gate silently OFF: an unterminated quote inside a
+  // trailing `# it's done` comment was enough.
+  const unreadable =
+    op === null &&
+    isBashTool(input.toolName) &&
+    detectGitOp(input.toolArgs.join(' ')) === 'unparseable';
+  if (unreadable) return credentialDecision(input) ?? { decision: 'skip' };
   if (!op) return { decision: 'skip' };
+
+  if (input.githubTargetContext === 'execution-directory-missing') {
+    return {
+      decision: 'block',
+      message:
+        'Codex did not supply the command execution directory. The session directory is not a reliable GitHub target. Retry with git -C /absolute/worktree push ... or gh pr create --repo OWNER/REPO. Keep the intended repository unchanged. Credential checks still apply; do not repair credentials based on this message.',
+    };
+  }
+
+  const credential = credentialDecision(input);
+  if (credential) return credential;
 
   // Status probe first so a revoked credential short-circuits observation
   // emission. The probe runs on every call — the broker's RATE_LIMITER_STRICT
@@ -318,9 +435,10 @@ export const runPreToolUseObservation = emitPreToolUseObservation;
  */
 export const runPreToolUseHook = runPreToolUse;
 
-// Provide a default export so Claude Code's plugin runtime can invoke the
-// hook without depending on a specific named-export convention. The default
-// is the full decision-returning entry (status-check → block OR observation).
+// Provide a default export so Codex's plugin runtime can invoke the hook
+// without depending on a specific named-export convention. The default is
+// `runPreToolUseCodex` — the Codex-shaped wrapper (status-check → deny OR
+// observation), not the internal `PreToolUseDecision` entry above.
 export default runPreToolUseCodex;
 
 export type { GitOp };

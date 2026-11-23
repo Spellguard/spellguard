@@ -10,8 +10,8 @@
  *
  * Populated by:
  *   - packages/openclaw-plugin/src/hooks/inbound-observer.ts on before_dispatch
- *   - packages/openclaw-plugin/src/services/platform-relay-client.ts on
- *     receipt of teams_activity_blocked envelope
+ *   - packages/openclaw-plugin/src/services/relay-dispatch.ts on receipt of a
+ *     teams_activity(_blocked) relay frame from the agent-control socket
  *
  * Consumed by:
  *   - packages/openclaw-plugin/src/hooks/adapters/msteams.ts

@@ -15,6 +15,7 @@ import type {
   CredentialRotatedFrame,
   GithubCredentialDescriptor,
 } from '@spellguard/agent-control';
+import { isManagedBox } from '@spellguard/agent-control';
 import {
   clearCodexCredentialHelper,
   installCodexCredentialHelper,
@@ -35,6 +36,25 @@ import { renderMessage } from './render-message';
  */
 function githubEntryKey(orgLogin: string | undefined): string {
   return (orgLogin ?? '__default').toLowerCase();
+}
+
+const RECOVERABLE_GITHUB_REVOKE_REASONS = new Set<
+  CredentialRevokedFrame['reason']
+>(['github_side_revoked', 'installation_revoked', 'refresh_token_expired']);
+
+function githubReissueAfterFinalRevoke(
+  frame: CredentialRevokedFrame,
+): SpellguardConfig['githubReissue'] {
+  return frame.provider === 'github' &&
+    RECOVERABLE_GITHUB_REVOKE_REASONS.has(frame.reason)
+    ? { pending: true }
+    : undefined;
+}
+
+function finalGithubRevocationMessage(frame: CredentialRevokedFrame): string {
+  return githubReissueAfterFinalRevoke(frame)
+    ? 'Spellguard: GitHub credential revoked; GitHub mutations are blocked while Spellguard waits for a replacement credential.'
+    : 'Spellguard: GitHub credential revoked; GitHub mutations are blocked. This terminal revocation will not request a replacement automatically.';
 }
 
 /**
@@ -90,6 +110,11 @@ export interface CredentialHandlerDeps {
   writeConfigImpl: (cfg: SpellguardConfig) => void;
   /** Mark the stored config as revoked. */
   markConfigRevokedImpl: () => void;
+  /**
+   * #1348: drop every placed credential but keep the identity (a 4423
+   * suspension). Optional: only the daemon handles a suspension.
+   */
+  markConfigSuspendedImpl?: () => void;
   /** Read current config (re-read on each call to avoid clobbering concurrent updates). */
   readConfigImpl: () => ReadConfigResult;
   /**
@@ -103,6 +128,16 @@ export interface CredentialHandlerDeps {
    * remote. See `git-insteadof-rules.ts`.
    */
   sshRewriteRepo?: RepoIdentity;
+  /**
+   * R3-4: positive managed-mode gate. Defaults to the real R3-1 marker reader
+   * (`isManagedBox()` from `@spellguard/agent-control`). TRUE ⇒ the daemon's
+   * per-session SCOPED config.toml credential-helper install stands down (the
+   * global placement is authoritative; double-writing conflicts); the on-disk
+   * credential state is still persisted. FALSE (the default — absent OR corrupt
+   * marker) ⇒ the scoped install runs as before (fail-closed — R3-6). Signal is
+   * the marker, never ambient env (NEG-7). Injected so tests can pin a temp root.
+   */
+  isManagedBox?: () => boolean;
 }
 
 /**
@@ -126,14 +161,14 @@ export interface CredentialHandlerDeps {
 export function handleCredentialUpdate(
   frame: CredentialDeliveredFrame | CredentialRotatedFrame,
   deps: CredentialHandlerDeps,
-): void {
+): boolean {
   const ghCreds = frame.credentials.filter(
     (c): c is GithubCredentialDescriptor =>
       c.provider === 'github' && Boolean(c.scoped_token),
   );
-  if (ghCreds.length === 0) return; // redacted frame — auto-trigger handles it
+  if (ghCreds.length === 0) return false; // redacted frame — auto-trigger handles it
   const cur = deps.readConfigImpl();
-  if (!cur.config) return;
+  if (!cur.config) return false;
 
   const hadKeyedMap =
     cur.config.githubCredentials !== undefined &&
@@ -141,7 +176,7 @@ export function handleCredentialUpdate(
   // Legacy single-slot back-compat: a pre-C config marked whole-config revoked
   // (no keyed map) must NOT be resurrected — the per-entry guards below only
   // apply once the keyed map exists. (CR-R2-009 regression pin.)
-  if (!hadKeyedMap && cur.config.revoked) return;
+  if (!hadKeyedMap && cur.config.revoked) return false;
 
   const githubCredentials: Record<string, GithubCredentialEntry> = {
     ...(cur.config.githubCredentials ?? {}),
@@ -155,11 +190,12 @@ export function handleCredentialUpdate(
 
   for (const ghCred of ghCreds) {
     const key = githubEntryKey(ghCred.github_org_login);
-    // Refuse to resurrect a revoked org entry. A stray
-    // credential_delivered{cause:'admin_reissue'} for an org that was just
-    // revoked (e.g. queued during the daemon's grace window) must NOT bring
-    // the dead per-org credential back to life.
-    if (githubCredentials[key]?.revoked) continue;
+    // Refuse to resurrect the SAME revoked credential, but accept a different
+    // credential ID for that org. Resume reconciliation intentionally replays
+    // history before delivering the authoritative replacement.
+    const incomingId = ghCred.scoped_token_id ?? ghCred.credential_id;
+    const existing = githubCredentials[key];
+    if (existing?.revoked && existing.scopedTokenId === incomingId) continue;
     const entry: GithubCredentialEntry = {
       scopedToken: ghCred.scoped_token,
       scopedTokenId: ghCred.scoped_token_id ?? ghCred.credential_id,
@@ -180,7 +216,7 @@ export function handleCredentialUpdate(
 
   // Nothing installed (every descriptor targeted an already-revoked org) —
   // don't touch disk; the per-entry guards held.
-  if (firstInstalled === null) return;
+  if (firstInstalled === null) return false;
 
   // PR #338 review R2-016: drop a stale `__default` placeholder once a real
   // org-keyed entry supersedes it (see dropStaleDefaultKey) — a lingering legacy
@@ -213,20 +249,30 @@ export function handleCredentialUpdate(
     gitAuthorName: firstInstalled.authorName,
     gitAuthorEmail: firstInstalled.authorEmail,
     revoked: false,
+    githubReissue: undefined,
   });
-  // Refresh the codex credential helper block (config.toml shell_environment_policy)
-  // with the first credential's author identity, preserving the gh pin. The
-  // per-org token selection lives in git-tokens, regenerated by the config write
-  // above; the helper reads the live token, so no token is baked into the block.
-  installCodexCredentialHelper({
-    gitAuthorName: firstInstalled.authorName,
-    gitAuthorEmail: firstInstalled.authorEmail,
-    ghConfigDir: deps.ghConfigDir,
-    helperPath: deps.helperPath,
-    // Rotation must regenerate the full rule set, incl. the repo-specific rules
-    // 3/4 (out-specify a force-SSH rule). See git-insteadof-rules.ts.
-    sshRewriteRepo: deps.sshRewriteRepo,
-  });
+  // R3-4 standdown: on a managed box the per-session SCOPED config.toml
+  // credential-helper install stands down (the global placement is authoritative
+  // — a second scoped helper conflicts). The on-disk credential state was still
+  // persisted above; only this injection leg is skipped. On every non-managed
+  // box it runs as before (fail-closed — R3-6). Marker, not env (NEG-7).
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+  if (!managed) {
+    // Refresh the codex credential helper block (config.toml
+    // shell_environment_policy) with the first credential's author identity,
+    // preserving the gh pin. The per-org token selection lives in git-tokens,
+    // regenerated by the config write above; the helper reads the live token, so
+    // no token is baked into the block.
+    installCodexCredentialHelper({
+      gitAuthorName: firstInstalled.authorName,
+      gitAuthorEmail: firstInstalled.authorEmail,
+      ghConfigDir: deps.ghConfigDir,
+      helperPath: deps.helperPath,
+      // Rotation must regenerate the full rule set, incl. the repo-specific rules
+      // 3/4 (out-specify a force-SSH rule). See git-insteadof-rules.ts.
+      sshRewriteRepo: deps.sshRewriteRepo,
+    });
+  }
   // Refresh the session gh hosts.yml with the (mirrored) scoped token so `gh`
   // authenticates with the scoped token. gh re-reads hosts.yml per call, so a
   // rotation is picked up by the next gh invocation with no restart.
@@ -236,6 +282,7 @@ export function handleCredentialUpdate(
       token: firstInstalled.entry.scopedToken,
     });
   }
+  return true;
 }
 
 /**
@@ -265,12 +312,12 @@ export function handleConfigUpdate(
  * Phase C: revocation is PER ENTRY. The frame's `scoped_token_id` selects the
  * one org entry to mark revoked; the `git-tokens` file is regenerated (via the
  * config write) so only that org's line disappears while sibling orgs keep
- * pushing. The credential helper is cleared and the WHOLE config marked revoked
- * ONLY when no unrevoked github entry remains.
+ * pushing. When no unrevoked github entry remains, the local token consumers
+ * are emptied but the agent identity and pinned Codex helper remain so the
+ * daemon can consume a different-ID replacement.
  *
- * @returns `anyRemaining` — `true` if at least one unrevoked github entry
- *   survives (the daemon stays alive); `false` when the last entry died (the
- *   daemon's `onCredentialRevoked` then calls `shutdown()`).
+ * @returns `recoverable` — `true` when the identity remains capable of
+ *   receiving a replacement; `false` only when no readable config exists.
  */
 export function handleCredentialRevoked(
   frame: CredentialRevokedFrame,
@@ -279,24 +326,47 @@ export function handleCredentialRevoked(
   const cur = deps.readConfigImpl();
   const keyed = cur.config?.githubCredentials;
 
-  // Legacy single-slot config (no keyed map) — preserve the pre-C behaviour:
-  // a revoke nukes the whole config. anyRemaining=false.
-  if (!cur.config || !keyed || Object.keys(keyed).length === 0) {
-    deps.markConfigRevokedImpl();
+  if (!cur.config) return false;
+
+  // #1283: this framework places only GitHub credentials (delivery keeps
+  // `provider === 'github'`), so a revoke for any other provider, e.g. an
+  // admin removing a manual Discord credential, has nothing here to revoke.
+  // Handled as a GitHub revoke, it cleared a legacy config's GitHub token.
+  if (frame.provider !== 'github') return true;
+
+  // Legacy single-slot config (no keyed map): remove the credential while
+  // retaining the agent-control identity. Clearing the scoped policy here
+  // would let a later Codex shell fall through to ambient Git/gh credentials.
+  if (!keyed || Object.keys(keyed).length === 0) {
+    deps.writeConfigImpl({
+      ...cur.config,
+      scopedToken: undefined,
+      scopedTokenId: undefined,
+      expiresAt: undefined,
+      scopeSummary: undefined,
+      revoked: false,
+      githubReissue: githubReissueAfterFinalRevoke(frame),
+    });
     try {
-      // Removes only our Codex-scoped block — a human's global git identity is
-      // in ~/.gitconfig, which we never touch, so no author guard is needed.
-      clearCodexCredentialHelper();
       if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+      const managed = (deps.isManagedBox ?? isManagedBox)();
+      if (!managed) {
+        installCodexCredentialHelper({
+          gitAuthorName: cur.config.gitAuthorName,
+          gitAuthorEmail: cur.config.gitAuthorEmail,
+          ghConfigDir: deps.ghConfigDir,
+          helperPath: deps.helperPath,
+          sshRewriteRepo: deps.sshRewriteRepo,
+        });
+      }
     } catch {
-      /* ignore — config.toml block may already be gone */
+      /* best-effort — an empty helper state still serves no token */
     }
     renderMessage({
       level: 'error',
-      message:
-        'Spellguard: credential revoked (push); subsequent git operations will fail until you re-run `@spellguard-setup` or restart Codex.',
+      message: finalGithubRevocationMessage(frame),
     });
-    return false;
+    return true;
   }
 
   // Mark ONLY the matching entry (by scoped_token_id) revoked.
@@ -331,6 +401,7 @@ export function handleCredentialRevoked(
       scopedTokenId: survivor?.scopedTokenId,
       expiresAt: survivor?.expiresAt,
       scopeSummary: survivor?.scopeSummary,
+      githubReissue: undefined,
     });
     renderMessage({
       level: 'error',
@@ -341,21 +412,38 @@ export function handleCredentialRevoked(
     return true;
   }
 
-  // No unrevoked entry remains — tear the whole thing down (legacy semantics).
-  deps.writeConfigImpl({ ...cur.config, githubCredentials: next });
-  deps.markConfigRevokedImpl();
+  // No unrevoked entry remains. Persist identity-only state and retain the
+  // helper + gh pin so no ambient credential can become reachable.
+  deps.writeConfigImpl({
+    ...cur.config,
+    githubCredentials: next,
+    scopedToken: undefined,
+    scopedTokenId: undefined,
+    expiresAt: undefined,
+    scopeSummary: undefined,
+    revoked: false,
+    githubReissue: githubReissueAfterFinalRevoke(frame),
+  });
   try {
-    clearCodexCredentialHelper();
     if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+    const managed = (deps.isManagedBox ?? isManagedBox)();
+    if (!managed) {
+      installCodexCredentialHelper({
+        gitAuthorName: cur.config.gitAuthorName,
+        gitAuthorEmail: cur.config.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo,
+      });
+    }
   } catch {
-    /* ignore — config.toml block may already be gone */
+    /* best-effort — an empty helper state still serves no token */
   }
   renderMessage({
     level: 'error',
-    message:
-      'Spellguard: credential revoked (push); subsequent git operations will fail until you re-run `@spellguard-setup` or restart Codex.',
+    message: finalGithubRevocationMessage(frame),
   });
-  return false;
+  return true;
 }
 
 /**
@@ -377,17 +465,65 @@ export function handleAuthFailedClose(
   deps: CredentialHandlerDeps,
 ): boolean {
   if (code !== 4401) return false;
+  const cur = deps.readConfigImpl();
   deps.markConfigRevokedImpl();
   try {
-    clearCodexCredentialHelper();
     if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+    const managed = (deps.isManagedBox ?? isManagedBox)();
+    if (!managed) {
+      installCodexCredentialHelper({
+        gitAuthorName: cur.config?.gitAuthorName,
+        gitAuthorEmail: cur.config?.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo,
+      });
+    }
   } catch {
-    /* ignore — helper may already be gone */
+    /* best-effort — an empty helper state still serves no token */
   }
   renderMessage({
     level: 'error',
     message:
       'Spellguard: the server no longer recognizes this agent (auth failed). Local credentials were marked revoked — run `@spellguard-setup` to reconnect.',
+  });
+  return true;
+}
+
+/**
+ * Handle an AGENT_SUSPENDED (4423) close (#1348): the agent is quarantined.
+ *
+ * Unlike a 4401, the agent is not gone: a release brings it back. Drop every
+ * GitHub credential this plugin placed (config, `git-tokens`, the V5
+ * authority, the gh session config) and keep the identity and the helper
+ * wiring, so git keeps routing through the helper (which now serves nothing)
+ * and the daemon, which stays running, picks up whatever the server delivers
+ * after the release. Returns false when there is nothing wired to drop the
+ * config with.
+ */
+export function handleSuspended(deps: CredentialHandlerDeps): boolean {
+  if (!deps.markConfigSuspendedImpl) return false;
+  const cur = deps.readConfigImpl();
+  deps.markConfigSuspendedImpl();
+  try {
+    if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+    const managed = (deps.isManagedBox ?? isManagedBox)();
+    if (!managed) {
+      installCodexCredentialHelper({
+        gitAuthorName: cur.config?.gitAuthorName,
+        gitAuthorEmail: cur.config?.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo,
+      });
+    }
+  } catch {
+    /* best-effort — the helper already serves nothing */
+  }
+  renderMessage({
+    level: 'error',
+    message:
+      'Spellguard: this agent is quarantined. Its credentials were removed from this machine; it reconnects by itself once an admin releases it.',
   });
   return true;
 }

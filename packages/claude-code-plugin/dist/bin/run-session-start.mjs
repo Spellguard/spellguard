@@ -12,7 +12,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -44,10 +48,10 @@ var require_constants = __commonJS({
       EMPTY_BUFFER: Buffer.alloc(0),
       GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
       hasBlob,
-      kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
-      kListener: Symbol("kListener"),
-      kStatusCode: Symbol("status-code"),
-      kWebSocket: Symbol("websocket"),
+      kForOnEventAttribute: /* @__PURE__ */ Symbol("kIsForOnEventAttribute"),
+      kListener: /* @__PURE__ */ Symbol("kListener"),
+      kStatusCode: /* @__PURE__ */ Symbol("status-code"),
+      kWebSocket: /* @__PURE__ */ Symbol("websocket"),
       NOOP: () => {
       }
     };
@@ -87,9 +91,9 @@ var require_node_gyp_build = __commonJS({
         var debug = getFirst(path.join(dir, "build/Debug"), matchBuild);
         if (debug) return debug;
       }
-      var prebuild = resolve3(dir);
+      var prebuild = resolve4(dir);
       if (prebuild) return prebuild;
-      var nearby = resolve3(path.dirname(process.execPath));
+      var nearby = resolve4(path.dirname(process.execPath));
       if (nearby) return nearby;
       var target = [
         "platform=" + platform2,
@@ -105,18 +109,18 @@ var require_node_gyp_build = __commonJS({
         // eslint-disable-line
       ].filter(Boolean).join(" ");
       throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
-      function resolve3(dir2) {
-        var tuples = readdirSync3(path.join(dir2, "prebuilds")).map(parseTuple);
+      function resolve4(dir2) {
+        var tuples = readdirSync4(path.join(dir2, "prebuilds")).map(parseTuple);
         var tuple = tuples.filter(matchTuple(platform2, arch)).sort(compareTuples)[0];
         if (!tuple) return;
         var prebuilds = path.join(dir2, "prebuilds", tuple.name);
-        var parsed = readdirSync3(prebuilds).map(parseTags);
+        var parsed = readdirSync4(prebuilds).map(parseTags);
         var candidates = parsed.filter(matchTags(runtime, abi));
         var winner = candidates.sort(compareTags(runtime))[0];
         if (winner) return path.join(prebuilds, winner.file);
       }
     };
-    function readdirSync3(dir) {
+    function readdirSync4(dir) {
       try {
         return fs.readdirSync(dir);
       } catch (err) {
@@ -124,7 +128,7 @@ var require_node_gyp_build = __commonJS({
       }
     }
     function getFirst(dir, filter) {
-      var files = readdirSync3(dir).filter(filter);
+      var files = readdirSync4(dir).filter(filter);
       return files[0] && path.join(dir, files[0]);
     }
     function matchBuild(name) {
@@ -152,9 +156,9 @@ var require_node_gyp_build = __commonJS({
     }
     function parseTags(file) {
       var arr = file.split(".");
-      var extension = arr.pop();
+      var extension2 = arr.pop();
       var tags = { file, specificity: 0 };
-      if (extension !== "node") return;
+      if (extension2 !== "node") return;
       for (var i = 0; i < arr.length; i++) {
         var tag = arr[i];
         if (tag === "node" || tag === "electron" || tag === "node-webkit") {
@@ -345,8 +349,8 @@ var require_buffer_util = __commonJS({
 var require_limiter = __commonJS({
   "../../node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
-    var kDone = Symbol("kDone");
-    var kRun = Symbol("kRun");
+    var kDone = /* @__PURE__ */ Symbol("kDone");
+    var kRun = /* @__PURE__ */ Symbol("kRun");
     var Limiter = class {
       /**
        * Creates a new `Limiter`.
@@ -401,13 +405,13 @@ var require_permessage_deflate = __commonJS({
     var { kStatusCode } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
     var TRAILER = Buffer.from([0, 0, 255, 255]);
-    var kPerMessageDeflate = Symbol("permessage-deflate");
-    var kTotalLength = Symbol("total-length");
-    var kCallback = Symbol("callback");
-    var kBuffers = Symbol("buffers");
-    var kError = Symbol("error");
+    var kPerMessageDeflate = /* @__PURE__ */ Symbol("permessage-deflate");
+    var kTotalLength = /* @__PURE__ */ Symbol("total-length");
+    var kCallback = /* @__PURE__ */ Symbol("callback");
+    var kBuffers = /* @__PURE__ */ Symbol("buffers");
+    var kError = /* @__PURE__ */ Symbol("error");
     var zlibLimiter;
-    var PerMessageDeflate = class {
+    var PerMessageDeflate2 = class {
       /**
        * Creates a PerMessageDeflate instance.
        *
@@ -418,6 +422,9 @@ var require_permessage_deflate = __commonJS({
        *     acknowledge disabling of client context takeover
        * @param {Number} [options.concurrencyLimit=10] The number of concurrent
        *     calls to zlib
+       * @param {Boolean} [options.isServer=false] Create the instance in either
+       *     server or client mode
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
        *     use of a custom server window size
        * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
@@ -428,15 +435,12 @@ var require_permessage_deflate = __commonJS({
        *     deflate
        * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
        *     inflate
-       * @param {Boolean} [isServer=false] Create the instance in either server or
-       *     client mode
-       * @param {Number} [maxPayload=0] The maximum allowed message length
        */
-      constructor(options, isServer, maxPayload) {
-        this._maxPayload = maxPayload | 0;
+      constructor(options) {
         this._options = options || {};
         this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
-        this._isServer = !!isServer;
+        this._maxPayload = this._options.maxPayload | 0;
+        this._isServer = !!this._options.isServer;
         this._deflate = null;
         this._inflate = null;
         this.params = null;
@@ -745,7 +749,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module.exports = PerMessageDeflate;
+    module.exports = PerMessageDeflate2;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -1029,7 +1033,7 @@ var require_receiver = __commonJS({
   "../../node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
       EMPTY_BUFFER,
@@ -1059,6 +1063,10 @@ var require_receiver = __commonJS({
        *     extensions
        * @param {Boolean} [options.isServer=false] Specifies whether to operate in
        *     client or server mode
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -1069,6 +1077,8 @@ var require_receiver = __commonJS({
         this._binaryType = options.binaryType || BINARY_TYPES[0];
         this._extensions = options.extensions || {};
         this._isServer = !!options.isServer;
+        this._maxBufferedChunks = options.maxBufferedChunks | 0;
+        this._maxFragments = options.maxFragments | 0;
         this._maxPayload = options.maxPayload | 0;
         this._skipUTF8Validation = !!options.skipUTF8Validation;
         this[kWebSocket] = void 0;
@@ -1098,6 +1108,18 @@ var require_receiver = __commonJS({
        */
       _write(chunk, encoding, cb) {
         if (this._opcode === 8 && this._state == GET_INFO) return cb();
+        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
+          cb(
+            this.createError(
+              RangeError,
+              "Too many buffered chunks",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            )
+          );
+          return;
+        }
         this._bufferedBytes += chunk.length;
         this._buffers.push(chunk);
         this.startLoop(cb);
@@ -1196,7 +1218,7 @@ var require_receiver = __commonJS({
           return;
         }
         const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
           const error = this.createError(
             RangeError,
             "RSV1 must be clear",
@@ -1427,6 +1449,17 @@ var require_receiver = __commonJS({
           return;
         }
         if (data.length) {
+          if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+            const error = this.createError(
+              RangeError,
+              "Too many message fragments",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            );
+            cb(error);
+            return;
+          }
           this._messageLength = this._totalPayloadLength;
           this._fragments.push(data);
         }
@@ -1440,7 +1473,7 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
@@ -1452,6 +1485,17 @@ var require_receiver = __commonJS({
                 false,
                 1009,
                 "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              );
+              cb(error);
+              return;
+            }
+            if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+              const error = this.createError(
+                RangeError,
+                "Too many message fragments",
+                false,
+                1008,
+                "WS_ERR_TOO_MANY_BUFFERED_PARTS"
               );
               cb(error);
               return;
@@ -1622,11 +1666,14 @@ var require_sender = __commonJS({
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
-    var PerMessageDeflate = require_permessage_deflate();
+    var {
+      types: { isUint8Array }
+    } = __require("util");
+    var PerMessageDeflate2 = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
-    var kByteLength = Symbol("kByteLength");
+    var kByteLength = /* @__PURE__ */ Symbol("kByteLength");
     var maskBuffer = Buffer.alloc(4);
     var RANDOM_POOL_SIZE = 8 * 1024;
     var randomPool;
@@ -1775,8 +1822,10 @@ var require_sender = __commonJS({
           buf.writeUInt16BE(code, 0);
           if (typeof data === "string") {
             buf.write(data, 2);
-          } else {
+          } else if (isUint8Array(data)) {
             buf.set(data, 2);
+          } else {
+            throw new TypeError("Second argument must be a string or a Uint8Array");
           }
         }
         const options = {
@@ -1906,7 +1955,7 @@ var require_sender = __commonJS({
        * @public
        */
       send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
@@ -2030,7 +2079,7 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         this._bufferedBytes += options[kByteLength];
         this._state = DEFLATING;
         perMessageDeflate.compress(data, options.fin, (_, buf) => {
@@ -2109,14 +2158,14 @@ var require_event_target = __commonJS({
   "../../node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
-    var kCode = Symbol("kCode");
-    var kData = Symbol("kData");
-    var kError = Symbol("kError");
-    var kMessage = Symbol("kMessage");
-    var kReason = Symbol("kReason");
-    var kTarget = Symbol("kTarget");
-    var kType = Symbol("kType");
-    var kWasClean = Symbol("kWasClean");
+    var kCode = /* @__PURE__ */ Symbol("kCode");
+    var kData = /* @__PURE__ */ Symbol("kData");
+    var kError = /* @__PURE__ */ Symbol("kError");
+    var kMessage = /* @__PURE__ */ Symbol("kMessage");
+    var kReason = /* @__PURE__ */ Symbol("kReason");
+    var kTarget = /* @__PURE__ */ Symbol("kTarget");
+    var kType = /* @__PURE__ */ Symbol("kType");
+    var kWasClean = /* @__PURE__ */ Symbol("kWasClean");
     var Event2 = class {
       /**
        * Create a new `Event`.
@@ -2468,11 +2517,11 @@ var require_extension = __commonJS({
       return offers;
     }
     function format(extensions) {
-      return Object.keys(extensions).map((extension) => {
-        let configurations = extensions[extension];
+      return Object.keys(extensions).map((extension2) => {
+        let configurations = extensions[extension2];
         if (!Array.isArray(configurations)) configurations = [configurations];
         return configurations.map((params) => {
-          return [extension].concat(
+          return [extension2].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
               if (!Array.isArray(values)) values = [values];
@@ -2498,7 +2547,7 @@ var require_websocket = __commonJS({
     var { randomBytes, createHash } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
     var { isBlob } = require_validation();
@@ -2518,7 +2567,7 @@ var require_websocket = __commonJS({
     } = require_event_target();
     var { format, parse } = require_extension();
     var { toBuffer } = require_buffer_util();
-    var kAborted = Symbol("kAborted");
+    var kAborted = /* @__PURE__ */ Symbol("kAborted");
     var protocolVersions = [8, 13];
     var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
@@ -2657,6 +2706,10 @@ var require_websocket = __commonJS({
        *     multiple times in the same tick
        * @param {Function} [options.generateMask] The function used to generate the
        *     masking key
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message size
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -2668,6 +2721,8 @@ var require_websocket = __commonJS({
           binaryType: this.binaryType,
           extensions: this._extensions,
           isServer: this._isServer,
+          maxBufferedChunks: options.maxBufferedChunks,
+          maxFragments: options.maxFragments,
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
@@ -2706,8 +2761,8 @@ var require_websocket = __commonJS({
           this.emit("close", this._closeCode, this._closeMessage);
           return;
         }
-        if (this._extensions[PerMessageDeflate.extensionName]) {
-          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        if (this._extensions[PerMessageDeflate2.extensionName]) {
+          this._extensions[PerMessageDeflate2.extensionName].cleanup();
         }
         this._receiver.removeAllListeners();
         this._readyState = _WebSocket.CLOSED;
@@ -2869,7 +2924,7 @@ var require_websocket = __commonJS({
           fin: true,
           ...options
         };
-        if (!this._extensions[PerMessageDeflate.extensionName]) {
+        if (!this._extensions[PerMessageDeflate2.extensionName]) {
           opts.compress = false;
         }
         this._sender.send(data || EMPTY_BUFFER, opts, cb);
@@ -2967,6 +3022,8 @@ var require_websocket = __commonJS({
         autoPong: true,
         closeTimeout: CLOSE_TIMEOUT,
         protocolVersion: protocolVersions[1],
+        maxBufferedChunks: 1024 * 1024,
+        maxFragments: 128 * 1024,
         maxPayload: 100 * 1024 * 1024,
         skipUTF8Validation: false,
         perMessageDeflate: true,
@@ -2995,7 +3052,7 @@ var require_websocket = __commonJS({
       } else {
         try {
           parsedUrl = new URL2(address);
-        } catch (e) {
+        } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
@@ -3043,13 +3100,13 @@ var require_websocket = __commonJS({
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
       if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate(
-          opts.perMessageDeflate !== true ? opts.perMessageDeflate : {},
-          false,
-          opts.maxPayload
-        );
+        perMessageDeflate = new PerMessageDeflate2({
+          ...opts.perMessageDeflate,
+          isServer: false,
+          maxPayload: opts.maxPayload
+        });
         opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
         });
       }
       if (protocols.length) {
@@ -3192,23 +3249,25 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
             const message = "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
+          maxBufferedChunks: opts.maxBufferedChunks,
+          maxFragments: opts.maxFragments,
           maxPayload: opts.maxPayload,
           skipUTF8Validation: opts.skipUTF8Validation
         });
@@ -3523,9 +3582,9 @@ var require_websocket_server = __commonJS({
     var http = __require("http");
     var { Duplex } = __require("stream");
     var { createHash } = __require("crypto");
-    var extension = require_extension();
-    var PerMessageDeflate = require_permessage_deflate();
-    var subprotocol = require_subprotocol();
+    var extension2 = require_extension();
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var subprotocol2 = require_subprotocol();
     var WebSocket3 = require_websocket();
     var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
     var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
@@ -3551,6 +3610,10 @@ var require_websocket_server = __commonJS({
        *     called
        * @param {Function} [options.handleProtocols] A hook to handle protocols
        * @param {String} [options.host] The hostname where to bind the server
+       * @param {Number} [options.maxBufferedChunks=1048576] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=131072] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=104857600] The maximum allowed message
        *     size
        * @param {Boolean} [options.noServer=false] Enable no server mode
@@ -3572,6 +3635,8 @@ var require_websocket_server = __commonJS({
         options = {
           allowSynchronousEvents: true,
           autoPong: true,
+          maxBufferedChunks: 1024 * 1024,
+          maxFragments: 128 * 1024,
           maxPayload: 100 * 1024 * 1024,
           skipUTF8Validation: false,
           perMessageDeflate: false,
@@ -3748,7 +3813,7 @@ var require_websocket_server = __commonJS({
         let protocols = /* @__PURE__ */ new Set();
         if (secWebSocketProtocol !== void 0) {
           try {
-            protocols = subprotocol.parse(secWebSocketProtocol);
+            protocols = subprotocol2.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
@@ -3758,16 +3823,16 @@ var require_websocket_server = __commonJS({
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
         if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate(
-            this.options.perMessageDeflate,
-            true,
-            this.options.maxPayload
-          );
+          const perMessageDeflate = new PerMessageDeflate2({
+            ...this.options.perMessageDeflate,
+            isServer: true,
+            maxPayload: this.options.maxPayload
+          });
           try {
-            const offers = extension.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
-              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            const offers = extension2.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate2.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
+              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
@@ -3838,10 +3903,10 @@ var require_websocket_server = __commonJS({
             ws._protocol = protocol;
           }
         }
-        if (extensions[PerMessageDeflate.extensionName]) {
-          const params = extensions[PerMessageDeflate.extensionName].params;
-          const value = extension.format({
-            [PerMessageDeflate.extensionName]: [params]
+        if (extensions[PerMessageDeflate2.extensionName]) {
+          const params = extensions[PerMessageDeflate2.extensionName].params;
+          const value = extension2.format({
+            [PerMessageDeflate2.extensionName]: [params]
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
@@ -3851,6 +3916,8 @@ var require_websocket_server = __commonJS({
         socket.removeListener("error", socketOnError);
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
+          maxBufferedChunks: this.options.maxBufferedChunks,
+          maxFragments: this.options.maxFragments,
           maxPayload: this.options.maxPayload,
           skipUTF8Validation: this.options.skipUTF8Validation
         });
@@ -3935,8 +4002,11 @@ var DEFAULT = {
 
 // ../../node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
+var import_extension = __toESM(require_extension(), 1);
+var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
 var import_receiver = __toESM(require_receiver(), 1);
 var import_sender = __toESM(require_sender(), 1);
+var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 
@@ -4417,6 +4487,76 @@ function removeTrailingSlash(url) {
 }
 
 // ../agent-control/dist/index.mjs
+import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { createConnection } from "node:net";
+import { tmpdir } from "node:os";
+import { join as join2 } from "node:path";
+var A2A_TASK_STATES = [
+  "SUBMITTED",
+  "WORKING",
+  "INPUT_REQUIRED",
+  "COMPLETED",
+  "CANCELED",
+  "FAILED",
+  "REJECTED",
+  "AUTH_REQUIRED"
+];
+var A2A_ROLES = ["USER", "AGENT"];
+var TASK_STATE_SET = new Set(A2A_TASK_STATES);
+var ROLE_SET = new Set(A2A_ROLES);
+var PART_CONTENT_KEYS = ["text", "raw", "url", "data"];
+var PART_KEYS = /* @__PURE__ */ new Set([
+  ...PART_CONTENT_KEYS,
+  "metadata",
+  "filename",
+  "mediaType"
+]);
+function describeGithubCredentialScope(scope) {
+  if (!scope) return "unknown";
+  return scope.mode === "all" ? "all repositories in the organization" : `[${scope.repos.join(", ")}]`;
+}
+var PUBLIC_TASK_RESPONSE_KEYS = [
+  "id",
+  "contextId",
+  "organizationId",
+  "senderKind",
+  "senderAgentId",
+  "senderUserId",
+  "recipientAgentId",
+  "originatingAgentId",
+  "originatingAgentIdentity",
+  "originatingSessionId",
+  "framework",
+  "type",
+  "state",
+  "artifactUrl",
+  "metadata",
+  "resultPayload",
+  "deferred",
+  "lastProgressAt",
+  "lastSupervisionKeepaliveAt",
+  "effectiveDeadlineAt",
+  "workingTimeoutSeconds",
+  "hasUnansweredWorkerMessage",
+  "threadRecordCount",
+  "threadWriteAttemptCount",
+  "suppressedMessageCount",
+  "suppressedProgressCount",
+  "artifactCount",
+  "terminalAt",
+  "createdAt",
+  "updatedAt"
+];
+var TASK_SUMMARY_RESPONSE_KEYS = [
+  ...PUBLIC_TASK_RESPONSE_KEYS.filter(
+    (key) => key !== "originatingAgentId" && key !== "originatingAgentIdentity" && key !== "originatingSessionId"
+  ),
+  "typeLabel",
+  "stateLabel"
+];
 var AGENT_CONTROL_CLOSE_CODES = {
   NORMAL: 1e3,
   INTERNAL_ERROR: 1011,
@@ -4424,13 +4564,36 @@ var AGENT_CONTROL_CLOSE_CODES = {
   AUTH_FAILED: 4401,
   AGENT_OWNERSHIP: 4403,
   RESUME_WINDOW_EXCEEDED: 4413,
+  /**
+   * The channel displaced a registered socket that had stopped answering the
+   * keepalive, so a newcomer could take the single-socket slot (S2).
+   *
+   * Distinct from `ALREADY_CONNECTED` because it points the OTHER way: 4429
+   * tells a newcomer "someone live is already here", while this tells an
+   * incumbent "you look dead and have been replaced". It is deliberately NOT
+   * fatal to the client — a socket that receives it either really is a zombie
+   * whose process is gone, or is a live daemon that was mis-judged and must
+   * reconnect rather than exit.
+   */
+  STALE_SOCKET: 4410,
   ALREADY_CONNECTED: 4429,
   /**
    * Set ONLY on a deliberate move/re-bootstrap rotation; the sole trigger
    * for the plugin self-wipe. The close reason string is one of
    * `AUTH_SUPERSEDED_CLOSE_REASONS` — use that constant to match on it.
    */
-  AUTH_SUPERSEDED: 4409
+  AUTH_SUPERSEDED: 4409,
+  /**
+   * The agent is quarantined: its channel is suspended, not revoked (#1348).
+   * Sent only to a client that advertised `AGENT_SUSPEND_CAPABILITY`; any
+   * other gets AUTH_FAILED (4401). The client drops every credential it
+   * placed, keeps its identity, and reconnects with backoff (30 s, doubling to
+   * 5 min). A quarantined agent's capable reconnect is answered with this code
+   * too, until a release lets the upgrade through and the normal resume
+   * re-delivers what is still granted. The reason is
+   * `AGENT_SUSPENDED_CLOSE_REASON`.
+   */
+  AGENT_SUSPENDED: 4423
   // A SERVER_TRANSIENT (4503) code is intentionally not declared here: the
   // server's transient-failure paths (storage put errors, missing DB handle,
   // serialization throws) log and fall through rather than emitting a close
@@ -4456,6 +4619,12 @@ var FATAL_CLOSE_CODES = /* @__PURE__ */ new Set([
   // condition.
 ]);
 var AGENT_GONE_HTTP_STATUSES = [401, 403, 404, 410];
+function normalizeManagementBaseUrl(baseUrl) {
+  let url = baseUrl;
+  while (url.endsWith("/")) url = url.slice(0, -1);
+  if (url.endsWith("/v1")) url = url.slice(0, -3);
+  return url;
+}
 function isAgentGoneStatus(httpStatus) {
   return httpStatus !== void 0 && AGENT_GONE_HTTP_STATUSES.includes(httpStatus);
 }
@@ -4464,16 +4633,16 @@ function createManagementClient(opts) {
   const baseFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const retryDelay = opts.retryDelayMs ?? 1e3;
   const retryOn5xx = opts.retry ?? true;
-  const retryingFetch = async (input, init) => {
+  const retryingFetch = (async (input, init) => {
     const req = input instanceof Request ? input : new Request(String(input), init);
     if (!retryOn5xx) return baseFetch(req);
     const first = await baseFetch(req.clone());
     if (first.status >= 500) {
-      await new Promise((resolve3) => setTimeout(resolve3, retryDelay));
+      await new Promise((resolve4) => setTimeout(resolve4, retryDelay));
       return baseFetch(req);
     }
     return first;
-  };
+  });
   const auth = {
     onRequest({ request }) {
       if ((opts.auth ?? "agent-secret") === "bearer") {
@@ -4490,50 +4659,286 @@ function createManagementClient(opts) {
     // Strip a trailing slash AND a trailing `/v1` before appending `/v1`, so a
     // baseUrl of either `https://host` or `https://host/v1` (OpenClaw's docker
     // default carries `/v1`) yields a single `/v1`, never `/v1/v1`.
-    baseUrl: `${opts.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1`,
+    baseUrl: `${normalizeManagementBaseUrl(opts.baseUrl)}/v1`,
     fetch: retryingFetch
   });
   client.use(auth);
   return client;
 }
+var MANAGED_MARKER_BASENAME = ".managed";
+function spellguardRootDir(env = process.env, home = homedir()) {
+  const xdg = env.XDG_CONFIG_HOME;
+  return xdg ? join(xdg, "spellguard") : join(home, ".config", "spellguard");
+}
+function managedMarkerPath(root = spellguardRootDir()) {
+  return join(root, MANAGED_MARKER_BASENAME);
+}
+function readManagedMarker(root = spellguardRootDir()) {
+  const path = managedMarkerPath(root);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    const e = err;
+    if (e.code === "ENOENT") return { managed: false };
+    return {
+      managed: false,
+      diagnostic: `managed marker unreadable at ${path}: ${e.message}`
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker corrupt at ${path}: ${err.message}`
+    };
+  }
+  const marker = parsed;
+  if (!marker || typeof marker !== "object" || typeof marker.agent_id !== "string" || marker.agent_id === "") {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} missing agent_id`
+    };
+  }
+  let stats;
+  try {
+    stats = statSync(path);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker unstatable at ${path}: ${err.message}`
+    };
+  }
+  const perm = stats.mode & 511;
+  if (perm & 18) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} is group/world-writable (mode ${perm.toString(8)}); refusing to honor`
+    };
+  }
+  const readerUid = typeof process.getuid === "function" ? process.getuid() : void 0;
+  if (readerUid !== void 0 && readerUid !== 0 && typeof stats.uid === "number" && stats.uid !== 0 && stats.uid !== readerUid) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} owned by untrusted uid ${stats.uid} (reader uid ${readerUid}, not root); refusing to honor`
+    };
+  }
+  return { marker, managed: true };
+}
+function isManagedBox(root = spellguardRootDir()) {
+  return readManagedMarker(root).managed;
+}
+var REGISTER_TIMEOUT_MS = 2e3;
+var MAX_ID_BYTES = 256;
+function defaultBoxSocketPath() {
+  const euid = typeof process.geteuid === "function" ? process.geteuid() : "nouid";
+  return join2(tmpdir(), `spellguard-boxdaemon-${euid}`, "tasks.sock");
+}
+function withinIdBound(value) {
+  return value.length > 0 && Buffer.byteLength(value, "utf8") <= MAX_ID_BYTES;
+}
+function ambientMultiplexerHandle(env = process.env) {
+  const pane = env.TMUX_PANE?.trim();
+  return pane && withinIdBound(pane) ? pane : void 0;
+}
+function registerBoxSession(registration, options = {}) {
+  if (!withinIdBound(registration.sessionId) || !withinIdBound(registration.framework) || registration.workingDirectory.length === 0) {
+    return Promise.resolve("skipped");
+  }
+  const socketPath = options.socketPath ?? defaultBoxSocketPath();
+  const timeoutMs = options.timeoutMs ?? REGISTER_TIMEOUT_MS;
+  const frame = JSON.stringify({
+    requestId: `session-register-${randomUUID()}`,
+    operation: "session.register",
+    payload: {
+      sessionId: registration.sessionId,
+      framework: registration.framework,
+      workingDirectory: registration.workingDirectory,
+      ...registration.ambientLocation ? { ambientLocation: registration.ambientLocation } : {},
+      ...registration.taskId ? { taskId: registration.taskId } : {}
+    }
+  });
+  return new Promise((resolve4) => {
+    let settled = false;
+    const finish = (outcome) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve4(outcome);
+    };
+    const socket = createConnection(socketPath);
+    socket.setEncoding("utf8");
+    const timer = setTimeout(() => finish("no_daemon"), timeoutMs);
+    timer.unref?.();
+    let response = "";
+    socket.on("connect", () => {
+      socket.end(frame);
+    });
+    socket.on("data", (chunk) => {
+      response += chunk;
+    });
+    socket.on("end", () => {
+      try {
+        finish(
+          JSON.parse(response).ok === true ? "registered" : "rejected"
+        );
+      } catch {
+        finish("rejected");
+      }
+    });
+    socket.on("error", () => finish("no_daemon"));
+  });
+}
+async function captureSessionStart(stdin, framework, options = {}) {
+  let payload;
+  try {
+    payload = stdin ? JSON.parse(stdin) : {};
+  } catch {
+    return "skipped";
+  }
+  if (payload === null || typeof payload !== "object") return "skipped";
+  const sessionId = typeof payload.session_id === "string" ? payload.session_id : "";
+  const workingDirectory = typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : process.cwd();
+  if (!sessionId) return "skipped";
+  const env = options.env ?? process.env;
+  const taskId = env.SPELLGUARD_TASK_ID?.trim();
+  return registerBoxSession(
+    {
+      sessionId,
+      framework,
+      workingDirectory,
+      ambientLocation: ambientMultiplexerHandle(env),
+      ...taskId ? { taskId } : {}
+    },
+    options
+  );
+}
 
 // src/lib/config-store.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
 import {
   chmodSync,
   closeSync,
   copyFileSync,
   existsSync,
+  constants as fsConstants,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
+  readFileSync as readFileSync2,
+  readdirSync,
   renameSync,
   rmSync,
-  statSync,
+  statSync as statSync2,
+  symlinkSync,
   writeFileSync,
   writeSync
 } from "node:fs";
-import { homedir, platform } from "node:os";
-import { dirname, join } from "node:path";
+import { homedir as homedir2, platform } from "node:os";
+import { dirname, join as join3 } from "node:path";
 
 // src/lib/framework-slug.ts
 var FRAMEWORK_SLUG = "claude-code";
 
 // src/lib/config-store.ts
-function spellguardRootDir() {
+function spellguardRootDir2() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return xdg ? join(xdg, "spellguard") : join(homedir(), ".config", "spellguard");
+  return xdg ? join3(xdg, "spellguard") : join3(homedir2(), ".config", "spellguard");
 }
 function legacyConfigDir() {
-  return spellguardRootDir();
+  return spellguardRootDir2();
 }
 function defaultConfigDir() {
-  return join(spellguardRootDir(), FRAMEWORK_SLUG);
+  return join3(spellguardRootDir2(), FRAMEWORK_SLUG);
 }
 function defaultConfigPath() {
-  return join(defaultConfigDir(), "config.json");
+  return join3(defaultConfigDir(), "config.json");
+}
+function readPrivateConfigFile(path) {
+  const flags = fsConstants.O_RDONLY | (platform() === "win32" ? 0 : fsConstants.O_NOFOLLOW);
+  const fd = openSync(path, flags);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error("protected config path is not a file");
+    if (platform() !== "win32" && (stat.mode & 63) !== 0) {
+      throw new Error("protected config file permissions are too broad");
+    }
+    return readFileSync2(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
 }
 function gitTokensPath(dir = defaultConfigDir()) {
-  return join(dir, "git-tokens");
+  return join3(dir, "git-tokens");
+}
+function servedTokens(config) {
+  const served = /* @__PURE__ */ new Set();
+  if (config.revoked) return served;
+  const entries = Object.values(config.githubCredentials ?? {});
+  for (const entry of entries) {
+    if (!entry.revoked && entry.scopedToken) served.add(entry.scopedToken);
+  }
+  if (config.scopedToken && (entries.length === 0 || served.has(config.scopedToken))) {
+    served.add(config.scopedToken);
+  }
+  return served;
+}
+function keepTokens(config, keep) {
+  const kept = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (key === "scopedToken") {
+      const token = value;
+      if (token !== void 0 && (!token || keep.has(token))) {
+        kept[key] = token;
+      }
+    } else if (key === "githubCredentials" && value) {
+      kept[key] = Object.fromEntries(
+        Object.entries(
+          value
+        ).map(([org, entry]) => {
+          if (!entry.scopedToken || keep.has(entry.scopedToken)) {
+            return [org, entry];
+          }
+          const { scopedToken: _dropped, ...withoutToken } = entry;
+          return [org, withoutToken];
+        })
+      );
+    } else {
+      kept[key] = value;
+    }
+  }
+  return kept;
+}
+function writeConfigSnapshot(path, next) {
+  const bak = `${path}.bak`;
+  let previous;
+  try {
+    previous = JSON.parse(readFileSync2(path, "utf-8"));
+  } catch {
+    previous = void 0;
+  }
+  if (previous === null || typeof previous !== "object") {
+    if (next.revoked) {
+      rmSync(bak, { force: true });
+      return;
+    }
+    copyFileSync(path, bak);
+  } else {
+    const snapshot = keepTokens(
+      previous,
+      servedTokens(next)
+    );
+    writeFileSync(bak, JSON.stringify(snapshot, null, 2), {
+      encoding: "utf-8",
+      mode: 384
+    });
+  }
+  if (platform() !== "win32") chmodSync(bak, 384);
 }
 function writeGitTokensFile(config, dir = defaultConfigDir()) {
   const path = gitTokensPath(dir);
@@ -4541,7 +4946,7 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   let wildcardToken;
   let usableCount = 0;
   let keyedTotal = 0;
-  const keyed = config.githubCredentials;
+  const keyed = config.revoked ? void 0 : config.githubCredentials;
   if (keyed && Object.keys(keyed).length > 0) {
     keyedTotal = Object.keys(keyed).length;
     for (const [org, entry] of Object.entries(keyed)) {
@@ -4558,12 +4963,8 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   if (wildcardToken !== void 0 && usableCount === 1 && keyedTotal <= 1) {
     lines.push(`*	${wildcardToken}`);
   }
-  if (lines.length === 0) {
-    if (existsSync(path)) rmSync(path, { force: true });
-    return;
-  }
   mkdirSync(dirname(path), { recursive: true, mode: 448 });
-  const content = `${lines.join("\n")}
+  const content = lines.length === 0 ? "" : `${lines.join("\n")}
 `;
   const tmpPath = `${path}.tmp`;
   if (platform() !== "win32") {
@@ -4577,6 +4978,40 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
     writeFileSync(tmpPath, content, "utf-8");
   }
   renameSync(tmpPath, path);
+  const resetMarker = join3(
+    dirname(path),
+    "github-grants",
+    "current",
+    ".reset-tombstone"
+  );
+  if (!config.revoked && config.scopedToken && existsSync(resetMarker)) {
+    rmSync(join3(dirname(path), "github-grants"), {
+      recursive: true,
+      force: true
+    });
+  }
+}
+function healConfigMode(path, mode) {
+  if (mode === 384) return "ok";
+  const uid = process.getuid?.();
+  let ownerUid;
+  try {
+    ownerUid = statSync2(path).uid;
+  } catch {
+    return "unhealable";
+  }
+  if (uid === void 0 || ownerUid !== uid) return "unhealable";
+  try {
+    chmodSync(path, 384);
+  } catch {
+    return "unhealable";
+  }
+  try {
+    if ((statSync2(path).mode & 511) !== 384) return "unhealable";
+  } catch {
+    return "unhealable";
+  }
+  return "healed";
 }
 function mistypedGithubField(parsed) {
   if (parsed.scopedToken !== void 0 && typeof parsed.scopedToken !== "string")
@@ -4587,22 +5022,33 @@ function mistypedGithubField(parsed) {
     return "expiresAt";
   if (parsed.revokedMessage !== void 0 && typeof parsed.revokedMessage !== "string")
     return "revokedMessage";
+  if (parsed.githubReissue !== void 0 && (parsed.githubReissue === null || typeof parsed.githubReissue !== "object" || parsed.githubReissue.pending !== true))
+    return "githubReissue";
   return null;
 }
 function readConfig(path = defaultConfigPath()) {
   if (!existsSync(path)) return { config: null, reason: "missing" };
+  let permissionsHealed = false;
   if (platform() !== "win32") {
+    let mode;
     try {
-      const stat = statSync(path);
-      const mode = stat.mode & 511;
-      if (mode !== 384) return { config: null, reason: "wrong_permissions" };
+      mode = statSync2(path).mode & 511;
     } catch {
       return { config: null, reason: "missing" };
     }
+    const healed = healConfigMode(path, mode);
+    if (healed === "unhealable") {
+      return {
+        config: null,
+        reason: "wrong_permissions",
+        foundMode: mode.toString(8).padStart(4, "0")
+      };
+    }
+    permissionsHealed = healed === "healed";
   }
   let raw;
   try {
-    raw = readFileSync(path, "utf-8");
+    raw = readFileSync2(path, "utf-8");
   } catch {
     return { config: null, reason: "missing" };
   }
@@ -4643,18 +5089,18 @@ function readConfig(path = defaultConfigPath()) {
         return { config: null, reason: "malformed" };
       }
     }
-    return { config: parsed };
+    return permissionsHealed ? { config: parsed, permissionsHealed: true } : { config: parsed };
   } catch {
     return { config: null, reason: "malformed", malformedField: "json" };
   }
 }
-function writeConfig(config, path = defaultConfigPath()) {
+function writeConfig(config, path = defaultConfigPath(), testHooks = {}) {
   mkdirSync(dirname(path), { recursive: true, mode: 448 });
-  const content = JSON.stringify(config, null, 2);
+  const persisted = keepTokens(config, servedTokens(config));
+  const content = JSON.stringify(persisted, null, 2);
   if (existsSync(path)) {
     try {
-      copyFileSync(path, `${path}.bak`);
-      if (platform() !== "win32") chmodSync(`${path}.bak`, 384);
+      writeConfigSnapshot(path, persisted);
     } catch {
     }
   }
@@ -4669,31 +5115,130 @@ function writeConfig(config, path = defaultConfigPath()) {
   } else {
     writeFileSync(tmpPath, content, "utf-8");
   }
+  writeGitTokensFile(persisted, dirname(path));
+  testHooks.beforeConfigCommit?.();
   renameSync(tmpPath, path);
-  writeGitTokensFile(config, dirname(path));
 }
-function markConfigRevoked(path = defaultConfigPath()) {
+function markConfigRevoked(path = defaultConfigPath(), testHooks = {}) {
   const result = readConfig(path);
   if (result.config) {
+    invalidateActiveGithubGrantGeneration(
+      dirname(path),
+      testHooks,
+      result.config.agentId
+    );
+    testHooks.afterV5Invalidation?.();
     writeConfig({ ...result.config, revoked: true }, path);
   }
 }
+function syncPath(path) {
+  const fd = openSync(path, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+function requireRealDirectory(path) {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`unsafe GitHub generation directory: ${path}`);
+  }
+}
+function removeSiblingGenerations(generations, activeName) {
+  requireRealDirectory(generations);
+  for (const entry of readdirSync(generations, { withFileTypes: true })) {
+    if (entry.name === activeName) continue;
+    const candidate = join3(generations, entry.name);
+    if (dirname(candidate) !== generations) {
+      throw new Error("unsafe GitHub generation cleanup target");
+    }
+    const stat = lstatSync(candidate);
+    if (stat.isDirectory() && !stat.isSymbolicLink()) {
+      rmSync(candidate, { recursive: true });
+    } else {
+      rmSync(candidate);
+    }
+  }
+  syncPath(generations);
+}
+function invalidateActiveGithubGrantGeneration(configDir, testHooks = {}, configuredAgentId) {
+  const root = join3(configDir, "github-grants");
+  const generations = join3(root, "generations");
+  const deliveryId = randomUUID2();
+  const generationName = `0-${deliveryId}`;
+  const generation = join3(generations, generationName);
+  mkdirSync(root, { recursive: true, mode: 448 });
+  requireRealDirectory(root);
+  if (!existsSync(generations)) mkdirSync(generations, { mode: 448 });
+  requireRealDirectory(generations);
+  mkdirSync(generation, { mode: 448 });
+  mkdirSync(join3(generation, "tokens"), { mode: 448 });
+  let agentId = configuredAgentId;
+  if (!agentId) {
+    try {
+      const active = JSON.parse(
+        readPrivateConfigFile(join3(root, "current", "state.json"))
+      );
+      if (typeof active.agentId === "string") agentId = active.agentId;
+      else if (typeof active.grants?.[0]?.agent_id === "string")
+        agentId = active.grants[0].agent_id;
+    } catch {
+    }
+  }
+  writeFileSync(
+    join3(generation, "state.json"),
+    JSON.stringify({
+      protocolVersion: 5,
+      ...agentId ? { agentId } : {},
+      deliveryId,
+      grantSetRevision: "0",
+      grants: []
+    }),
+    { mode: 384 }
+  );
+  writeFileSync(join3(generation, "manifest.tsv"), "\n", { mode: 384 });
+  writeFileSync(join3(generation, ".reset-tombstone"), "", { mode: 384 });
+  syncPath(join3(generation, "state.json"));
+  syncPath(join3(generation, "manifest.tsv"));
+  syncPath(join3(generation, ".reset-tombstone"));
+  syncPath(join3(generation, "tokens"));
+  syncPath(generation);
+  syncPath(generations);
+  testHooks.beforeV5Activation?.();
+  const pendingCurrent = join3(root, `.current.${randomUUID2()}.tmp`);
+  symlinkSync(join3("generations", generationName), pendingCurrent);
+  renameSync(pendingCurrent, join3(root, "current"));
+  syncPath(root);
+  testHooks.afterV5Activation?.();
+  testHooks.beforeV5Cleanup?.();
+  removeSiblingGenerations(generations, generationName);
+}
 
 // src/lib/daemon-spawn.ts
-import { spawn } from "node:child_process";
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname2, join as join2, sep } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  chmodSync as chmodSync2,
+  existsSync as existsSync2,
+  mkdirSync as mkdirSync2,
+  readFileSync as readFileSync3,
+  realpathSync,
+  renameSync as renameSync2,
+  unlinkSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { dirname as dirname2, join as join4, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 function daemonScriptPath() {
   const here = dirname2(fileURLToPath(import.meta.url));
-  const devPath = join2(
+  const devPath = join4(
     here,
     "..",
     "..",
     "bin",
     "spellguard-credential-daemon.ts"
   );
-  const builtPath = join2(here, "spellguard-credential-daemon.mjs");
+  const builtPath = join4(here, "spellguard-credential-daemon.mjs");
   const runningFromDist = here.endsWith(`${sep}dist${sep}bin`) || here.endsWith("/dist/bin");
   if (runningFromDist && existsSync2(builtPath)) return builtPath;
   if (existsSync2(devPath)) return devPath;
@@ -4702,7 +5247,7 @@ function daemonScriptPath() {
 function readDaemonPid(pidPath) {
   if (!existsSync2(pidPath)) return null;
   try {
-    const raw = readFileSync2(pidPath, "utf-8").trim();
+    const raw = readFileSync3(pidPath, "utf-8").trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isFinite(pid) ? pid : null;
   } catch {
@@ -4723,8 +5268,8 @@ function ensureCredentialDaemonRunning(args) {
     return { daemon: "skipped", reason: "missing_credentials" };
   }
   const configDir = args.configDir ?? defaultConfigDir();
-  const pidDir = join2(configDir, "agents");
-  const pidPath = join2(pidDir, `${config.agentId}.pid`);
+  const pidDir = join4(configDir, "agents");
+  const pidPath = join4(pidDir, `${config.agentId}.pid`);
   const existingPid = readDaemonPid(pidPath);
   if (existingPid !== null && isDaemonAlive(existingPid)) {
     return { daemon: "already-running", pid: existingPid };
@@ -4751,13 +5296,13 @@ function defaultSpawnDaemon(execPath, args, opts) {
 // src/lib/env-file-writer.ts
 import {
   appendFileSync,
-  chmodSync as chmodSync2,
+  chmodSync as chmodSync3,
   copyFileSync as copyFileSync2,
   existsSync as existsSync3,
-  mkdirSync as mkdirSync2,
-  writeFileSync as writeFileSync2
+  mkdirSync as mkdirSync3,
+  writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname3, join as join3, resolve } from "node:path";
+import { dirname as dirname3, join as join5, resolve as resolve2 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/lib/git-insteadof-rules.ts
@@ -4797,15 +5342,15 @@ function insteadOfGitConfigEnv(repo) {
 // src/lib/env-file-writer.ts
 var HERE = dirname3(fileURLToPath2(import.meta.url));
 function bundledHelperPath() {
-  return resolve(HERE, "..", "..", "bin", "spellguard-git-helper");
+  return resolve2(HERE, "..", "..", "bin", "spellguard-git-helper");
 }
 function ensureStableHelper(configDir) {
   const bundled = bundledHelperPath();
   try {
-    const dest = join3(configDir, "bin", "spellguard-git-helper");
-    mkdirSync2(dirname3(dest), { recursive: true });
+    const dest = join5(configDir, "bin", "spellguard-git-helper");
+    mkdirSync3(dirname3(dest), { recursive: true });
     copyFileSync2(bundled, dest);
-    chmodSync2(dest, 493);
+    chmodSync3(dest, 493);
     return dest;
   } catch {
     return bundled;
@@ -4868,19 +5413,19 @@ function writeGitConfigEnv(spec) {
 ${lines.join("\n")}
 `, "utf-8");
   } else {
-    writeFileSync2(spec.envFilePath, `${lines.join("\n")}
+    writeFileSync3(spec.envFilePath, `${lines.join("\n")}
 `, "utf-8");
   }
 }
 
 // src/lib/gh-config-dir.ts
-import { join as join4 } from "node:path";
+import { join as join6 } from "node:path";
 function ghConfigDirPath(configDir, agentId) {
-  return join4(configDir, "gh", agentId);
+  return join6(configDir, "gh", agentId);
 }
 
 // src/lib/git-version-check.ts
-import { execFileSync } from "node:child_process";
+import { execFileSync as execFileSync2 } from "node:child_process";
 function parseGitVersion(stdout) {
   const m = stdout.match(/git version (\d+)\.(\d+)\.(\d+)/);
   if (!m) return null;
@@ -4893,7 +5438,7 @@ function isGitVersionSupported(v) {
 }
 function detectGitVersion() {
   try {
-    const out = execFileSync("git", ["--version"], { encoding: "utf-8" });
+    const out = execFileSync2("git", ["--version"], { encoding: "utf-8" });
     return parseGitVersion(out);
   } catch {
     return null;
@@ -4904,31 +5449,31 @@ function detectGitVersion() {
 import {
   copyFileSync as copyFileSync3,
   existsSync as existsSync4,
-  mkdirSync as mkdirSync3,
-  renameSync as renameSync2,
+  mkdirSync as mkdirSync4,
+  renameSync as renameSync3,
   rmSync as rmSync2,
-  writeFileSync as writeFileSync3
+  writeFileSync as writeFileSync4
 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join8 } from "node:path";
 
 // src/lib/stop-daemons.ts
-import { readFileSync as readFileSync3, readdirSync, unlinkSync } from "node:fs";
-import { join as join5 } from "node:path";
+import { readFileSync as readFileSync4, readdirSync as readdirSync2, unlinkSync as unlinkSync2 } from "node:fs";
+import { join as join7 } from "node:path";
 function stopLocalDaemons(opts) {
-  const dir = join5(opts?.configDir ?? defaultConfigDir(), "agents");
+  const dir = join7(opts?.configDir ?? defaultConfigDir(), "agents");
   const kill = opts?.killImpl ?? process.kill.bind(process);
   let entries;
   try {
-    entries = readdirSync(dir).filter((f) => f.endsWith(".pid"));
+    entries = readdirSync2(dir).filter((f) => f.endsWith(".pid"));
   } catch {
     return [];
   }
   const stopped = [];
   for (const f of entries) {
-    const p = join5(dir, f);
+    const p = join7(dir, f);
     let pid;
     try {
-      pid = Number.parseInt(readFileSync3(p, "utf8").trim(), 10);
+      pid = Number.parseInt(readFileSync4(p, "utf8").trim(), 10);
     } catch {
       continue;
     }
@@ -4939,7 +5484,7 @@ function stopLocalDaemons(opts) {
     } catch {
     }
     try {
-      unlinkSync(p);
+      unlinkSync2(p);
     } catch {
     }
   }
@@ -4950,7 +5495,7 @@ function stopLocalDaemons(opts) {
 function moveFile(src, dst) {
   if (!existsSync4(src)) return false;
   try {
-    renameSync2(src, dst);
+    renameSync3(src, dst);
     return true;
   } catch {
     try {
@@ -4965,14 +5510,14 @@ function moveFile(src, dst) {
 function migrateLegacyConfig(opts = {}) {
   const legacyDir = opts.legacyDir ?? legacyConfigDir();
   const frameworkDir = opts.frameworkDir ?? defaultConfigDir();
-  const marker = join6(legacyDir, ".migrated");
+  const marker = join8(legacyDir, ".migrated");
   if (existsSync4(marker))
     return { migrated: false, reason: "already-migrated" };
-  const legacyConfig = join6(legacyDir, "config.json");
+  const legacyConfig = join8(legacyDir, "config.json");
   if (!existsSync4(legacyConfig)) {
     return { migrated: false, reason: "no-legacy-config" };
   }
-  const frameworkConfig = join6(frameworkDir, "config.json");
+  const frameworkConfig = join8(frameworkDir, "config.json");
   if (existsSync4(frameworkConfig)) {
     return { migrated: false, reason: "framework-already-configured" };
   }
@@ -4981,19 +5526,19 @@ function migrateLegacyConfig(opts = {}) {
     stop(legacyDir);
   } catch {
   }
-  mkdirSync3(frameworkDir, { recursive: true, mode: 448 });
+  mkdirSync4(frameworkDir, { recursive: true, mode: 448 });
   if (!moveFile(legacyConfig, frameworkConfig)) {
     return { migrated: false, reason: "move-failed" };
   }
-  moveFile(join6(legacyDir, "git-tokens"), join6(frameworkDir, "git-tokens"));
-  const legacyAgents = join6(legacyDir, "agents");
+  moveFile(join8(legacyDir, "git-tokens"), join8(frameworkDir, "git-tokens"));
+  const legacyAgents = join8(legacyDir, "agents");
   if (existsSync4(legacyAgents)) {
     try {
-      renameSync2(legacyAgents, join6(frameworkDir, "agents"));
+      renameSync3(legacyAgents, join8(frameworkDir, "agents"));
     } catch {
     }
   }
-  writeFileSync3(
+  writeFileSync4(
     marker,
     "spellguard: legacy single-slot config migrated into a per-framework dir\n",
     { mode: 384 }
@@ -5018,8 +5563,8 @@ function isPlatformSupported(info) {
 }
 
 // src/lib/plugin-sync.ts
-import { readFileSync as readFileSync4 } from "node:fs";
-import { dirname as dirname4, resolve as resolve2 } from "node:path";
+import { readFileSync as readFileSync5 } from "node:fs";
+import { dirname as dirname4, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 var FRAMEWORK = "claude_code";
 var TIMEOUT_MS = 5e3;
@@ -5027,7 +5572,7 @@ function readPluginVersion() {
   try {
     const here = dirname4(fileURLToPath3(import.meta.url));
     const pkg = JSON.parse(
-      readFileSync4(resolve2(here, "..", "..", "package.json"), "utf8")
+      readFileSync5(resolve3(here, "..", "..", "package.json"), "utf8")
     );
     return pkg.version;
   } catch {
@@ -5046,7 +5591,10 @@ async function syncFrameworkIdentity(options) {
       // The plugin-sync route is authed with Authorization: Bearer
       // (requireAgentBearer), not the X-Spellguard-Agent-* headers.
       auth: "bearer",
-      fetchImpl: (input, init) => fetch(input, { ...init, signal: controller.signal })
+      fetchImpl: (input, init) => (options.fetchImpl ?? fetch)(input, {
+        ...init,
+        signal: controller.signal
+      })
     });
     const { error, response } = await api.POST("/agents/{id}/plugin-sync", {
       params: { path: { id: options.agentId } },
@@ -5065,7 +5613,7 @@ async function syncFrameworkIdentity(options) {
       );
       return;
     }
-    console.log(
+    console.error(
       JSON.stringify({
         event: "plugin_sync.ok",
         agentId: options.agentId
@@ -5102,15 +5650,15 @@ function drainRenderedMessages() {
 }
 
 // src/lib/session-env-identity-heal.ts
-import { readFileSync as readFileSync5, readdirSync as readdirSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname5, join as join7 } from "node:path";
+import { readFileSync as readFileSync6, readdirSync as readdirSync3, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname5, join as join9 } from "node:path";
 function bashQuote2(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 function healOneCapture(file, name, email) {
   let content;
   try {
-    content = readFileSync5(file, "utf-8");
+    content = readFileSync6(file, "utf-8");
   } catch {
     return;
   }
@@ -5124,7 +5672,7 @@ function healOneCapture(file, name, email) {
   );
   if (healed === content) return;
   try {
-    writeFileSync4(file, healed, "utf-8");
+    writeFileSync5(file, healed, "utf-8");
   } catch {
   }
 }
@@ -5132,9 +5680,9 @@ function healSessionEnvIdentity(envFilePath, gitAuthorName, gitAuthorEmail) {
   if (!envFilePath || !gitAuthorName || !gitAuthorEmail) return;
   try {
     const dir = dirname5(envFilePath);
-    for (const entry of readdirSync2(dir)) {
+    for (const entry of readdirSync3(dir)) {
       if (/^sessionstart-hook-.*\.sh$/.test(entry)) {
-        healOneCapture(join7(dir, entry), gitAuthorName, gitAuthorEmail);
+        healOneCapture(join9(dir, entry), gitAuthorName, gitAuthorEmail);
       }
     }
   } catch {
@@ -5142,7 +5690,7 @@ function healSessionEnvIdentity(envFilePath, gitAuthorName, gitAuthorEmail) {
 }
 
 // src/lib/ssh-remote-detect.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 
 // src/lib/git-remote-canonicalizer.ts
 var GITHUB_HOST_ALIASES = /* @__PURE__ */ new Set(["github.com", "ssh.github.com"]);
@@ -5224,7 +5772,7 @@ function detectSshRemoteFromOutput(output) {
 }
 function detectSshRemote(cwd) {
   try {
-    const out = execFileSync2("git", ["remote", "-v"], {
+    const out = execFileSync3("git", ["remote", "-v"], {
       encoding: "utf-8",
       cwd
     });
@@ -5235,7 +5783,7 @@ function detectSshRemote(cwd) {
 }
 function detectSshRemoteAfterRewrite(cwd, repo) {
   try {
-    const out = execFileSync2("git", ["remote", "-v"], {
+    const out = execFileSync3("git", ["remote", "-v"], {
       encoding: "utf-8",
       cwd,
       env: { ...process.env, ...insteadOfGitConfigEnv(repo) }
@@ -5290,17 +5838,31 @@ async function runSessionStart(deps = {}) {
       });
       return { ok: false, reason: "malformed" };
     }
+    if (readResult.reason === "wrong_permissions") {
+      renderMessage({
+        level: "error",
+        message: `Spellguard: ${defaultConfigPath()} has mode ${readResult.foundMode ?? "other than 0600"} and is owned by another user, so it could not be read or repaired. Your agent identity is intact \u2014 fix the owner/mode (\`chown\` it back to you, then \`chmod 600\`) rather than re-running \`/spellguard-setup\`.`
+      });
+      return { ok: false, reason: "wrong_permissions" };
+    }
     renderMessage({
       level: "info",
       message: "Spellguard not configured \u2014 run `/spellguard-setup` to provision a credential."
     });
     return { ok: false, reason: readResult.reason ?? "missing" };
   }
+  if (readResult.permissionsHealed) {
+    renderMessage({
+      level: "warn",
+      message: `Spellguard: ${defaultConfigPath()} had unsafe permissions; Spellguard restored mode 0600 automatically.`
+    });
+  }
   if (readResult.config.agentId && readResult.config.spellguardBaseUrl && readResult.config.agentSecret) {
     void syncFrameworkIdentity({
       agentId: readResult.config.agentId,
       managementUrl: readResult.config.spellguardBaseUrl,
-      agentSecret: readResult.config.agentSecret
+      agentSecret: readResult.config.agentSecret,
+      fetchImpl: deps.fetchImpl
     });
   }
   const cwd = deps.cwd ?? process.cwd();
@@ -5329,8 +5891,9 @@ async function runSessionStart(deps = {}) {
       message: `Spellguard: SSH GitHub remote detected (${sshResult.sshRemoteUrl ?? "unknown"}); transparently rewriting it to HTTPS for this session so the Spellguard credential is used. Your stored git remote is unchanged.`
     });
   }
+  const managed = (deps.isManagedBox ?? isManagedBox)();
   const envFilePath = deps.claudeEnvFile ?? process.env.CLAUDE_ENV_FILE;
-  if (!envFilePath) {
+  if (!managed && !envFilePath) {
     renderMessage({
       level: "error",
       message: "Spellguard: CLAUDE_ENV_FILE environment variable not set; cannot inject git credential helper."
@@ -5340,9 +5903,10 @@ async function runSessionStart(deps = {}) {
   const configDir = deps.configDir ?? defaultConfigDir();
   const ghConfigDir = ghConfigDirPath(configDir, readResult.config.agentId);
   const writeEnvFile = () => {
+    if (managed) return;
     if (deps.writeEnvFileImpl) {
       deps.writeEnvFileImpl();
-    } else {
+    } else if (envFilePath) {
       writeGitConfigEnv({
         envFilePath,
         gitAuthorName: readResult.config?.gitAuthorName,
@@ -5355,14 +5919,21 @@ async function runSessionStart(deps = {}) {
   };
   writeEnvFile();
   if (readResult.config.revoked) {
+    const daemonResult2 = managed ? { daemon: "skipped", reason: "managed_box" } : ensureCredentialDaemonRunning({
+      config: readResult.config,
+      cwd,
+      envFilePath,
+      spawnDaemon: deps.spawnDaemon,
+      configDir: deps.configDir
+    });
     renderMessage({
       level: "error",
-      message: readResult.config.revokedMessage ? `Spellguard: ${readResult.config.revokedMessage}` : "Spellguard: this credential has been revoked. Run `/spellguard-setup` to provision a new one."
+      message: readResult.config.revokedMessage ? `Spellguard: ${readResult.config.revokedMessage}` : "Spellguard: this credential has been revoked. Spellguard is waiting for a replacement credential; if git stays blocked, run `spellguard doctor --repair` (non-destructive) before re-running `/spellguard-setup`."
     });
-    return { ok: false, reason: "revoked" };
+    return { ok: false, reason: "revoked", daemonResult: daemonResult2 };
   }
   if (!readResult.config.scopedTokenId || !readResult.config.scopedToken || !readResult.config.expiresAt || !readResult.config.scopeSummary) {
-    const daemonResult2 = ensureCredentialDaemonRunning({
+    const daemonResult2 = managed ? { daemon: "skipped", reason: "managed_box" } : ensureCredentialDaemonRunning({
       config: readResult.config,
       cwd,
       envFilePath,
@@ -5388,13 +5959,20 @@ async function runSessionStart(deps = {}) {
     agentSecret,
     fetchImpl
   });
-  const { data, error, response } = await api.GET(
-    "/credentials/github/status",
-    {
+  let statusResult;
+  try {
+    statusResult = await api.GET("/credentials/github/status", {
       params: { query: { scoped_token_id: scopedTokenId } },
       headers: scopedTokenForProbe ? { "X-Spellguard-Scoped-Token": scopedTokenForProbe } : void 0
-    }
-  );
+    });
+  } catch {
+    renderMessage({
+      level: "error",
+      message: "Spellguard: could not verify your credential with the server (network error). This is usually transient \u2014 check your connection and restart the session. If it persists, run `/spellguard-setup`."
+    });
+    return { ok: false, reason: "status_failed" };
+  }
+  const { data, error, response } = statusResult;
   if (error) {
     const httpStatus = response?.status;
     const needsReconnect = isAgentGoneStatus(httpStatus);
@@ -5427,7 +6005,7 @@ async function runSessionStart(deps = {}) {
       message: "Spellguard: credential approaching expiry; daemon will refresh in background."
     });
   }
-  const daemonResult = ensureCredentialDaemonRunning({
+  const daemonResult = managed ? { daemon: "skipped", reason: "managed_box" } : ensureCredentialDaemonRunning({
     config: activeConfig,
     cwd,
     envFilePath,
@@ -5446,22 +6024,24 @@ async function runSessionStart(deps = {}) {
     }
     activeConfig = fresh;
   }
-  if (deps.writeEnvFileImpl) {
-    deps.writeEnvFileImpl();
-  } else {
-    writeGitConfigEnv({
-      envFilePath,
-      gitAuthorName: activeConfig.gitAuthorName,
-      gitAuthorEmail: activeConfig.gitAuthorEmail,
-      ghConfigDir,
-      helperPath: ensureStableHelper(configDir),
-      sshRewriteRepo
-    });
-    healSessionEnvIdentity(
-      envFilePath,
-      activeConfig.gitAuthorName,
-      activeConfig.gitAuthorEmail
-    );
+  if (!managed) {
+    if (deps.writeEnvFileImpl) {
+      deps.writeEnvFileImpl();
+    } else if (envFilePath) {
+      writeGitConfigEnv({
+        envFilePath,
+        gitAuthorName: activeConfig.gitAuthorName,
+        gitAuthorEmail: activeConfig.gitAuthorEmail,
+        ghConfigDir,
+        helperPath: ensureStableHelper(configDir),
+        sshRewriteRepo
+      });
+      healSessionEnvIdentity(
+        envFilePath,
+        activeConfig.gitAuthorName,
+        activeConfig.gitAuthorEmail
+      );
+    }
   }
   const minutesLeft = Math.max(
     0,
@@ -5469,16 +6049,17 @@ async function runSessionStart(deps = {}) {
       (new Date(activeConfig.expiresAt).getTime() - Date.now()) / 6e4
     )
   );
+  const scopeText = activeConfig.scopeSummary.mode === "all" ? `scope=${describeGithubCredentialScope(activeConfig.scopeSummary)}` : `repos=${activeConfig.scopeSummary.repos.length}`;
   renderMessage({
     level: "info",
-    message: `Spellguard: agent credentials injected \u2014 agent=${activeConfig.agentId}, repos=${activeConfig.scopeSummary.repos.length}, expires in ${minutesLeft} minutes`
+    message: `Spellguard: agent credentials injected \u2014 agent=${activeConfig.agentId}, ${scopeText}, expires in ${minutesLeft} minutes`
   });
   return { ok: true, daemonResult };
 }
 async function defaultPollForFreshCredential(initialExpiresAt, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   const initialTs = new Date(initialExpiresAt).getTime();
-  const delay = (ms) => new Promise((resolve3) => setTimeout(resolve3, ms));
+  const delay = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
   while (Date.now() < deadline) {
     await delay(500);
     const result = readConfig();
@@ -5508,8 +6089,10 @@ function sessionStartAdditionalContext(messages) {
 async function main() {
   let stdin = "";
   for await (const chunk of process.stdin) stdin += chunk;
+  const sessionCapture = captureSessionStart(stdin, "claude_code");
   try {
     await runSessionStart();
+    await sessionCapture;
     const additionalContext = sessionStartAdditionalContext(
       drainRenderedMessages()
     );

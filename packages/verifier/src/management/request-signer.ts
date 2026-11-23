@@ -3,52 +3,75 @@
 /**
  * Verifier Request Signer
  *
- * Signs outgoing requests to the management server using the Verifier's
- * ephemeral Ed25519 session key. Management verifies these signatures
- * against the public key the Verifier registered during boot.
+ * Signs every outgoing request to the management server with the Verifier's
+ * `@spellguard/ctls` session key: the key it registers, that management
+ * challenges and attests (#1259), and that management verifies these
+ * signatures against (#1344). The signature binds the method, the path and
+ * query, and the body, so it authorises exactly one request.
  *
- * In mock mode (VERIFIER_MOCK_MODE=true), signatures are still generated
- * but management skips attestation verification during registration.
+ * There is deliberately no unsigned fallback: management refuses unsigned
+ * Verifier requests in every deployed environment, and a request made before
+ * the session keys exist is a bug to surface, not to paper over.
  */
 
-import { getSessionPublicKey, signWithSessionKey } from '../crypto/ephemeral';
+import {
+  VERIFIER_REQUEST_SIGNATURE_HEADER,
+  getSessionPublicKey,
+  signVerifierRequest,
+  signWithSessionKey,
+} from '@spellguard/ctls';
 
 /**
  * Build authenticated headers for a Verifier → management request.
  *
- * Signs the payload `timestamp|body` with the Verifier's Ed25519 session key.
- * For GET requests with no body, pass an empty string.
- *
- * @param body - The serialized request body (or "" for GET requests)
- * @returns Headers with Verifier ID, signature, timestamp, and public key
+ * @param method - The HTTP method the request is sent with
+ * @param url - The full URL the request is sent to
+ * @param body - The serialized request body (or "" when there is none)
  */
 export async function signRequest(
+  method: string,
+  url: string,
   body: string,
 ): Promise<Record<string, string>> {
   const verifierId = process.env.VERIFIER_ID || 'verifier-local-dev';
-  const timestamp = Date.now().toString();
-  const publicKey = getSessionPublicKey();
-
-  // If session keys aren't initialized yet (e.g. unit tests, pre-boot),
-  // fall back to unsigned headers so callers don't crash. Management will
-  // still accept the request if it's in mock/legacy mode.
-  if (!publicKey) {
-    return {
-      'Content-Type': 'application/json',
-      'X-Verifier-Id': verifierId,
-    };
+  if (!getSessionPublicKey()) {
+    throw new Error(
+      'Verifier session keys are not initialised; refusing to send an unsigned management request',
+    );
   }
-
-  // Sign: timestamp|body
-  const dataToSign = `${timestamp}|${body}`;
-  const dataBytes = new TextEncoder().encode(dataToSign);
-  const signature = await signWithSessionKey(dataBytes);
-
+  const target = new URL(url);
+  const signature = await signVerifierRequest({
+    verifierId,
+    method,
+    path: `${target.pathname}${target.search}`,
+    body,
+    sign: signWithSessionKey,
+  });
   return {
     'Content-Type': 'application/json',
     'X-Verifier-Id': verifierId,
-    'X-Verifier-Signature': signature,
-    'X-Verifier-Timestamp': timestamp,
-    'X-Verifier-Public-Key': publicKey,
+    [VERIFIER_REQUEST_SIGNATURE_HEADER]: signature,
   };
+}
+
+/** Header carrying the shared registration secret on self-attested registration (#1142). */
+export const VERIFIER_REGISTRATION_SECRET_HEADER =
+  'X-Spellguard-Verifier-Registration-Secret';
+
+/**
+ * Headers for `POST /v1/internal/verifiers/register`: the signed headers
+ * (which prove possession of the key the body registers) plus, when
+ * configured, the shared `VERIFIER_REGISTRATION_SECRET`. Management refuses a
+ * self-attested registration without it outside local (#1142).
+ */
+export async function signRegistrationRequest(
+  url: string,
+  body: string,
+  registrationSecret: string | undefined,
+): Promise<Record<string, string>> {
+  const headers = await signRequest('POST', url, body);
+  if (registrationSecret) {
+    headers[VERIFIER_REGISTRATION_SECRET_HEADER] = registrationSecret;
+  }
+  return headers;
 }

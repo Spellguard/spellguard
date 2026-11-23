@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import {
@@ -10,6 +10,8 @@ import {
   type CredentialDeliveredFrame,
   type CredentialDescriptor,
   type GithubCredentialDescriptor,
+  describeGithubCredentialScope,
+  isManagedBox,
 } from '@spellguard/agent-control';
 import {
   type SpellguardConfig,
@@ -72,6 +74,10 @@ export async function pollChannelToken(
   orgId: string;
   agentName: string;
   reason?: string;
+  /** C9: on a select-existing reattach, the bound EXISTING agent's UUID —
+   *  the id the channel MUST be opened with (the lobby's attach-upgrade
+   *  rejects a URL/bound id mismatch with a 401). Absent on create-new. */
+  agentId?: string;
 }> {
   const pollIntervalMs = opts.pollIntervalMs ?? 2000;
   const maxAttempts = opts.maxAttempts ?? 300; // ~10 minutes at 2 s
@@ -89,6 +95,7 @@ export async function pollChannelToken(
         orgId?: string;
         agentName?: string;
         reason?: string;
+        agentId?: string;
       };
       // Require orgId — the server always returns it. Without it the
       // lobby's ?orgId= validation fails 403 before bootstrap_request lands.
@@ -99,6 +106,7 @@ export async function pollChannelToken(
           orgId: body.orgId,
           agentName: body.agentName,
           reason: body.reason,
+          agentId: body.agentId,
         };
       }
       // Successful response without required fields — treat as transient,
@@ -397,12 +405,26 @@ export interface SetupArgs {
    * Test seam — forwarded to `ensureCredentialDaemonRunning`. Production
    * callers leave this undefined (detached `child_process.spawn` + unref).
    */
-  spawnDaemon?: (execPath: string, args: string[], opts: SpawnOptions) => void;
+  spawnDaemon?: (
+    execPath: string,
+    args: string[],
+    opts: SpawnOptions,
+  ) => ChildProcess | undefined;
   /**
    * Test seam — PID-file directory for the daemon spawn. Defaults to the
    * real config dir.
    */
   daemonConfigDir?: string;
+  /**
+   * Stage 4 Gap B gate — positive managed-mode detection. Defaults to the real
+   * R3-1 marker reader (`isManagedBox()` from `@spellguard/agent-control`).
+   * TRUE ⇒ a genuinely Spellguard-provisioned managed box, where the Go
+   * box-daemon owns the agent-control socket + credential placement, so setup
+   * must NOT spawn the per-session Node credential daemon (two daemons contend
+   * on the DO's single socket). Injected so tests can pin a value without
+   * touching the real `~/.config/spellguard`.
+   */
+  isManagedBox?: () => boolean;
   /**
    * How long to wait (ms) for the GitHub credential to land on disk after
    * the daemon is started. The dashboard wizard's "Connect GitHub" step
@@ -501,7 +523,9 @@ export async function runSpellguardSetup(
         lines.push(`  expires_at=${existing.config.expiresAt}`);
       }
       if (existing.config.scopeSummary) {
-        lines.push(`  repos=${existing.config.scopeSummary.repos.join(', ')}`);
+        lines.push(
+          `  scope=${describeGithubCredentialScope(existing.config.scopeSummary)}`,
+        );
       } else {
         lines.push(
           '  github=not connected (complete the dashboard GitHub-App install to grant repo access)',
@@ -572,7 +596,10 @@ export async function runSpellguardSetup(
   // Re-authorize re-binds the stored UUID (I2); the probe above guarantees
   // a deleted agent's UUID is never re-bound (probe-gone skips the menu and
   // `reuseAgentId` stays unset).
-  const agentId = args.agentIdOverride ?? reuseAgentId ?? crypto.randomUUID();
+  // For create-new this is the id end-to-end; for a select-existing reattach
+  // the poll below overrides it with the bound EXISTING agent id (C9) before
+  // the channel opens, since the lobby's attach-upgrade keys on that id.
+  let agentId = args.agentIdOverride ?? reuseAgentId ?? crypto.randomUUID();
 
   const nonce = generateNonce();
   // P2-T7 / D17: record this plugin's initiating framework on the nonce so the
@@ -611,6 +638,7 @@ export async function runSpellguardSetup(
   let orgId: string;
   let agentName: string;
   let statementOfReason: string | undefined;
+  let isReattach = false;
   try {
     // userId is returned by the poll but not needed by AgentControlClient —
     // the ct + orgId query params carry the authenticated identity.
@@ -625,6 +653,14 @@ export async function runSpellguardSetup(
     orgId = polled.orgId;
     agentName = polled.agentName;
     statementOfReason = polled.reason;
+    // C9: a select-existing reattach binds the nonce to an EXISTING agent; the
+    // poll returns that agent's id. Open the agent-control channel with THAT id
+    // (the lobby's attach-upgrade rejects a URL/bound id mismatch with a 401),
+    // overriding the locally-generated UUID. Absent for create-new bootstraps.
+    if (polled.agentId) {
+      agentId = polled.agentId;
+      isReattach = true;
+    }
   } catch (e) {
     clearInterval(interval);
     renderMessage({
@@ -647,6 +683,7 @@ export async function runSpellguardSetup(
     agentName,
     statementOfReason,
     WebSocketImpl: args.WebSocketImpl,
+    expectReBootstrap: isReattach,
   });
 
   clearInterval(interval);
@@ -740,11 +777,20 @@ export async function runSpellguardSetup(
   // else can start a daemon before the user's next session, and the GitHub
   // credential the dashboard pushes right after this flow would sit queued
   // server-side with no consumer (2026-06-11 incident).
-  const daemonResult = ensureCredentialDaemonRunning({
-    config: writtenConfig,
-    spawnDaemon: args.spawnDaemon,
-    configDir: args.daemonConfigDir,
-  });
+  // Stage 4 Gap B: on a genuinely MANAGED box the Go box-daemon owns the
+  // agent-control socket + credential placement, so setup must NOT spawn the
+  // per-session Node credential daemon (two daemons contend on the DO's single
+  // socket). Consistent with the session-start standdown: the managed
+  // provisioning path runs the managed-bootstrap dispatcher, not this browser
+  // flow, but we gate here too so no setup surface self-spawns on managed.
+  const managed = (args.isManagedBox ?? isManagedBox)();
+  const daemonResult: DaemonResult = managed
+    ? { daemon: 'skipped', reason: 'managed_box' }
+    : await ensureCredentialDaemonRunning({
+        config: writtenConfig,
+        spawnDaemon: args.spawnDaemon,
+        configDir: args.daemonConfigDir,
+      });
 
   // Ensure the local code-attribution store has a usable SQLite backend.
   // On a marketplace install (bare clone of the committed dist/, no
@@ -778,12 +824,28 @@ export async function runSpellguardSetup(
   // New-protocol path: identity is written but no provider credential yet.
   // The operator wires GitHub via the dashboard's Connect step; the daemon
   // we just started writes the credential to disk the moment it arrives.
-  const daemonLine =
-    daemonResult.daemon === 'spawned'
-      ? '  The credential daemon is now running and listening for it.'
-      : daemonResult.daemon === 'already-running'
-        ? `  The credential daemon is already running (pid ${daemonResult.pid}) and listening for it.`
-        : `  WARNING: the credential daemon could not be started (${daemonResult.reason}); restart your Codex session so the session-start hook can start it.`;
+  const daemonLine = (() => {
+    switch (daemonResult.daemon) {
+      case 'spawned':
+        return '  The credential daemon is running and listening for it.';
+      case 'restarted':
+        return `  Spellguard replaced an obsolete or unhealthy credential daemon. The new daemon is running (pid ${daemonResult.pid}).`;
+      case 'already-running':
+        return `  The credential daemon is already running (pid ${daemonResult.pid}) and listening for it.`;
+      case 'starting':
+        return `  The credential daemon is starting (pid ${daemonResult.pid}); credential delivery is pending.`;
+      case 'skipped':
+        return daemonResult.reason === 'managed_box'
+          ? '  The managed-box daemon owns credential delivery on this machine.'
+          : `  Credential-daemon startup was skipped (${daemonResult.reason}).`;
+      case 'unavailable':
+        return `  WARNING: the credential daemon is unavailable (${daemonResult.reason}). Inspect the daemon log before requesting a new credential.`;
+      default: {
+        const exhaustive: never = daemonResult;
+        return exhaustive;
+      }
+    }
+  })();
   renderMessage({
     level: 'info',
     message: [
@@ -800,7 +862,12 @@ export async function runSpellguardSetup(
   // isn't running (nothing can deliver) or when disabled via args.
   const waitMs = args.credentialWaitMs ?? DEFAULT_CREDENTIAL_WAIT_MS;
   let delivered: SpellguardConfig | null = null;
-  if (daemonResult.daemon !== 'skipped' && waitMs > 0) {
+  if (
+    (daemonResult.daemon === 'spawned' ||
+      daemonResult.daemon === 'restarted' ||
+      daemonResult.daemon === 'already-running') &&
+    waitMs > 0
+  ) {
     renderMessage({
       level: 'info',
       message: `Spellguard: waiting up to ${Math.round(waitMs / 60_000)} minute(s) for the GitHub credential (Ctrl-C is safe — the daemon keeps listening)…`,
@@ -818,21 +885,23 @@ export async function runSpellguardSetup(
         : '';
     renderMessage({
       level: 'info',
-      message: `Spellguard: GitHub credential received — repos=[${delivered.scopeSummary.repos.join(', ')}].${author}\n  IMPORTANT — restart your Codex session ONCE now so the git + gh credential\n  helpers (wired via ~/.codex/config.toml, which Codex reads only at startup)\n  take effect. After this one restart, token rotation needs no restart.`,
+      message: `Spellguard: GitHub credential received — scope=${describeGithubCredentialScope(delivered.scopeSummary)}.${author}\n  IMPORTANT — restart your Codex session ONCE now so the git + gh credential\n  helpers (wired via ~/.codex/config.toml, which Codex reads only at startup)\n  take effect. After this one restart, token rotation needs no restart.`,
     });
     return { ok: true, daemon: daemonResult, githubCredential: 'delivered' };
   }
 
   renderMessage({
-    level: 'info',
-    message: [
-      'Spellguard: GitHub credential not delivered yet — that is fine. The',
-      '  daemon keeps listening and writes it to your local config the moment',
-      '  the dashboard GitHub-App install completes. Once it lands, restart your',
-      '  Codex session ONCE so the git + gh helpers (wired via ~/.codex/config.toml,',
-      '  read only at startup) take effect. Re-run @spellguard-setup any time to',
-      '  check status.',
-    ].join('\n'),
+    level: daemonResult.daemon === 'unavailable' ? 'warn' : 'info',
+    message:
+      daemonResult.daemon === 'unavailable'
+        ? `Spellguard: GitHub credential is still missing because the credential daemon is unavailable (${daemonResult.reason}). Inspect the daemon log and installed plugin version before requesting a new credential.`
+        : [
+            'Spellguard: GitHub credential not delivered yet. The daemon keeps',
+            '  listening and writes it to your local config when the dashboard',
+            '  GitHub App install completes. Once it lands, restart your Codex',
+            '  session once so Codex reads the git and gh helper settings from',
+            '  ~/.codex/config.toml. Re-run @spellguard-setup to check status.',
+          ].join('\n'),
   });
   return { ok: true, daemon: daemonResult, githubCredential: 'pending' };
 }
@@ -965,6 +1034,9 @@ async function awaitBootstrapViaClient(opts: {
   agentName?: string;
   /** Optional reason collected from the dashboard Setup form. */
   statementOfReason?: string;
+  /** C10: select-existing reattach — the server auto-delivers re_bootstrap;
+   *  the client must not send (and get rejected on) a bootstrap_request. */
+  expectReBootstrap?: boolean;
   WebSocketImpl?: AgentControlClientOptions['WebSocketImpl'];
   timeoutMs?: number;
 }): Promise<BootstrapClientResult> {
@@ -1011,6 +1083,9 @@ async function awaitBootstrapViaClient(opts: {
         // the server's hardcoded default; plugin-sync reconciles to the same
         // canonical value on startup.
         framework: FRAMEWORK,
+        // C10: on a select-existing reattach the server auto-delivers
+        // re_bootstrap — do not send (and get rejected on) a bootstrap_request.
+        ...(opts.expectReBootstrap ? { expectReBootstrap: true } : {}),
       }),
       onCredentialDelivered: (frame) => {
         // CXq-H2 (FIX C): complete setup on BOTH a first-run bootstrap AND a

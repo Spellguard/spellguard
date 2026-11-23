@@ -41,6 +41,19 @@ export interface SessionStartDeps {
      */
     configDir?: string;
     /**
+     * R3-4/R3-6: positive managed-mode gate. Defaults to the real R3-1 marker
+     * reader (`isManagedBox()` from `@spellguard/agent-control`, which reads the
+     * SHARED root's `.managed` file). TRUE ⇒ the box is a genuinely
+     * Spellguard-provisioned managed box and the GLOBAL placement is
+     * authoritative, so the per-session SCOPED credential injection stands down
+     * (double-writing a scoped helper alongside the global one conflicts). FALSE
+     * (the default everywhere — absent OR corrupt marker) ⇒ the scoped +
+     * fail-closed path. The SOLE signal is the marker file, NEVER ambient env
+     * (NEG-7). Injected so tests can pin a temp root (`() => isManagedBox(root)`)
+     * and never touch the real `~/.config/spellguard`.
+     */
+    isManagedBox?: () => boolean;
+    /**
      * Poll the local config file until it shows an `expiresAt` value newer than
      * `initialExpiresAt`, or until `timeoutMs` elapses.
      *

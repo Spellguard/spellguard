@@ -9,4 +9,5 @@ export declare function syncFrameworkIdentity(options: {
     agentId: string;
     managementUrl: string;
     agentSecret: string;
+    fetchImpl?: typeof fetch;
 }): Promise<void>;

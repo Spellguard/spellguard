@@ -1,0 +1,54 @@
+{
+  "bucket": "spellguard-audit-checkpoints-test",
+  "versions": [
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000001.json",
+      "version_id": "v1-a",
+      "last_modified": "2026-11-10T00:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T01:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":1,\"previous_sha256\":null,\"written_at\":\"2026-11-10T00:17:00.000Z\",\"kind\":\"records\",\"leaves\":[{\"id\":\"00000000-0000-4000-8000-000000001001\",\"sha256\":\"e98df178f94a6d6f0e52027a8af6c1e1e194bf25576e9bcb446c857b23b945a0\"},{\"id\":\"00000000-0000-4000-8000-000000001002\",\"sha256\":\"fcefe9f3e4c808dbb028b8a649241dadc9c653cef372256f76d9c6912cdaaaa1\"},{\"id\":\"00000000-0000-4000-8000-000000001003\",\"sha256\":\"0396c471fda6365dc06830bff29831dfb9e26c338eb8f379c2aa52dddf6d9e1f\"},{\"id\":\"00000000-0000-4000-8000-000000001004\",\"sha256\":\"b8b2641e07becd505ce8924ffe6fe0844090fa8534dbc3975ff34851dfab0073\"},{\"id\":\"00000000-0000-4000-8000-000000001005\",\"sha256\":\"c8c1f38a081023f11dd07a95da093542d76ba02ba9802b2aa9057c892b375169\"},{\"id\":\"00000000-0000-4000-8000-000000001006\",\"sha256\":\"7885310ae78d1d9a3b287db81980e0654f819f8aa8848d94e4cd11c229f1db1e\"}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000002.json",
+      "version_id": "v2-a",
+      "last_modified": "2026-11-10T01:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T02:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":2,\"previous_sha256\":\"5bb2f49f37fd48443be8664bc21352853728a373bffd97f64575d2634bee38f1\",\"written_at\":\"2026-11-10T01:17:00.000Z\",\"kind\":\"records\",\"leaves\":[{\"id\":\"00000000-0000-4000-8000-000000001007\",\"sha256\":\"525acb0ae8aed803250419b90ce03c25cd48c7fc9a77ced7e3af8a05f8fe65d0\"},{\"id\":\"00000000-0000-4000-8000-000000001008\",\"sha256\":\"4bcd2d4ea5ded0ba4474eb3a954196ded10690673263dd0d7630fe00e37ebb55\"},{\"id\":\"00000000-0000-4000-8000-000000001009\",\"sha256\":\"6f33ef8fc067c57fce0f327e3676d0a28e1eb12ed0b01e62c247579ee55e2590\"},{\"id\":\"00000000-0000-4000-8000-00000000100a\",\"sha256\":\"0fe5f35db3e7f36cbf2e00e4a86dcac1d4b1d4b11dae6eb35705464ddaee2541\"}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000003.json",
+      "version_id": "v3-a",
+      "last_modified": "2026-11-10T02:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T03:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":3,\"previous_sha256\":\"d910a531f887ac7fdb941c54c3a3bdc91cdcc5230f899a7e71bc2f89114a7687\",\"written_at\":\"2026-11-10T02:17:00.000Z\",\"kind\":\"disposal\",\"reason\":\"retention\",\"retention_days\":30,\"leaves\":[{\"id\":\"00000000-0000-4000-8000-000000001002\",\"sha256\":\"fcefe9f3e4c808dbb028b8a649241dadc9c653cef372256f76d9c6912cdaaaa1\",\"checkpoint_seq\":1},{\"id\":\"00000000-0000-4000-8000-000000001003\",\"sha256\":\"0396c471fda6365dc06830bff29831dfb9e26c338eb8f379c2aa52dddf6d9e1f\",\"checkpoint_seq\":1}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000004.json",
+      "version_id": "v4-a",
+      "last_modified": "2026-11-10T03:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T04:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":4,\"previous_sha256\":\"4e44cf13d24ec7db2209c27f403b6cc679c994ded951b68e70c5472bf13fe8db\",\"written_at\":\"2026-11-10T03:17:00.000Z\",\"kind\":\"heartbeat\",\"leaves\":[]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000005.json",
+      "version_id": "v5-a",
+      "last_modified": "2026-11-10T04:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T05:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":5,\"previous_sha256\":\"f6f6d0909a5d453958a2c8ef6ba8eaa0d78bca563c119d830f8f6ce4ae21b8ee\",\"written_at\":\"2026-11-10T04:17:00.000Z\",\"kind\":\"records\",\"leaves\":[{\"id\":\"00000000-0000-4000-8000-00000000100b\",\"sha256\":\"778761471882b2f32feeab7c75ca7d14defd0830b688e5147a454bf2cdbc3298\"},{\"id\":\"00000000-0000-4000-8000-00000000100c\",\"sha256\":\"c96d243b8058e1eb9f51bc81bae528090819ece51377f264b371db0ba0c5dcae\"}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/keys/0d9073359ae9f4da.json",
+      "version_id": "k1-a",
+      "last_modified": "2026-11-09T22:17:00.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2027-12-14T22:17:00.000Z",
+      "body": "{\"format\":1,\"kind\":\"verifier-audit-key\",\"algorithm\":\"ed25519\",\"key_id\":\"0d9073359ae9f4da\",\"public_key\":\"e0c0173ae9228bb8d26818e74eb2efc60d678c307852d3e388ec43854e45aa3b\"}\n"
+    }
+  ],
+  "delete_markers": []
+}

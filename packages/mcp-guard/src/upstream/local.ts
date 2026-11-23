@@ -2,37 +2,48 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Upstream } from '../types';
+import { VERSION } from '../version';
+import { listAllTools } from './list-tools';
 
+/**
+ * A local stdio MCP server the guard starts and talks to. It gets the
+ * environment the caller built (`buildChildEnv`), never the guard's own.
+ */
 export class LocalUpstream implements Upstream {
   private client: Client | null = null;
-  private transport: StdioClientTransport | null = null;
+  private closing = false;
+  onClose?: () => void;
 
-  constructor(private command: string) {}
+  constructor(
+    private command: string,
+    private args: string[],
+    private env: Record<string, string>,
+  ) {}
 
   async connect(): Promise<void> {
-    // Parse command string into command + args
-    const parts = this.command.split(/\s+/);
-    const cmd = parts[0];
-    const args = parts.slice(1);
-
-    this.transport = new StdioClientTransport({
-      command: cmd,
-      args,
-      env: { ...process.env } as Record<string, string>,
+    const transport = new StdioClientTransport({
+      command: this.command,
+      args: this.args,
+      env: this.env,
     });
-
-    this.client = new Client({
+    const client = new Client({
       name: 'spellguard-mcp-guard',
-      version: '0.1.0',
+      version: VERSION,
     });
-    await this.client.connect(this.transport);
+    // The wrapped server exited (or closed its stdio) on its own: the guard
+    // has nothing left to guard, so its owner should stop too.
+    client.onclose = () => {
+      if (!this.closing) this.onClose?.();
+    };
+    await client.connect(transport);
+    this.client = client;
   }
 
-  async toolsList(): Promise<unknown> {
+  async toolsList(): Promise<Tool[]> {
     if (!this.client) throw new Error('Not connected');
-    const result = await this.client.listTools();
-    return result.tools;
+    return listAllTools(this.client);
   }
 
   async toolsCall(
@@ -40,15 +51,15 @@ export class LocalUpstream implements Upstream {
     args: Record<string, unknown>,
   ): Promise<unknown> {
     if (!this.client) throw new Error('Not connected');
-    const result = await this.client.callTool({ name, arguments: args });
-    return result;
+    return this.client.callTool({ name, arguments: args });
   }
 
   async close(): Promise<void> {
-    if (this.client) {
-      await this.client.close();
-      this.client = null;
-    }
-    this.transport = null;
+    this.closing = true;
+    const client = this.client;
+    this.client = null;
+    // Closing the transport ends the child: stdin closed, then SIGTERM, then
+    // SIGKILL (the SDK waits 2 s between steps).
+    await client?.close();
   }
 }

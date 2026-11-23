@@ -8,11 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cpu \
-    --extra-index-url https://pypi.org/simple \
-    torch==2.6.0 \
- && pip install --no-cache-dir -r requirements.txt
+# Install everything (incl. torch) from PyPI so pip resolves the correct
+# platform wheel — manylinux x86_64 on Intel/CI, manylinux aarch64 on Apple
+# Silicon. The previous --index-url whl/cpu pin only served x86_64 reliably
+# and produced an unimportable torch under arm64, crashing the pipeline import.
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 

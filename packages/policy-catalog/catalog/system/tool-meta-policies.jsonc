@@ -1,17 +1,22 @@
+// Cross-tool meta policies — scoped `tools` ON PURPOSE (see
+// tool-database-policies.jsonc for the full rationale). `output-size-limit` is the
+// starkest case: an LLM prompt is legitimately far larger than a tool result, so an
+// unscoped size cap with effect `block` fires on ordinary inference traffic.
 {
   "policies": [
     {
       "slug": "output-size-limit-baseline",
       "name": "Tool Output Size Limit",
-      "description": "Caps oversized tool outputs to reduce context flooding and token-budget abuse",
+      "description": "Flags oversized tool outputs for review without blocking legitimate large reads",
       "type": "output-size-limit",
       "level": "system",
       "severity": "low",
       "failBehavior": "block",
       "config": {},
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
-        "effect": "block",
+        "effect": "flag",
         "priority": 80
       },
       "provenance": {
@@ -32,6 +37,7 @@
         "windowSeconds": 60
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 90

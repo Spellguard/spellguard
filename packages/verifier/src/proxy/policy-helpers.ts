@@ -12,7 +12,24 @@ import { safeRegex } from './builtin-engine';
 import { resolveResponseLevel } from './effect-handlers';
 import type { ResponseLevel } from './effect-handlers';
 import type { PolicyCheckResult } from './policy-evaluator';
+import type { PolicyType } from './policy-evaluator-types';
 import { redact } from './redactor';
+
+/**
+ * Policy types whose verdict depends on earlier traffic, not on the text
+ * alone. Re-running one on another piece of the same leg (a content part, an
+ * attachment's text) would count the re-run as more traffic (rate and loop
+ * limits), or judge the piece without the history that decided it (the
+ * sequence policies).
+ */
+export const STATEFUL_POLICY_TYPES: ReadonlySet<PolicyType> =
+  new Set<PolicyType>([
+    'loop',
+    'invocation-rate-limit',
+    'sequence-gate',
+    'data-flow-taint',
+    'flow-exfiltration',
+  ]);
 
 /**
  * Compile an array of user-supplied regex strings, silently dropping any that
@@ -88,4 +105,57 @@ export function applyRedaction(
   }
 
   return result.content;
+}
+
+/**
+ * Disposition of a reply (response) leg — whether the response must be WITHHELD
+ * from the requester. The symmetric counterpart to the request-leg block.
+ */
+export interface ResponseDisposition {
+  /** true → the response content must NOT be handed back to the requester. */
+  blocked: boolean;
+  /** Level resolved across BOTH response-leg check sets; drives the HTTP status. */
+  responseLevel: ResponseLevel;
+  /** Which side's binding denied — only set when blocked. */
+  blockedBy?: 'inbound' | 'recipient-outbound';
+  /** Name of the denying policy — only set when blocked. */
+  policyName?: string;
+}
+
+/**
+ * Decide whether a bilateral response must be withheld from the requester.
+ *
+ * A response is blocked when ANY check — on either the recipient's outbound
+ * bindings (applied to the reply it sends) or the requester's inbound bindings
+ * (applied to the reply it receives) — resolved to a deny-family decision
+ * (`block` / `quarantine` / `rate_limit`, all of which map to `decision: 'deny'`
+ * in effect-handlers). `redact`, `flag` and `allow` never withhold: redact-level
+ * spans are stripped in place upstream and the (redacted) reply still flows.
+ *
+ * The requester's own inbound binding takes precedence in the surfaced reason —
+ * it is the most actionable for the caller — falling back to the recipient's
+ * outbound binding.
+ */
+export function evaluateResponseDisposition(
+  recipientOutboundChecks: PolicyCheckResult[],
+  senderInboundChecks: PolicyCheckResult[],
+): ResponseDisposition {
+  const responseLevel = deriveResponseLevel([
+    ...recipientOutboundChecks,
+    ...senderInboundChecks,
+  ]);
+  const inboundDeny = senderInboundChecks.find((c) => c.decision === 'deny');
+  const recipientDeny = recipientOutboundChecks.find(
+    (c) => c.decision === 'deny',
+  );
+  const deny = inboundDeny ?? recipientDeny;
+  if (!deny) {
+    return { blocked: false, responseLevel };
+  }
+  return {
+    blocked: true,
+    responseLevel,
+    blockedBy: inboundDeny ? 'inbound' : 'recipient-outbound',
+    policyName: deny.policyName,
+  };
 }

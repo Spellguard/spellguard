@@ -79,6 +79,7 @@ export {
 // ═══════════════════════════════════════════════════════════════════
 
 export {
+  attestationKeySigningString,
   generateAttestationDocument,
   getExpectedImageHash,
   computeImageHash,
@@ -115,4 +116,68 @@ export {
   type SessionKeyData,
 } from './crypto/ephemeral';
 
-export { sign, verify, generateKeyPair } from './crypto/signing';
+export {
+  sign,
+  verify,
+  generateKeyPair,
+  derivePublicKey,
+} from './crypto/signing';
+
+export {
+  type EnvelopeSigner,
+  envelopeKeyId,
+  sha256Hex,
+  signEnvelope,
+  verifyEnvelope,
+} from './crypto/signed-envelope';
+
+// ═══════════════════════════════════════════════════════════════════
+// Signed deliveries (#1244)
+// ═══════════════════════════════════════════════════════════════════
+
+export {
+  DELIVERY_AUTH_HEADERS,
+  DELIVERY_AUTH_MAX_SKEW_MS,
+  DELIVERY_AUTH_SCHEME,
+  DELIVERY_AUTH_VERSION,
+  DeliveryNonceCache,
+  type DeliveryAuthFailure,
+  type DeliveryNonceStore,
+  type DeliveryVerdict,
+  deliveryKeyId,
+  deliverySigningString,
+  signDelivery,
+  verifyDelivery,
+} from './delivery/delivery-auth';
+
+// ═══════════════════════════════════════════════════════════════════
+// Signed verdicts (#1259)
+// ═══════════════════════════════════════════════════════════════════
+
+export {
+  VERDICT_MAX_SKEW_MS,
+  VERDICT_NONCE_HEADER,
+  VERDICT_SIGNATURE_HEADER,
+  VERDICT_SIGNATURE_VERSION,
+  type VerdictFailure,
+  isVerdictNonce,
+  newVerdictNonce,
+  signVerdict,
+  verdictSigningString,
+  verifyVerdict,
+} from './verdict/verdict-signature';
+
+// ═══════════════════════════════════════════════════════════════════
+// Signed Verifier → management requests (#1344)
+// ═══════════════════════════════════════════════════════════════════
+
+export {
+  VERIFIER_REQUEST_MAX_SKEW_MS,
+  VERIFIER_REQUEST_SIGNATURE_HEADER,
+  VERIFIER_REQUEST_SIGNATURE_VERSION,
+  type VerifiedVerifierRequest,
+  type VerifierRequestFailure,
+  signVerifierRequest,
+  verifierRequestSigningString,
+  verifyVerifierRequest,
+} from './verifier-request/request-signature';

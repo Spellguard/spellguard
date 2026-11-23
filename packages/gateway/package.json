@@ -23,9 +23,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.0",
-    "hono": "^4.6.0",
-    "ws": "^8.18.0"
+    "@hono/node-server": "^2.1.6",
+    "hono": "^4.13.16",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -34,7 +34,7 @@
     "typescript": "^5.7.0"
   },
   "optionalDependencies": {
-    "@agntcy/slim-bindings": "2.0.0-alpha.1"
+    "@agntcy/slim-bindings": "2.0.0-alpha.2"
   },
   "license": "MIT"
 }

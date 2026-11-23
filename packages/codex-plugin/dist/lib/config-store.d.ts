@@ -1,3 +1,4 @@
+import type { GithubCredentialScope } from '@spellguard/agent-control';
 /**
  * Phase C: one GitHub credential, keyed by lowercase GitHub org login.
  * The keyed `githubCredentials` map (below) lets a single agent machine hold
@@ -9,11 +10,21 @@ export interface GithubCredentialEntry {
     scopedToken?: string;
     scopedTokenId: string;
     expiresAt: string;
-    scopeSummary?: {
-        repos: string[];
-    };
+    scopeSummary?: GithubCredentialScope;
     installationId?: number;
     revoked?: boolean;
+}
+/**
+ * Durable liveness marker for a recoverable final GitHub revocation.
+ *
+ * The retry schedule itself is process-local and bounded; only the fact that
+ * fresh issuance is still needed crosses daemon restarts (including a restart
+ * performed by `spellguard doctor --repair`). A successful secret-bearing
+ * GitHub delivery removes this marker in the same atomic config write that
+ * installs the replacement credential.
+ */
+export interface GithubReissueMarker {
+    pending: true;
 }
 export interface SpellguardConfig {
     /**
@@ -28,9 +39,7 @@ export interface SpellguardConfig {
     scopedToken?: string;
     scopedTokenId?: string;
     expiresAt?: string;
-    scopeSummary?: {
-        repos: string[];
-    };
+    scopeSummary?: GithubCredentialScope;
     agentId: string;
     /**
      * Agent secret issued at bootstrap (`credential_delivered{cause:'bootstrap'}`).
@@ -79,6 +88,7 @@ export interface SpellguardConfig {
         provider: string;
         scoped_token_id: string;
     }>;
+    githubReissue?: GithubReissueMarker;
     /**
      * Server-pushed provider configuration descriptors, keyed by
      * provider name (e.g. 'github'). Written when the daemon receives a
@@ -105,6 +115,12 @@ export declare function legacyConfigDir(): string;
 export declare function defaultConfigDir(): string;
 export declare function defaultConfigPath(): string;
 /**
+ * Read a protected credential/config artifact without following a final-path
+ * symlink. Generation callers may traverse the intentional `current` pointer,
+ * but the selected state/token file itself must remain a private regular file.
+ */
+export declare function readPrivateConfigFile(path: string): string;
+/**
  * Phase C (decision D13): the daemon-maintained companion file the POSIX-sh
  * git helper reads to select a token by repo-owner — NO JSON parsing in sh.
  * Lives next to config.json, mode 0600, one `<orgLoginLower>\t<token>` line
@@ -128,10 +144,15 @@ export declare function gitTokensPath(dir?: string): string;
  * helper fails closed for unknown/revoked owners and prints its actionable
  * stderr notice instead of presenting the wrong org's credential.
  *
- * When no usable token exists the stale file is removed so a revoked-down-to-
- * zero config never leaves a live token on disk.
+ * When no usable token exists an empty companion is committed. Its presence is
+ * authoritative: the git helper must not fall back to a stale legacy
+ * single-slot config if the following config.json commit is interrupted. A
+ * missing companion still identifies a genuinely legacy install, preserving
+ * the old helper fallback until the first companion write.
  */
-export declare function writeGitTokensFile(config: SpellguardConfig, dir?: string): void;
+export declare function writeGitTokensFile(config: SpellguardConfig, dir?: string, options?: {
+    onlyIfMissing?: boolean;
+}): void;
 export interface ReadConfigResult {
     config: SpellguardConfig | null;
     reason?: 'missing' | 'malformed' | 'wrong_permissions';
@@ -142,10 +163,30 @@ export interface ReadConfigResult {
      * about "vanished" configs (plan Task 2.5, 2026-06-11).
      */
     malformedField?: string;
+    /**
+     * The file's mode had drifted off 0600 and `readConfig` tightened it back in
+     * place before reading (see `healConfigMode`). Callers surface this as a
+     * WARNING — the config was usable, so it must never be reported as "not
+     * configured".
+     */
+    permissionsHealed?: boolean;
+    /**
+     * When `reason === 'wrong_permissions'`: the octal mode actually found, so the
+     * caller can name the real problem instead of guessing.
+     */
+    foundMode?: string;
 }
 export declare function readConfig(path?: string): ReadConfigResult;
-export declare function writeConfig(config: SpellguardConfig, path?: string): void;
-export declare function markConfigRevoked(path?: string): void;
+export declare function writeConfig(config: SpellguardConfig, path?: string, testHooks?: {
+    beforeConfigCommit?: () => void;
+}): void;
+interface TerminalCredentialInvalidationHooks {
+    beforeV5Activation?: () => void;
+    afterV5Activation?: () => void;
+    beforeV5Cleanup?: () => void;
+    afterV5Invalidation?: () => void;
+}
+export declare function markConfigRevoked(path?: string, testHooks?: TerminalCredentialInvalidationHooks): void;
 /**
  * P2-T6 self-wipe: clear THIS agent's on-disk GitHub credential material after
  * the server superseded its secret (close code 4409 — attached elsewhere or
@@ -159,9 +200,19 @@ export declare function markConfigRevoked(path?: string): void;
  * (`agentId`/`agentSecret`/`spellguardBaseUrl`) so the setup command →
  * "select existing agent" can re-attach this machine. `revoked: true` keeps it
  * on the same SessionStart re-surface path as a server-pushed revoke. The
- * companion `git-tokens` file is dropped automatically by `writeConfig` →
- * `writeGitTokensFile` (no usable token remains). No-op when there is no
- * config on disk.
+ * companion `git-tokens` file is replaced with an authoritative empty artifact
+ * by `writeConfig` → `writeGitTokensFile` (no usable token remains). No-op when
+ * there is no config on disk.
  */
-export declare function markConfigSuperseded(message: string, path?: string): void;
-export declare function clearConfig(path?: string): void;
+export declare function markConfigSuperseded(message: string, path?: string, testHooks?: TerminalCredentialInvalidationHooks): void;
+/**
+ * #1348: the agent is quarantined (close 4423, AGENT_SUSPENDED). Drop every
+ * GitHub credential this plugin placed: the V5 authority falls to its empty
+ * generation and `writeConfig` writes an empty `git-tokens`. Keep the identity,
+ * the cursor and the git author, so the daemon keeps reconnecting and a
+ * release resumes where it left off. `revoked` stays false: a suspended agent
+ * is not a dead one. No-op when there is no config on disk.
+ */
+export declare function markConfigSuspended(path?: string, testHooks?: TerminalCredentialInvalidationHooks): void;
+export declare function clearConfig(path?: string, testHooks?: TerminalCredentialInvalidationHooks): void;
+export {};

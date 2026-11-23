@@ -44,6 +44,15 @@ import {
   dispatchObligations,
   reportUnilateralEvent,
 } from '../management/reporter';
+import {
+  a2aHost,
+  externalMessageOutput,
+  judgesOutputs,
+} from '../session/agent-output';
+import { ledgerMessage } from '../session/attachments';
+import { isValidCorrelationId } from '../session/keys';
+import { deniedLabel, recordParts } from '../session/recording';
+import { type SessionServices, openAgentSession } from '../session/runtime';
 import { normalizeAgentUrl } from '../url-normalize';
 import {
   handleQuarantine,
@@ -339,6 +348,8 @@ export async function routeUnilateral(
   options?: {
     outboundPolicy?: OutboundPolicy;
     inboundPolicy?: InboundPolicy;
+    /** The sender's session store and decision model, for agent-conduct. */
+    sessionServices?: SessionServices;
   },
 ): Promise<UnilateralSendResult> {
   // In-flight accounting so the proactive self-recycle never exits mid-delivery.
@@ -356,6 +367,7 @@ async function routeUnilateralImpl(
   options?: {
     outboundPolicy?: OutboundPolicy;
     inboundPolicy?: InboundPolicy;
+    sessionServices?: SessionServices;
   },
 ): Promise<UnilateralSendResult> {
   // Default to a fresh id; overridden post-decryption if the client stamped
@@ -609,23 +621,70 @@ async function routeUnilateralImpl(
     };
   }
 
+  // The send is the sender's own output (internal design notes
+  // §3). Its session opens only for a conversation the sender stamped with a
+  // valid id; the fresh fallback id selects none, so a policy with nothing
+  // to judge against fails on its failBehavior.
+  const sessionServices = options?.sessionServices ?? {};
+  const stamped = isValidCorrelationId(
+    (decryptedPayload as { _spellguardCorrelationId?: unknown } | null)
+      ?._spellguardCorrelationId,
+  )
+    ? correlationId
+    : undefined;
+  const senderSession = senderPolicies
+    ? await openAgentSession(
+        sessionServices,
+        request.sender,
+        stamped,
+        senderPolicies,
+      )
+    : undefined;
   if (senderPolicies) {
-    const checks = await evaluatePolicies(
-      filterByScope(senderPolicies.outbound, 'messages'),
-      outboundPayloadStr,
-      {
-        agentId: request.sender,
-        direction: 'outbound',
-        agentStatus: senderPolicies.agentStatus,
-        identity: senderPolicies.identityContext,
-      },
-    );
+    const bindings = filterByScope(senderPolicies.outbound, 'messages');
+    const output = judgesOutputs(bindings)
+      ? externalMessageOutput(a2aAgentUrl, decryptedPayload)
+      : undefined;
+    const checks = await evaluatePolicies(bindings, outboundPayloadStr, {
+      agentId: request.sender,
+      direction: 'outbound',
+      agentStatus: senderPolicies.agentStatus,
+      identity: senderPolicies.identityContext,
+      ...(output
+        ? {
+            output,
+            decisionModel: sessionServices.decisionModel,
+            ...(stamped ? { correlationId: stamped } : {}),
+            ...(senderSession ? { session: senderSession } : {}),
+          }
+        : {}),
+    });
     outboundPolicyChecks.push(...checks);
   }
 
   const outboundHasDeny = outboundPolicyChecks.some(
     (c) => c.decision === 'deny',
   );
+
+  // The sender's own output, after its verdict; never a source.
+  if (senderSession) {
+    const ledger = ledgerMessage(outboundPayloadStr);
+    const host = a2aHost(a2aAgentUrl);
+    await recordParts(senderSession, [
+      {
+        leg: 'message:outbound',
+        kind: ledger.kind,
+        label: outboundHasDeny ? deniedLabel(host) : host,
+        from: {
+          agentId: request.sender,
+          ...(senderPolicies?.organizationId
+            ? { orgId: senderPolicies.organizationId }
+            : {}),
+        },
+        text: ledger.text,
+      },
+    ]);
+  }
 
   // If outbound policy denies, block the message before it leaves the Verifier
   if (outboundHasDeny) {

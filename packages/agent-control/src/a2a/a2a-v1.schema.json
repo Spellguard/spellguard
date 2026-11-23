@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spellguard.ai/schemas/a2a-v1.schema.json",
+  "title": "A2A v1.0 message/task/part subset (vendored, internal-first)",
+  "description": "Canonical Spellguard copy of the A2A (Agent2Agent) v1.0 protocol object model, trimmed to the message/task/part/artifact subset the Spellguard collaboration plane carries over the existing agent-control WebSocket. This is the single named source the TypeScript, Go, and Python mirrors are validated against.",
+  "$comment": "PROVENANCE — Upstream: github.com/a2aproject/A2A, file specification/a2a.proto (proto package lf.a2a.v1), main @ af112d9491c1fd4b2a568ac65755af4a62790490 (fetched 2026-07-17). The upstream JSON-Schema build artifact (a2a.json / docs/spec/a2a.json) is NOT kept under version control — it is generated from a2a.proto via protoc + protoc-gen-jsonschema — so this schema is hand-derived from the canonical proto and trimmed to the carried subset. JSON field names follow the proto3 lowerCamelCase mapping (message_id -> messageId). Enum values use the A2A v1.0 SCREAMING_SNAKE representation with the proto value prefixes stripped (TASK_STATE_SUBMITTED -> SUBMITTED; ROLE_USER -> USER), per the v1.0 breaking-change facts. NO agent card, JSON-RPC/gRPC binding, or transport frame types are included (internal-first, shapes-only). `additionalProperties: false` closes each A2A object envelope for NEG-009; standard extension interiors (`data` and `metadata`) deliberately remain open and are not content-screened. Kept dependency-free at runtime — the plugins ship hand-rolled guards (validateA2aMessage / validateA2aTask); this file is the reference artifact the test-suite validates example payloads against.",
+  "$defs": {
+    "A2aTaskState": {
+      "title": "A2aTaskState",
+      "description": "The 8 standard A2A v1.0 task lifecycle states (proto TaskState minus TASK_STATE_UNSPECIFIED, value prefix stripped).",
+      "type": "string",
+      "enum": [
+        "SUBMITTED",
+        "WORKING",
+        "INPUT_REQUIRED",
+        "COMPLETED",
+        "CANCELED",
+        "FAILED",
+        "REJECTED",
+        "AUTH_REQUIRED"
+      ]
+    },
+    "A2aRole": {
+      "title": "A2aRole",
+      "description": "Sender role (proto Role minus ROLE_UNSPECIFIED, value prefix stripped).",
+      "type": "string",
+      "enum": ["USER", "AGENT"]
+    },
+    "A2aPart": {
+      "title": "A2aPart",
+      "description": "Unified v1.0 Part model — a content oneof (exactly one of text/raw/url/data) plus optional metadata/filename/mediaType. NOTE: v1.0 removed the v0.3 `kind` discriminator; a `kind` field is therefore a rejected unknown property.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "raw": {
+          "type": "string",
+          "description": "File byte content, base64-encoded (proto bytes -> JSON base64 string)."
+        },
+        "url": { "type": "string" },
+        "data": {
+          "description": "Arbitrary structured data (proto google.protobuf.Value): object, array, string, number, boolean, or null."
+        },
+        "metadata": { "type": "object" },
+        "filename": { "type": "string" },
+        "mediaType": { "type": "string" }
+      },
+      "oneOf": [
+        { "required": ["text"] },
+        { "required": ["raw"] },
+        { "required": ["url"] },
+        { "required": ["data"] }
+      ]
+    },
+    "A2aMessage": {
+      "title": "A2aMessage",
+      "description": "One unit of communication. Required: messageId, role, parts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId", "role", "parts"],
+      "properties": {
+        "messageId": { "type": "string", "minLength": 1 },
+        "role": { "$ref": "#/$defs/A2aRole" },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/A2aPart" }
+        },
+        "contextId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "metadata": { "type": "object" },
+        "extensions": { "type": "array", "items": { "type": "string" } },
+        "referenceTaskIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "A2aArtifact": {
+      "title": "A2aArtifact",
+      "description": "A task output. Required: artifactId, parts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "parts"],
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1 },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/A2aPart" }
+        },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "metadata": { "type": "object" },
+        "extensions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "A2aTaskStatus": {
+      "title": "A2aTaskStatus",
+      "description": "The status container of a task. Required: state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/A2aTaskState" },
+        "message": { "$ref": "#/$defs/A2aMessage" },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO-8601 / RFC-3339 timestamp the status was recorded."
+        }
+      }
+    },
+    "A2aTask": {
+      "title": "A2aTask",
+      "description": "The core unit of action. Required: id, status.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/A2aTaskStatus" },
+        "contextId": { "type": "string" },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/A2aArtifact" }
+        },
+        "history": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/A2aMessage" }
+        },
+        "metadata": { "type": "object" }
+      }
+    }
+  }
+}

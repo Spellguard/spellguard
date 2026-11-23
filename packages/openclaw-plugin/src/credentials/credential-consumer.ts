@@ -8,6 +8,7 @@
  * consumer caring which path populated the store.
  */
 
+import type { GithubCredentialScope } from '@spellguard/agent-control';
 import type { ProviderCredEntry } from './credential-store';
 import { readCredentialStore } from './credential-store';
 import { credentialStorePath } from './credential-store-paths';
@@ -23,7 +24,13 @@ export interface ActiveGithubCredential {
   scopedToken: string;
   scopedTokenId: string;
   expiresAt: string;
-  repos: string[];
+  /**
+   * What the credential grants. Carries the discriminated scope rather than a
+   * bare repo list, so a caller reading it cannot mistake an organization-wide
+   * grant (which names no repositories) for an empty one. `undefined` means the
+   * store could not characterize the scope — never "no access".
+   */
+  scope?: GithubCredentialScope;
 }
 
 export interface AuthorIdentity {
@@ -60,7 +67,7 @@ export function getActiveGithubCredential(
     scopedToken,
     scopedTokenId,
     expiresAt,
-    repos: entry.scopeSummary?.repos ?? [],
+    ...(entry.scopeSummary !== undefined ? { scope: entry.scopeSummary } : {}),
   };
 }
 

@@ -10,9 +10,10 @@ speak the same agent-control protocol.
 ## Prerequisites
 
 - Claude Code (current version — uses the `/plugin` marketplace flow).
-- `git` ≥ 2.31, with **HTTPS** GitHub remotes (the plugin refuses SSH remotes;
-  run `git remote set-url origin https://github.com/<owner>/<repo>.git`, or see
-  [Using SSH git remotes](#using-ssh-git-remotes)).
+- `git` ≥ 2.31. GitHub remotes transport over **HTTPS**; an SSH remote is
+  rewritten to HTTPS automatically for the agent session, and only an
+  unrewritable one (host alias / force-SSH rule) is refused — see
+  [Using SSH git remotes](#using-ssh-git-remotes).
 
 ## Install
 
@@ -136,25 +137,38 @@ a stale local config never shows a menu for an agent that's already gone.)
 ## Using SSH git remotes
 
 The plugin injects an **HTTPS** credential (a scoped token), so your git
-operations must transport over HTTPS — it refuses raw SSH remotes
-(`git@github.com:…`). You don't have to abandon your SSH keys. Add a one-time,
-**org-scoped** URL rewrite so only your work org goes over HTTPS, leaving
-personal SSH untouched:
+operations must transport over HTTPS. **You do not have to do anything** — an
+SSH GitHub remote (`git@github.com:…` or `ssh://git@github.com/…`) is rewritten
+to HTTPS automatically, for this agent session only. SessionStart injects
+`insteadOf` / `pushInsteadOf` rules alongside the credential helper, so git
+transparently transports over HTTPS for the agent's git operations; your stored
+remote, your `~/.gitconfig`, and your own shell's git are untouched. The rules
+also out-specify a global force-SSH rule for the repo you are in, so fetch AND
+push stay on HTTPS.
 
-```bash
-git config --global url."https://github.com/<org>/".insteadOf "git@github.com:<org>/"
-```
+The session then continues normally and prints an info line naming the remote it
+rewrote. Two cases still hard-stop with
+*"Spellguard requires HTTPS git remotes"*:
 
-Git then transports those repos over HTTPS (so `git remote -v` shows the HTTPS
-URL and the plugin's SSH check passes) and the Spellguard credential helper
-serves the scoped token. Alternatives: rewrite all of github.com
-(`url."https://github.com/".insteadOf "git@github.com:"` — also affects personal
-repos), or switch a single repo with
-`git remote set-url origin https://github.com/<owner>/<repo>.git`.
+- the rewrite is disabled (`SPELLGUARD_SSH_REWRITE=0|off|false|no`), or
+- the remote is still SSH after the rewrite — an SSH host alias like
+  `git@github-work:` that does not map to `github.com`, or a same-specificity
+  force-SSH rule that the rewrite cannot out-specify.
+
+In either case switch the remote:
+`git remote set-url origin https://github.com/<owner>/<repo>.git`. A permanent
+org-scoped rewrite
+(`git config --global url."https://github.com/<org>/".insteadOf "git@github.com:<org>/"`)
+also works and leaves personal SSH untouched.
+
+See `src/lib/git-insteadof-rules.ts` for the exact four rules and the git
+arbitration semantics they rely on.
 
 ## Troubleshooting
 
-- **"Spellguard requires HTTPS git remotes"** — switch your remote with
+- **"Spellguard requires HTTPS git remotes"** — the automatic SSH→HTTPS
+  rewrite was disabled or could not take effect for this remote (the message
+  names which). Switch your remote with
   `git remote set-url origin https://github.com/<owner>/<repo>.git`.
 - **"CLAUDE_ENV_FILE not set"** — your Claude Code version didn't provide the
   per-session env file; update Claude Code.

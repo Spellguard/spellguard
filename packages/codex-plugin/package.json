@@ -23,11 +23,11 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.2",
     "node-pty": "1.0.0",
     "partysocket": "^1.1.18",
-    "smol-toml": "^1.6.1",
-    "ws": "^8.19.0"
+    "smol-toml": "^1.9.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@spellguard/agent-control": "workspace:*",
@@ -36,7 +36,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.1",
     "typescript": "^5.7.0"
   },
   "license": "Apache-2.0",

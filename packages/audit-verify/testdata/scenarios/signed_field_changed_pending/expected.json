@@ -1,0 +1,28 @@
+{
+  "now": "2026-11-10T05:17:04.000Z",
+  "allowed_buckets": ["spellguard-audit-checkpoints-test"],
+  "ok": false,
+  "counts": {
+    "ok": 10,
+    "pending": 1,
+    "deleted": 2,
+    "missing": 0,
+    "tampered": 1
+  },
+  "signatures": {
+    "valid": 7,
+    "unsigned": 4,
+    "unverified": 0,
+    "invalid": 1
+  },
+  "codes": ["signed_field_mismatch"],
+  "signed_diffs": {
+    "00000000-0000-4000-8000-00000000100d": [
+      {
+        "field": "response_level",
+        "now": "block",
+        "was": "allow"
+      }
+    ]
+  }
+}

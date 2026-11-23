@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "exported_at": "2026-11-10T00:12:00.000Z",
+  "bucket": "spellguard-audit-checkpoints-test",
+  "region": "us-west-2",
+  "generation": "00000000-0000-4000-8000-0000000000a0",
+  "stream": "00000000-0000-4000-8000-0000000000b0",
+  "prefix": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/",
+  "urls_expire_at": "2026-11-17T00:12:00.000Z",
+  "listing": [
+    "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/?versions=&prefix=audit-checkpoints%2F00000000-0000-4000-8000-0000000000a0%2F00000000-0000-4000-8000-0000000000b0%2F&max-keys=1000&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=830f9fa5929e72fff821f4490853bdd97dec92edfd9e981b0e939359db339557"
+  ],
+  "checkpoints": [],
+  "records": {
+    "from_seq": 1,
+    "to_seq": 0,
+    "pending": true
+  },
+  "keys": {
+    "listing": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/?versions=&prefix=audit-checkpoints%2Fkeys%2F&max-keys=1000&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=a130ee191851b0cf5dcb5665e46ae22788cf6b98a79565eaab1cba5ec72f9386",
+    "objects": [
+      {
+        "key_id": "0d9073359ae9f4da",
+        "url": "https://spellguard-audit-checkpoints-test.s3.us-west-2.amazonaws.com/audit-checkpoints/keys/0d9073359ae9f4da.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEKEY%2F20261110%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261110T221700Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=094f09052346e899eed1f5f979aec2f539b3626317130a28a9ad55a9d5b38152"
+      }
+    ]
+  }
+}

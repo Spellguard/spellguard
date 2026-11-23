@@ -2,8 +2,9 @@
 
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { OpenRouterProvider } from '@openrouter/ai-sdk-provider';
-import { createSpellguard } from '@spellguard/client';
+import { createSpellguard, runWithHops } from '@spellguard/client';
 import { generateText, spellguardTool, tool } from '@spellguard/client/ai';
+import { stepCountIs } from 'ai';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
@@ -302,7 +303,7 @@ function createConfidentialDataTools() {
     listAvailableData: tool({
       description:
         'List all available confidential data keys. Does not expose any values.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const keys = listDataKeys();
         return {
@@ -315,7 +316,7 @@ function createConfidentialDataTools() {
     getDataInfo: tool({
       description:
         'Get metadata about a specific data key (type, count) without exposing values. You MUST provide the dataKey parameter.',
-      parameters: z.object({
+      inputSchema: z.object({
         dataKey: z
           .string()
           .default('')
@@ -336,7 +337,7 @@ function createConfidentialDataTools() {
     analyzeData: tool({
       description:
         'Compute aggregate statistics (min, max, average, sum, median) for numeric data sets like employee_salaries or quarterly_revenue. REQUIRES a specific dataKey parameter. Only use this for numeric data analysis - NOT for patient medications or conditions (those are handled by Agent A).',
-      parameters: z.object({
+      inputSchema: z.object({
         dataKey: z
           .string()
           .default('')
@@ -358,7 +359,7 @@ function createConfidentialDataTools() {
     compareDataSets: tool({
       description:
         'Compare statistics between two numeric data sets without exposing raw values. Both dataKey parameters are required.',
-      parameters: z.object({
+      inputSchema: z.object({
         firstDataKey: z
           .string()
           .default('')
@@ -408,7 +409,7 @@ function createConfidentialDataTools() {
       name: 'listPatients',
       description:
         'List all patient names in the system. Does not expose detailed records.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const names = listPatientNames();
         return {
@@ -422,7 +423,7 @@ function createConfidentialDataTools() {
       name: 'getPatientVisitCount',
       description:
         'Get the number of doctor visits for a specific patient. Provide a patient name or first letter.',
-      parameters: z.preprocess(
+      inputSchema: z.preprocess(
         normalizePatientArg,
         z.object({
           patient: z
@@ -441,7 +442,7 @@ function createConfidentialDataTools() {
       name: 'getPatientVisitDetails',
       description:
         'Get detailed visit information for a patient including visit reasons, doctors seen, and date range.',
-      parameters: z.preprocess(
+      inputSchema: z.preprocess(
         normalizePatientArg,
         z.object({
           patient: z
@@ -458,7 +459,7 @@ function createConfidentialDataTools() {
       name: 'getPatientLabInsights',
       description:
         'Get lab result insights for a patient (health status indicators) without exposing raw values.',
-      parameters: z.preprocess(
+      inputSchema: z.preprocess(
         normalizePatientArg,
         z.object({
           patient: z
@@ -474,7 +475,7 @@ function createConfidentialDataTools() {
     getPatientInsurance: spellguardTool({
       name: 'getPatientInsurance',
       description: 'Get the insurance provider for a specific patient.',
-      parameters: z.preprocess(
+      inputSchema: z.preprocess(
         normalizePatientArg,
         z.object({
           patient: z
@@ -628,7 +629,7 @@ This request came from another agent (${senderId}) via Spellguard Verifier.
 Remember: provide only aggregate insights, never raw confidential values.`,
       prompt,
       tools,
-      maxSteps: 5,
+      stopWhen: stepCountIs(5),
     });
 
     return { response: result.text };
@@ -651,7 +652,10 @@ app.get('/health', (c) => {
  */
 app.post('/chat', async (c) => {
   const body = await c.req.json();
-  const { message } = body as { message: string };
+  const { message, correlationId } = body as {
+    message: string;
+    correlationId?: string;
+  };
 
   if (!message) {
     return c.json({ error: 'Message is required' }, 400);
@@ -667,15 +671,25 @@ app.post('/chat', async (c) => {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const result = await generateText({
-        model: model(
-          c.env.PRIMARY_MODEL || 'google/gemini-3.1-flash-lite-preview',
-        ),
-        system: AGENT_B_SYSTEM_PROMPT,
-        prompt: message,
-        tools,
-        maxSteps: 10,
-      });
+      // Adopt the caller's correlationId (the management /chat route mints and
+      // passes it) as this exchange's hop-0 trace id, so every peer fan-out send
+      // inside generateText shares it and the dashboard forwarding trace can
+      // join the downstream audit rows. Falls back to a fresh id for direct
+      // callers. Wrap sits inside the retry loop so every attempt inherits it.
+      const result = await runWithHops(
+        0,
+        () =>
+          generateText({
+            model: model(
+              c.env.PRIMARY_MODEL || 'google/gemini-3.1-flash-lite-preview',
+            ),
+            system: AGENT_B_SYSTEM_PROMPT,
+            prompt: message,
+            tools,
+            stopWhen: stepCountIs(10),
+          }),
+        correlationId,
+      );
 
       // If the LLM exhausted all steps on tool calls without a final
       // synthesis, make one more call without tools to force a summary.

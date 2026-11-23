@@ -7,6 +7,8 @@ export interface PostToolUseInput {
     remoteUrl?: string;
     agentId: string;
     scopedTokenId: string;
+    /** False when config is identity-only, locally revoked, or V5 is unusable. */
+    localCredentialAvailable?: boolean;
     clientSessionId: string;
     endpoint: string;
     agentSecret: string;

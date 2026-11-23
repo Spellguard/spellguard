@@ -7,7 +7,13 @@
  * Supports multiple Verifier platforms:
  *   - AWS Nitro Enclaves (COSE_Sign1, verified against AWS root CA)
  *   - Phala Cloud (Intel TDX, verified via Phala DCAP API)
- *   - Mock mode (development only, skips verification)
+ *   - Internal mode (Ed25519 session-key self-signature)
+ *
+ * Verification fails CLOSED. `mockMode` is the one bypass, and it is never
+ * inferred here — the caller must decide, and the SDK only ever sets it from an
+ * explicit `SPELLGUARD_ALLOW_MOCK_ATTESTATION=true` opt-in that is refused
+ * against a production configuration (see `@spellguard/client`'s
+ * `resolveMockAttestationMode`).
  */
 
 import { verify as verifyEd25519 } from '../crypto/signing';
@@ -15,15 +21,61 @@ import type { VerifierAttestationDocument } from '../types';
 import { verifyNitroHardwareSignature } from './nitro-verify';
 
 /**
+ * Machine-readable cause of a verification failure. Callers log and branch on
+ * this instead of pattern-matching the human-readable `error` string.
+ */
+export type VerifierVerifyFailureReason =
+  /** No expected Verifier image hash is configured — nothing to verify against. */
+  | 'verifier_image_hash_unconfigured'
+  /** The Verifier presented a different image than the one pinned. */
+  | 'image_hash_mismatch'
+  /** The attestation document is older than the replay window. */
+  | 'attestation_stale'
+  /** The hardware/session signature did not verify. */
+  | 'hardware_signature_invalid'
+  /** The document echoed a different nonce — possible replay. */
+  | 'nonce_mismatch'
+  /**
+   * The document carries a session key other than the one management
+   * attested (#1259), or registration handed back a different key.
+   */
+  | 'verifier_key_mismatch'
+  /** The attestation document could not be retrieved. */
+  | 'attestation_fetch_failed';
+
+/**
+ * Shared message for the unconfigured case, so `verifyVerifierAttestation` and
+ * `fetchAndVerifyVerifier` report the missing server-side configuration
+ * identically and cannot drift apart.
+ */
+const UNCONFIGURED_ERROR =
+  'No expected Verifier image hash is configured, so the Verifier cannot be attested. Record the Verifier image hash on the management server (returned as `verifierImageHash` from POST /v1/discover).';
+
+/**
  * Options for Verifier attestation verification.
  */
 export interface VerifierVerifyOptions {
-  /** Expected SHA384 hash of the Verifier Docker image */
+  /**
+   * Expected SHA384 hash of the Verifier Docker image. An empty value means
+   * the server never recorded one; verification then fails closed with
+   * `verifier_image_hash_unconfigured` rather than passing vacuously.
+   */
   expectedImageHash: string;
-  /** Skip strict verification (for development only) */
+  /**
+   * Skip strict verification entirely. Development only, and never derived
+   * from `expectedImageHash` — see the file header for the opt-in the SDK
+   * requires before setting this.
+   */
   mockMode?: boolean;
   /** Expected certificate hash for pinning */
   expectedCertHash?: string;
+  /**
+   * The session key management attested for this Verifier (discovery's
+   * `verifierPublicKey`, #1259). When set, the document must carry exactly this
+   * key, whatever its attestation type — the endpoint never gets to supply the
+   * key it is judged by.
+   */
+  expectedPublicKey?: string;
 }
 
 /**
@@ -36,6 +88,8 @@ export interface VerifierVerifyResult {
   attestation?: VerifierAttestationDocument;
   /** Error message if verification failed */
   error?: string;
+  /** Machine-readable cause, set whenever `verified` is false */
+  reason?: VerifierVerifyFailureReason;
   /** Whether certificate was verified against pinned hash */
   certificateVerified?: boolean;
 }
@@ -50,36 +104,71 @@ export interface VerifierVerifyResult {
 export async function verifyVerifierAttestation(
   attestation: VerifierAttestationDocument,
   options: VerifierVerifyOptions,
-): Promise<{ verified: boolean; error?: string }> {
+): Promise<{
+  verified: boolean;
+  error?: string;
+  reason?: VerifierVerifyFailureReason;
+}> {
   // In mock mode, skip strict verification
   if (options.mockMode) {
     console.log('[cTLS] Mock mode - skipping strict verification');
     return { verified: true };
   }
 
-  // Step 1: Verify the image hash matches expected (reproducible build)
+  // Step 0: Refuse to "verify" against nothing. Without a pinned image hash
+  // there is no claim to check, so passing here would report success for an
+  // unverified Verifier — the §1 bypass. Fail closed instead.
+  if (!options.expectedImageHash) {
+    return {
+      verified: false,
+      reason: 'verifier_image_hash_unconfigured',
+      error: UNCONFIGURED_ERROR,
+    };
+  }
+
+  // Step 1 (#1259): the document must carry the key management attested,
+  // before any signature is checked. A self-signature by some other key
+  // proves nothing about this Verifier.
+  if (
+    options.expectedPublicKey !== undefined &&
+    attestation.publicKey !== options.expectedPublicKey
+  ) {
+    return {
+      verified: false,
+      reason: 'verifier_key_mismatch',
+      error: `Verifier session key mismatch. Attested: ${options.expectedPublicKey}, presented: ${attestation.publicKey}`,
+    };
+  }
+
+  // Step 2: Verify the image hash matches expected (reproducible build)
   if (attestation.imageHash !== options.expectedImageHash) {
     return {
       verified: false,
+      reason: 'image_hash_mismatch',
       error: `Image hash mismatch. Expected: ${options.expectedImageHash}, Got: ${attestation.imageHash}`,
     };
   }
 
-  // Step 2: Verify timestamp is recent (prevents replay attacks)
+  // Step 3: Verify timestamp is recent (prevents replay attacks)
   const maxAge = 5 * 60 * 1000; // 5 minutes
   const age = Date.now() - attestation.timestamp;
   if (age > maxAge) {
     return {
       verified: false,
+      reason: 'attestation_stale',
       error: `Attestation too old: ${age}ms (max: ${maxAge}ms)`,
     };
   }
 
-  // Step 3: Verify hardware signature (dispatches by attestation type)
-  const hwResult = await verifyHardwareSignature(attestation);
+  // Step 4: Verify hardware signature (dispatches by attestation type)
+  const hwResult = await verifyHardwareSignature(
+    attestation,
+    options.expectedImageHash,
+  );
   if (!hwResult.verified) {
     return {
       verified: false,
+      reason: 'hardware_signature_invalid',
       error: hwResult.error || 'Hardware signature verification failed',
     };
   }
@@ -93,6 +182,7 @@ export async function verifyVerifierAttestation(
  */
 async function verifyHardwareSignature(
   attestation: VerifierAttestationDocument,
+  expectedImageHash: string,
 ): Promise<{ verified: boolean; error?: string }> {
   if (
     !attestation.hardwareSignature ||
@@ -107,10 +197,38 @@ async function verifyHardwareSignature(
   const type = attestation.attestationType;
 
   if (type === 'nitro') {
-    return verifyNitroHardwareSignature(attestation.hardwareSignature);
+    // #1259: PCR0 is the measurement, read from the hardware document, never
+    // the self-reported `imageHash`; and user_data must bind this document's
+    // session key, timestamp and nonce, so a genuine document cannot be
+    // relabelled with another key or replayed for another challenge.
+    const expectedUserData = bytesToHex(
+      new TextEncoder().encode(
+        [
+          'pending',
+          attestation.publicKey,
+          attestation.timestamp.toString(),
+          attestation.nonce,
+        ].join('|'),
+      ),
+    );
+    return verifyNitroHardwareSignature(
+      attestation.hardwareSignature,
+      undefined,
+      { expectedPcrs: { 0: expectedImageHash }, expectedUserData },
+    );
   }
 
   if (type === 'internal') {
+    return verifyInternalSessionSignature(attestation);
+  }
+
+  // 'mock' documents use the SAME session-key self-signature scheme as
+  // internal mode (see ctls/server/attestation.ts) — verify that signature
+  // rather than falling through to the Phala DCAP API, which can only 400 on
+  // a non-TDX payload. Strict callers still reject mock docs earlier via the
+  // image-hash pin; this branch only fixes WHICH check runs for the dev/mock
+  // scheme.
+  if (type === 'mock') {
     return verifyInternalSessionSignature(attestation);
   }
 
@@ -261,6 +379,8 @@ export async function fetchAndVerifyVerifier(
   options?: {
     mockMode?: boolean;
     expectedCertHash?: string;
+    /** The session key management attested (#1259); see VerifierVerifyOptions. */
+    expectedPublicKey?: string;
   },
 ): Promise<VerifierVerifyResult> {
   // In mock mode, skip the attestation document fetch entirely.
@@ -274,6 +394,16 @@ export async function fetchAndVerifyVerifier(
     return { verified: true };
   }
 
+  // Without a pinned image hash there is nothing to attest the Verifier
+  // against. Refuse BEFORE the fetch — an unverified Verifier gets no traffic.
+  if (!expectedImageHash) {
+    return {
+      verified: false,
+      reason: 'verifier_image_hash_unconfigured',
+      error: UNCONFIGURED_ERROR,
+    };
+  }
+
   try {
     const nonce = crypto.randomUUID();
     const response = await fetchAttestationWithRetry(
@@ -283,6 +413,7 @@ export async function fetchAndVerifyVerifier(
     if (!response.ok) {
       return {
         verified: false,
+        reason: 'attestation_fetch_failed',
         error: `Failed to fetch attestation: ${response.status} ${response.statusText}`,
       };
     }
@@ -293,12 +424,14 @@ export async function fetchAndVerifyVerifier(
     if (attestation.nonce !== nonce) {
       return {
         verified: false,
+        reason: 'nonce_mismatch',
         error: 'Nonce mismatch - possible replay attack',
       };
     }
 
     const result = await verifyVerifierAttestation(attestation, {
       expectedImageHash,
+      expectedPublicKey: options?.expectedPublicKey,
     });
 
     // Certificate pinning verification
@@ -314,6 +447,7 @@ export async function fetchAndVerifyVerifier(
   } catch (error) {
     return {
       verified: false,
+      reason: 'attestation_fetch_failed',
       error: `Failed to verify Verifier: ${error}`,
     };
   }
@@ -363,4 +497,10 @@ function verifyCertificatePin(url: string, expectedCertHash: string): boolean {
     console.error('[cTLS] Certificate pinning error:', err);
     return false;
   }
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }

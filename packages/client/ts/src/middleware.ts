@@ -7,7 +7,7 @@
  * module keeps the old `createSpellguardMiddleware` import path working for
  * existing consumers.
  */
-export { verifyVerifierRequest, createSpellguard } from './spellguard';
+export { createSpellguard } from './spellguard';
 export type { SpellguardInstance } from './spellguard';
 export type { SpellguardOptions } from './types';
 

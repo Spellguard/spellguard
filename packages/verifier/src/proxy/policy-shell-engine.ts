@@ -94,9 +94,19 @@ const DANGEROUS_ARG_PATTERNS: ReadonlyArray<{ re: RegExp; msg: string }> = [
   { re: /\0/, msg: 'null byte injection' },
 ];
 
+/**
+ * Tool identifiers whose payload is interpreted by a command shell. The
+ * argument-injection policy must not scan arbitrary tool payloads such as a
+ * Markdown document passed to write_file.
+ */
+const SHELL_TOOL_PATTERN =
+  /(?:^|[._-])(?:shell|terminal|exec_command|run_command)(?:$|[._-])/i;
+
 function evaluateShellArgumentInjection(
   ctx: PolicyEvalContext,
 ): PolicyDetection[] {
+  if (ctx.toolName && !SHELL_TOOL_PATTERN.test(ctx.toolName)) return [];
+
   const cfg = ctx.binding.config || {};
   const label = (cfg.label as string) || 'argument-injection';
   const extraPatterns = (cfg.extraPatterns as string[]) || [];

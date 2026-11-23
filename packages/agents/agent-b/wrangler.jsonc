@@ -1,5 +1,7 @@
 {
-  "account_id": "<YOUR_CLOUDFLARE_ACCOUNT_ID>",
+  // Local development only (`wrangler dev`, `pnpm run dev:all`). This agent is no
+  // longer deployed to any environment: the demo fleet replaced it, and its
+  // Workers were deleted on 2026-11-02.
   "name": "spellguard-agent-b",
   "main": "src/index.ts",
   "compatibility_date": "2024-12-01",
@@ -18,69 +20,7 @@
     // Fallback Verifier URL (used when MANAGEMENT_URL isn't set)
     "VERIFIER_URL": "http://localhost:46358",
     "SPELLGUARD_PROFILE": "agntcy"
-  },
-  // Secrets (set via wrangler secret put):
-  // - OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
-
-  "env": {
-    "staging": {
-      "name": "spellguard-agent-b-staging",
-      "routes": [{ "pattern": "agent-b.example.com", "custom_domain": true }],
-      "vars": {
-        "MANAGEMENT_URL": "https://console.example.com/v1",
-        "SELF_URL": "https://agent-b.example.com",
-        "AGENT_ID": "agent-b",
-        "CODE_HASH": "sha256:dev-placeholder",
-        "SPELLGUARD_PROFILE": "agntcy"
-      }
-      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
-    },
-    "design": {
-      "name": "spellguard-agent-b-design",
-      "routes": [{ "pattern": "agent-b.example.com", "custom_domain": true }],
-      "vars": {
-        "MANAGEMENT_URL": "https://console.example.com/v1",
-        "SELF_URL": "https://agent-b.example.com",
-        "AGENT_ID": "agent-b",
-        "CODE_HASH": "sha256:dev-placeholder",
-        "SPELLGUARD_PROFILE": "agntcy"
-      }
-      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
-    },
-    "dev": {
-      "name": "spellguard-agent-b-dev",
-      "routes": [{ "pattern": "agent-b.example.com", "custom_domain": true }],
-      "vars": {
-        "MANAGEMENT_URL": "https://console.example.com/v1",
-        "SELF_URL": "https://agent-b.example.com",
-        "AGENT_ID": "agent-b",
-        "CODE_HASH": "sha256:dev-placeholder",
-        "SPELLGUARD_PROFILE": "agntcy"
-      }
-      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
-    },
-    "demo": {
-      "name": "spellguard-agent-b-demo",
-      "routes": [{ "pattern": "agent-b.example.com", "custom_domain": true }],
-      "vars": {
-        "MANAGEMENT_URL": "https://console.example.com/v1",
-        "SELF_URL": "https://agent-b.example.com",
-        "AGENT_ID": "agent-b",
-        "CODE_HASH": "sha256:dev-placeholder",
-        "SPELLGUARD_PROFILE": "agntcy"
-      }
-      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
-    },
-    "production": {
-      "name": "spellguard-agent-b-production",
-      "routes": [{ "pattern": "agent-b.spellguard.ai", "custom_domain": true }],
-      "vars": {
-        "MANAGEMENT_URL": "https://console.spellguard.ai/v1",
-        "SELF_URL": "https://agent-b.spellguard.ai",
-        "AGENT_ID": "agent-b",
-        "CODE_HASH": "sha256:fill-after-reproducible-build"
-      }
-      // Secrets (per-env): OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
-    }
   }
+  // Secrets (local: .env in this package, copied from .env.example):
+  // - OPENROUTER_API_KEY, SPELLGUARD_AGENT_SECRET
 }

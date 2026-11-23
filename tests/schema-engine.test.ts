@@ -8,6 +8,7 @@
  */
 
 import {
+  SchemaEngine,
   clearEngines,
   evaluatePolicies,
   initDefaultEngines,
@@ -28,6 +29,45 @@ function makeSchemaBinding(
     config,
     ...overrides,
   };
+}
+
+async function expectMalformedSchemaToFailClosed(
+  config: Record<string, unknown>,
+  content: string,
+): Promise<void> {
+  const binding = makeSchemaBinding(config);
+  const engine = new SchemaEngine();
+
+  expect(() =>
+    engine.evaluate({
+      content,
+      binding,
+    }),
+  ).toThrow('Invalid JSON Schema');
+
+  const [result] = await evaluatePolicies([binding], content);
+  expect(result).toMatchObject({
+    policyId: 'schema-test',
+    policyName: 'custom-schema',
+    policyLevel: 'org',
+    policyType: 'schema',
+    decision: 'deny',
+    responseLevel: 'block',
+    detections: [
+      {
+        type: 'engine-error',
+        confidence: 1,
+        message: 'Policy evaluation failed',
+      },
+    ],
+  });
+  expect(result.detections).toEqual([
+    {
+      type: 'engine-error',
+      confidence: 1,
+      message: 'Policy evaluation failed',
+    },
+  ]);
 }
 
 const actionSchema = {
@@ -289,6 +329,239 @@ describe('Schema Engine', () => {
     });
   });
 
+  describe('schema definition validation', () => {
+    it('accepts configured boolean schemas', async () => {
+      const permit = await evaluatePolicies(
+        [makeSchemaBinding({ schema: true })],
+        JSON.stringify({ value: 'anything' }),
+      );
+      expect(permit[0].decision).toBe('permit');
+      expect(permit[0].detections).toHaveLength(0);
+
+      const deny = await evaluatePolicies(
+        [makeSchemaBinding({ schema: false })],
+        JSON.stringify({ value: 'anything' }),
+      );
+      expect(deny[0].decision).toBe('deny');
+      expect(deny[0].detections).toHaveLength(1);
+    });
+
+    it.each([null, [], 'schema', 42])(
+      'rejects a malformed configured schema: %p',
+      async (schema) => {
+        await expectMalformedSchemaToFailClosed(
+          { schema },
+          'plain text with no JSON',
+        );
+      },
+    );
+
+    it.each([
+      { unknownKeyword: true },
+      { constructor: true },
+      { toString: true },
+    ])('rejects unsupported schema keywords: %p', async (keyword) => {
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: { type: 'object', ...keyword },
+          mode: 'partial',
+        },
+        'plain text with no JSON',
+      );
+    });
+
+    it.each([
+      { type: 'invalid' },
+      { minimum: '0' },
+      { minLength: -1 },
+      { required: 'bad' },
+    ])('rejects malformed known schema keywords: %p', async (keyword) => {
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: { type: 'object', ...keyword },
+          mode: 'partial',
+        },
+        'plain text with no JSON',
+      );
+    });
+
+    it('rejects an unsupported keyword in an unused definition before extraction', async () => {
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: {
+            type: 'object',
+            definitions: { unused: { unevaluatedProperties: false } },
+          },
+          mode: 'partial',
+        },
+        'plain text with no JSON',
+      );
+    });
+
+    it('rejects unknown formats in unused definitions before extraction', async () => {
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: {
+            type: 'object',
+            definitions: { unused: { format: 'not-a-library-format' } },
+          },
+          mode: 'partial',
+        },
+        'plain text with no JSON',
+      );
+    });
+
+    it('rejects a non-Draft 7 dialect in a nested schema', async () => {
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: {
+            type: 'object',
+            properties: {
+              nested: {
+                $schema: 'https://json-schema.org/draft/2020-12/schema',
+              },
+            },
+          },
+        },
+        '{}',
+      );
+    });
+
+    it('rejects unresolved references in unused definitions and schema dependencies', async () => {
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: {
+            definitions: { unused: { $ref: '#/definitions/missing' } },
+          },
+          mode: 'partial',
+        },
+        'plain text with no JSON',
+      );
+      await expectMalformedSchemaToFailClosed(
+        {
+          schema: {
+            dependencies: { $ref: { $ref: '#/definitions/missing' } },
+          },
+          mode: 'partial',
+        },
+        'plain text with no JSON',
+      );
+    });
+
+    it('preserves local refs and schema dependencies whose property name is $ref', async () => {
+      const schema = {
+        type: 'object',
+        required: ['$ref'],
+        properties: { $ref: {} },
+        definitions: {
+          payload: {
+            type: 'object',
+            required: ['value'],
+            properties: { value: { type: 'string' } },
+          },
+        },
+        dependencies: { $ref: { $ref: '#/definitions/payload' } },
+      };
+
+      const valid = await evaluatePolicies(
+        [makeSchemaBinding({ schema })],
+        JSON.stringify({ $ref: 'request', value: 'ok' }),
+      );
+      expect(valid[0].decision).toBe('permit');
+
+      const invalid = await evaluatePolicies(
+        [makeSchemaBinding({ schema })],
+        JSON.stringify({ $ref: 'request', value: 4 }),
+      );
+      expect(invalid[0].decision).toBe('deny');
+    });
+
+    it('validates references to boolean schemas in dependencies', async () => {
+      const results = await evaluatePolicies(
+        [
+          makeSchemaBinding({
+            schema: {
+              type: 'object',
+              required: ['trigger'],
+              properties: { trigger: { type: 'string' } },
+              definitions: { blocked: false },
+              dependencies: {
+                trigger: { $ref: '#/definitions/blocked' },
+              },
+            },
+          }),
+        ],
+        JSON.stringify({ trigger: 'yes' }),
+      );
+
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].detections).toHaveLength(1);
+    });
+
+    it('does not let the validator mutate the configured schema', async () => {
+      const schema = {
+        type: 'object',
+        properties: { value: { $ref: '#/definitions/value' } },
+        definitions: { value: { type: 'string' } },
+      };
+      const before = JSON.stringify(schema);
+
+      await evaluatePolicies(
+        [makeSchemaBinding({ schema })],
+        JSON.stringify({ value: 'ok' }),
+      );
+
+      expect(JSON.stringify(schema)).toBe(before);
+      expect(Object.getOwnPropertyNames(schema)).not.toContain(
+        '__absolute_uri__',
+      );
+      expect(
+        Object.getOwnPropertyNames(schema.definitions.value),
+      ).not.toContain('__absolute_uri__');
+    });
+
+    it('returns an attributed fail-closed result for malformed schemas', async () => {
+      await expectMalformedSchemaToFailClosed(
+        { schema: { type: 'object', format: 'unsupported' } },
+        '{}',
+      );
+    });
+  });
+
+  describe('schema validation message privacy', () => {
+    it('does not include enum, const, pattern, or limit values in messages', async () => {
+      const cases = [
+        {
+          schema: { enum: ['secret-enum-value'] },
+          content: JSON.stringify('public'),
+        },
+        {
+          schema: { const: 'secret-const-value' },
+          content: JSON.stringify('public'),
+        },
+        {
+          schema: { type: 'string', pattern: 'secret-pattern-value' },
+          content: JSON.stringify('public'),
+        },
+        {
+          schema: { type: 'number', minimum: 123456 },
+          content: JSON.stringify(1),
+        },
+      ];
+
+      for (const testCase of cases) {
+        const results = await evaluatePolicies(
+          [makeSchemaBinding({ schema: testCase.schema })],
+          testCase.content,
+        );
+        const message = results[0].detections[0].message ?? '';
+        expect(message).toContain('JSON validation failed');
+        expect(message).not.toContain('secret-');
+        expect(message).not.toContain('123456');
+      }
+    });
+  });
+
   // ─── extractPattern config ────────────────────────────────
 
   describe('extractPattern config', () => {
@@ -357,7 +630,7 @@ describe('Schema Engine', () => {
     });
   });
 
-  // ─── Long AJV path truncation ─────────────────────────────
+  // ─── Long validator path truncation ───────────────────────
 
   describe('long AJV path truncation', () => {
     it('should truncate deeply nested path exceeding 60 characters', async () => {

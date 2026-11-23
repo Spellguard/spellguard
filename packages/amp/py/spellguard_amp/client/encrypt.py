@@ -133,6 +133,31 @@ def decrypt_from_verifier(encrypted_payload: str, x25519_private_key: str) -> st
     return plaintext.decode("utf-8")
 
 
+def derive_agent_key_pair(seed: str) -> dict[str, str]:
+    """Derive an agent's STABLE X25519 key pair from its secret seed (its
+    agent secret, else its signing key).
+
+    Python twin of ``deriveAgentKeyPair`` in ``@spellguard/amp``:
+    HKDF-SHA256(ikm=seed, no salt, info="spellguard-agent-x25519-v1", 32 bytes).
+    Deterministic, so every process of the same agent registers the public key
+    it later decrypts with. The Verifier encrypts deliveries to it (#1244).
+
+    Returns:
+        Dict with ``public_key_hex`` and ``private_key_hex``.
+    """
+    private_bytes = HKDF(
+        algorithm=SHA256(),
+        length=KEY_LENGTH,
+        salt=None,
+        info=b"spellguard-agent-x25519-v1",
+    ).derive(seed.encode("utf-8"))
+    private_key = X25519PrivateKey.from_private_bytes(private_bytes)
+    return {
+        "public_key_hex": private_key.public_key().public_bytes_raw().hex(),
+        "private_key_hex": private_bytes.hex(),
+    }
+
+
 def hash_payload(payload: str) -> str:
     """
     Hash a payload for commitment verification.

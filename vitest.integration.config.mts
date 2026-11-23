@@ -3,6 +3,11 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import {
+  computeInheritedKeys,
+  mergeEnvEntries,
+  parseEnvSource,
+} from './vitest.env-precedence.mts';
 
 /**
  * `cloudflare:workers` is a runtime-only module provided by workerd; vitest
@@ -31,6 +36,12 @@ export class DurableObject {
   }
 }
 export class WorkflowEntrypoint {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+}
+export class WorkerEntrypoint {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
@@ -70,72 +81,32 @@ function readEnvFile(path: string): string | null {
   }
 }
 
-function stripSurroundingQuotes(value: string): string {
-  if (value.length < 2) return value;
-  if (!value.startsWith('"') || !value.endsWith('"')) return value;
-  return value.slice(1, -1);
-}
+// A key present in process.env with an EMPTY-STRING value (e.g. a CI job or
+// shell exporting `MANAGEMENT_PRIVATE_KEY=` as an unset placeholder) is
+// treated as ABSENT, not explicitly set — only a non-empty value claims
+// precedence over the env files loaded below. Otherwise an empty placeholder
+// permanently blocks the real value from packages/management/.env /
+// .dev.vars and signed integration tests fail with auth errors. The precedence
+// rules live in ./vitest.env-precedence.mts so they can be unit-tested without
+// the gitignored local secret files.
+const inheritedEnvKeys = computeInheritedKeys(process.env);
 
-type EnvEntry = { key: string; value: string };
-type ParseState =
-  | { kind: 'idle' }
-  | { kind: 'multiline'; key: string; buf: string };
-
-function startsMultiline(value: string): boolean {
-  return value.startsWith('"') && value.length > 1 && !value.endsWith('"');
-}
-
-function parseSingleLine(line: string): EnvEntry | null {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith('#')) return null;
-  const eq = trimmed.indexOf('=');
-  if (eq === -1) return null;
-  return { key: trimmed.slice(0, eq), value: trimmed.slice(eq + 1) };
-}
-
-function stepParser(
-  state: ParseState,
-  line: string,
-  entries: EnvEntry[],
-): ParseState {
-  if (state.kind === 'multiline') {
-    const buf = `${state.buf}\n${line}`;
-    if (line.trimEnd().endsWith('"')) {
-      entries.push({ key: state.key, value: stripSurroundingQuotes(buf) });
-      return { kind: 'idle' };
-    }
-    return { kind: 'multiline', key: state.key, buf };
-  }
-
-  const parsed = parseSingleLine(line);
-  if (!parsed) return state;
-  if (startsMultiline(parsed.value)) {
-    return { kind: 'multiline', key: parsed.key, buf: parsed.value };
-  }
-  entries.push({
-    key: parsed.key,
-    value: stripSurroundingQuotes(parsed.value),
-  });
-  return state;
-}
-
-function parseEnvEntries(raw: string): EnvEntry[] {
-  const entries: EnvEntry[] = [];
-  let state: ParseState = { kind: 'idle' };
-  for (const line of raw.split('\n')) {
-    state = stepParser(state, line, entries);
-  }
-  return entries;
-}
-
-function loadEnvFile(path: string): void {
+function loadEnvFile(path: string, overrideLoaded = false): void {
   const raw = readEnvFile(path);
   if (raw === null) return;
-  for (const { key, value } of parseEnvEntries(raw)) {
-    if (!process.env[key]) process.env[key] = value;
-  }
+  mergeEnvEntries(
+    process.env,
+    parseEnvSource(raw),
+    inheritedEnvKeys,
+    overrideLoaded,
+  );
 }
 
+// Wrangler's local management worker uses .dev.vars. Let those values win
+// over values loaded from the legacy package .env so signed integration
+// requests use the same key and service configuration as the worker/verifier
+// pair under test. Explicit values inherited from the runner always win.
+loadEnvFile(resolve(__dirname, 'packages/management/.dev.vars'), true);
 loadEnvFile(resolve(__dirname, '.env.agents'));
 
 export default defineConfig({
@@ -187,6 +158,16 @@ export default defineConfig({
     testTimeout: 180000,
     hookTimeout: 30000,
     fileParallelism: false,
+    // isolate-real-home: HOME is a temp dir for every test process, with the
+    // toolchain caches pinned, and the run fails if the real ~/.gitconfig
+    // changes (#1136). Tests that must READ the operator's real setup (a local
+    // OpenClaw gateway's config) use SPELLGUARD_TEST_REAL_HOME.
+    // fixture-daemon-reaper: a spawned credential-daemon fixture cannot
+    // outlive the run, even an interrupted one (#1144).
+    globalSetup: [
+      'tests/setup/isolate-real-home.ts',
+      'tests/setup/fixture-daemon-reaper.ts',
+    ],
     server: {
       deps: {
         // partyserver's dist/index.js has a bare `import ... from

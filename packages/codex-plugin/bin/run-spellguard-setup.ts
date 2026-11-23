@@ -111,7 +111,9 @@ async function runManagedFlow(): Promise<void> {
       agentId: result.agentId,
       agentSecret: result.agentSecret,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
-      scopeSummary: { repos: [] },
+      // Identity-only: no GitHub credential yet, so no scope. Previously
+      // `{ repos: [] }` — indistinguishable from a real organization-wide
+      // grant. Omitted so "not connected" cannot be read as "everything".
       spellguardBaseUrl: result.spellguardBaseUrl,
       lastServerSeq: result.frame.seq,
       knownCredentials: [],
