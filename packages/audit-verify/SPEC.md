@@ -1,8 +1,13 @@
 # Spellguard audit checkpoints: format and verification
 
-**Format version 1.** This document is enough to write your own verifier. The
+**Format version 1.** This document is enough to write your own audit checker. The
 Go and TypeScript implementations in this package follow it and are tested
 against the same examples in `testdata/`.
+
+**Terms.** An *audit checker* is any program that checks an export against its
+checkpoints, such as the two in this package. A *Verifier* is the Spellguard
+service that checks agent traffic against policy and signs the audit records it
+reports (see [Signed records](#signed-records)). They are different things.
 
 ## What it proves
 
@@ -35,7 +40,7 @@ the AWS account's root user, until it expires. Spellguard cannot rewrite a
 checkpoint after it is written, only add new ones.
 
 To verify, you export your records and a set of short-lived, read-only S3 links
-to your stream (presigned URLs). The verifier fetches the checkpoints from S3
+to your stream (presigned URLs). The audit checker fetches the checkpoints from S3
 itself, so Spellguard cannot substitute them, and checks every record against
 them.
 
@@ -144,7 +149,7 @@ ed25519:<key id>:<signature>
 
 The signature is over the exact UTF-8 bytes of the **signed record**: one line
 of JSON with these fields, in this order. The export carries it beside the
-record (`signed_record`, below). A verifier checks the signature on those bytes,
+record (`signed_record`, below). An audit checker checks the signature on those bytes,
 then compares the signed values with the record's own.
 
 | Field | Type | Compared with the record's |
@@ -228,7 +233,7 @@ An export is a directory with two files.
   it also reveals objects newer than the export.
 - `checkpoints` lists every uploaded object Spellguard knows of, oldest first,
   with a presigned `GetObject` URL for each. `sha256`, `kind`, `written_at` and
-  `leaf_count` are Spellguard's claims; the verifier checks them against S3.
+  `leaf_count` are Spellguard's claims; the audit checker checks them against S3.
 - `records` says which records the bundle holds: every record listed by a
   `records` object with `from_seq ≤ seq ≤ to_seq`, plus, when `pending` is
   true, records not yet checkpointed. `to_seq` may be `null`, meaning no upper
@@ -242,7 +247,7 @@ An export is a directory with two files.
   before records were signed; then no signature can be checked.
 
 Nothing in the manifest is trusted except the URLs' destination, which the
-verifier checks (below). A manifest too malformed to read (another `format`, a
+audit checker checks (below). A manifest too malformed to read (another `format`, a
 missing field, a seq listed twice) stops verification with an error rather than
 a finding.
 
@@ -260,12 +265,12 @@ One JSON object per line:
 - `checkpoint_seq` is the checkpoint Spellguard says lists it, or `null` when
   it is not checkpointed yet.
 - `checkpointed_record` is optional: the text Spellguard stored when it
-  checkpointed the record, sent only when it differs from `record`. A verifier
+  checkpointed the record, sent only when it differs from `record`. An audit checker
   uses it only if its SHA-256 matches the checkpoint, to show what changed.
 
 ## Verifying
 
-A verifier is given the bundle, a list of **allowed buckets**, the current time,
+An audit checker is given the bundle, a list of **allowed buckets**, the current time,
 and optionally the checkpoint hashes it saved on earlier runs. Fetching uses
 only the URLs in the manifest. It reports each finding below with its code.
 Findings marked **fails** make the verification fail.
@@ -289,7 +294,7 @@ characters and equals the entry's `key_id`. Any other URL is `url_mismatch`
 (**fails**, and verification stops).
 
 The production bucket is `spellguard-audit-checkpoints-production` in
-`us-west-2`. A verifier allows only that bucket unless told otherwise.
+`us-west-2`. An audit checker allows only that bucket unless told otherwise.
 
 ### 2. List the stream
 
@@ -372,7 +377,7 @@ not, or that names a `records` checkpoint which does not list the record, is
 
 ### 4. Compare with saved checkpoints
 
-A verifier should save the SHA-256 of every checkpoint it has verified, keyed by
+An audit checker should save the SHA-256 of every checkpoint it has verified, keyed by
 bucket, generation and stream (`<bucket>/<generation>/<stream>`), and never
 overwrite a saved hash. It saves only checkpoints with no finding of their own
 (`delete_marker`, `extra_version`, `version_mismatch`, `not_locked`,
@@ -401,7 +406,7 @@ For each line of `records.jsonl`:
 | Listed in a checkpoint, and the SHA-256 of `record` matches | ok | |
 | Listed in a checkpoint, and it does not match | tampered | `record_changed` (**fails**) |
 | Not listed, and `checkpoint_seq` is null or above the highest uploaded seq | pending | |
-| Not listed, and `checkpoint_seq` names an uploaded checkpoint (including one the verifier could not read) | tampered | `record_unlisted` (**fails**) |
+| Not listed, and `checkpoint_seq` names an uploaded checkpoint (including one the audit checker could not read) | tampered | `record_unlisted` (**fails**) |
 | Also announced as deleted | tampered | `disposed_but_present` (**fails**) |
 
 For `record_changed`, if `checkpointed_record` is present and its SHA-256
@@ -474,7 +479,7 @@ links to each archived message object in the manifest:
 ```
 
 The bytes need no trusted source: a signed record names the SHA-256 of its
-archived object, so any bytes with that hash are the archived ones. A verifier
+archived object, so any bytes with that hash are the archived ones. An audit checker
 fetches only `https` links, refuses redirects, and treats a link it cannot read
 as unavailable.
 
@@ -502,7 +507,7 @@ when the verification passes and no archive is `changed`.
 
 ## Test vectors
 
-`testdata/scenarios/` holds example bundles with the S3 state a verifier
+`testdata/scenarios/` holds example bundles with the S3 state an audit checker
 would read and the expected outcome of each; `testdata/s3-xml/` holds real
 `ListObjectVersions` responses from an Object Lock bucket. See
 `testdata/README.md`.

@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="424" role="img" aria-labelledby="t d" viewBox="0 0 960 424">
+  <title id="t">How the audit checker works: inputs and output</title>
+  <desc id="d">The audit checker takes records and links from a Spellguard export, reads checkpoints and Verifier public keys directly from a locked Amazon S3 bucket, optionally compares against checkpoints saved on your machine, runs six checks, and reports pass or fail, records by status, findings, and an exit code.</desc>
+  <style>
+    svg { --bg:#ffffff; --surface:#ffffff; --soft:#eef1f4; --fg:#151a1f; --muted:#5b6672; --line:#d2d9df; --lock:#1b6582; --lock-soft:#e2eff4; --ok:#1b7a44; --ok-soft:#e0f2e7; --bad:#b5302a; --bad-soft:#fae5e3; --warn:#9c650f; --pend:#5f6974; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg:#0d1117; --surface:#161b22; --soft:#1d242c; --fg:#e4e9ed; --muted:#9aa6b2; --line:#30363d; --lock:#62b4d3; --lock-soft:#12303b; --ok:#55c487; --ok-soft:#12301f; --bad:#f2786f; --bad-soft:#3b1917; --warn:#e2aa55; --pend:#a5afb9; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); }
+    .bg { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+    .b-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+    .b-untrusted { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+    .b-lock { fill: var(--lock-soft); stroke: var(--lock); stroke-width: 1.5; }
+    .b-run { fill: var(--soft); stroke: var(--fg); stroke-width: 1.5; }
+    .t-title { font-size: 15px; font-weight: 600; }
+    .t-big { font-size: 17px; font-weight: 600; }
+    .t-tag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; fill: var(--muted); }
+    .t-tag.lock { fill: var(--lock); }
+    .t-body { font-size: 12.5px; }
+    .t-small { font-size: 11.5px; fill: var(--muted); }
+    .t-small.lock { fill: var(--lock); }
+    .t-edge { font-size: 11px; fill: var(--muted); }
+    .t-hash { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+    .t-sym { font-size: 20px; font-weight: 600; }
+    .t-chip { font-size: 13px; font-weight: 600; }
+    .t-bad { fill: var(--bad); }
+    .t-ok { fill: var(--ok); }
+    .strong { font-weight: 600; }
+    .edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+    .mk { fill: var(--muted); }
+    .rule { stroke: var(--line); stroke-width: 1; }
+    .num { fill: var(--surface); stroke: var(--fg); stroke-width: 1.2; }
+    .t-num { font-size: 11px; font-weight: 600; }
+    .dot-ok { fill: var(--ok); } .dot-bad { fill: var(--bad); } .dot-warn { fill: var(--warn); } .dot-pend { fill: var(--pend); }
+    .cmp-ok { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.5; }
+    .cmp-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+  </style>
+  <rect class="bg" x="0.5" y="0.5" width="959" height="423" rx="12"/>
+  <defs>
+    <marker id="arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="mk"/>
+    </marker>
+  </defs>
+
+  <!-- Source: Spellguard export -->
+  <rect class="b-untrusted" x="16" y="16" width="276" height="140" rx="10"/>
+  <text class="t-title" x="34" y="44">Spellguard export</text>
+  <text class="t-tag" x="34" y="62">NOT TRUSTED</text>
+  <text class="t-body" x="34" y="90">Each record’s exact text</text>
+  <text class="t-body" x="34" y="112">The Verifier’s signed copy of it</text>
+  <text class="t-body" x="34" y="134">Checkpoint list + S3 links</text>
+
+  <!-- Source: AWS S3 -->
+  <rect class="b-lock" x="16" y="172" width="276" height="140" rx="10"/>
+  <text class="t-title" x="34" y="200">AWS S3 bucket</text>
+  <text class="t-tag lock" x="34" y="218">LOCKED · NOBODY CAN EDIT</text>
+  <text class="t-body" x="34" y="246">Checkpoints: record fingerprints,</text>
+  <text class="t-body" x="34" y="268">each chained to the one before</text>
+  <text class="t-body" x="34" y="290">Verifier public keys</text>
+
+  <!-- Source: your machine -->
+  <rect class="b-box" x="16" y="328" width="276" height="80" rx="10"/>
+  <text class="t-title" x="34" y="356">Your machine</text>
+  <text class="t-tag" x="34" y="374">OPTIONAL</text>
+  <text class="t-body" x="34" y="396">Checkpoints you verified before</text>
+
+  <!-- Edges into the audit checker -->
+  <line class="edge" x1="292" y1="86" x2="382" y2="86" marker-end="url(#arr1)"/>
+  <text class="t-edge" x="337" y="78" text-anchor="middle">records, links</text>
+  <line class="edge" x1="292" y1="242" x2="382" y2="242" marker-end="url(#arr1)"/>
+  <text class="t-edge" x="337" y="234" text-anchor="middle">read directly</text>
+  <line class="edge" x1="294" y1="368" x2="382" y2="368" marker-start="url(#arr1)" marker-end="url(#arr1)"/>
+  <text class="t-edge" x="337" y="360" text-anchor="middle">compare, save</text>
+
+  <!-- Audit checker -->
+  <rect class="b-run" x="384" y="16" width="260" height="392" rx="10"/>
+  <text class="t-big" x="404" y="46">Audit checker</text>
+  <text class="t-small" x="404" y="66">open source · browser or CLI</text>
+  <line class="rule" x1="404" y1="82" x2="624" y2="82"/>
+  <circle class="num" cx="414" cy="110" r="10"/><text class="t-num" x="414" y="114" text-anchor="middle">1</text>
+  <text class="t-body" x="434" y="114">Links lead to the right bucket</text>
+  <circle class="num" cx="414" cy="160" r="10"/><text class="t-num" x="414" y="164" text-anchor="middle">2</text>
+  <text class="t-body" x="434" y="164">Checkpoints locked and chained</text>
+  <circle class="num" cx="414" cy="210" r="10"/><text class="t-num" x="414" y="214" text-anchor="middle">3</text>
+  <text class="t-body" x="434" y="214">Same as at your last check</text>
+  <circle class="num" cx="414" cy="260" r="10"/><text class="t-num" x="414" y="264" text-anchor="middle">4</text>
+  <text class="t-body" x="434" y="264">Records match fingerprints</text>
+  <circle class="num" cx="414" cy="310" r="10"/><text class="t-num" x="414" y="314" text-anchor="middle">5</text>
+  <text class="t-body" x="434" y="314">Signatures hold</text>
+  <circle class="num" cx="414" cy="360" r="10"/><text class="t-num" x="414" y="364" text-anchor="middle">6</text>
+  <text class="t-body" x="434" y="364">Every removal was announced</text>
+
+  <!-- Edge to report -->
+  <line class="edge" x1="644" y1="212" x2="702" y2="212" marker-end="url(#arr1)"/>
+  <text class="t-edge" x="673" y="204" text-anchor="middle">report</text>
+
+  <!-- Report -->
+  <rect class="b-box" x="704" y="16" width="240" height="392" rx="10"/>
+  <text class="t-big" x="722" y="46">Report</text>
+  <text class="t-small" x="722" y="66">same in the browser and CLI</text>
+  <line class="rule" x1="722" y1="82" x2="926" y2="82"/>
+  <text class="t-tag" x="722" y="108">VERDICT</text>
+  <text class="t-body" x="722" y="128">Pass, or fail with findings</text>
+  <text class="t-tag" x="722" y="162">RECORDS BY STATUS</text>
+  <text class="t-small" x="722" y="184">pass</text>
+  <text class="t-small" x="834" y="184">fail</text>
+  <circle class="dot-ok" cx="727" cy="202" r="4.5"/><text class="t-body" x="738" y="206">OK</text>
+  <circle class="dot-pend" cx="727" cy="224" r="4.5"/><text class="t-body" x="738" y="228">Pending</text>
+  <circle class="dot-warn" cx="727" cy="246" r="4.5"/><text class="t-body" x="738" y="250">Deleted</text>
+  <circle class="dot-bad" cx="839" cy="202" r="4.5"/><text class="t-body" x="850" y="206">Missing</text>
+  <circle class="dot-bad" cx="839" cy="224" r="4.5"/><text class="t-body" x="850" y="228">Tampered</text>
+  <text class="t-tag" x="722" y="284">FINDINGS</text>
+  <text class="t-body" x="722" y="304">A plain sentence per problem</text>
+  <text class="t-tag" x="722" y="338">CLI EXIT CODE</text>
+  <text class="t-body" x="722" y="358">0 pass, 1 fail,</text>
+  <text class="t-body" x="722" y="378">2 could not run</text>
+</svg>

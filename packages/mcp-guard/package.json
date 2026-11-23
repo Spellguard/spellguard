@@ -1,6 +1,6 @@
 {
   "name": "@spellguard/mcp-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Spellguard policy guard for MCP servers: wraps a local stdio MCP server or proxies a remote one, and checks every tool call against your Spellguard policies before it runs",
   "type": "module",
   "engines": {

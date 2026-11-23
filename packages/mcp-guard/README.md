@@ -22,6 +22,8 @@ Every decision appears in the agent's activity feed in the Spellguard console.
   shown once when you create the agent; rotate it on the agent's Settings tab
   for a new one.
 - Your Spellguard console address, for example `https://console.spellguard.ai`.
+- A Spellguard server recent enough to send Verifier keys when the guard
+  connects. The guard refuses to start against an older one, and says so.
 
 The console's **Connections → Add connection** guide fills these in for you.
 
@@ -127,11 +129,29 @@ The guard fails closed. A call is blocked, and a result withheld, when:
   supported yet, so the content isn't forwarded);
 - it's larger than 512 KiB, the most the guard sends for one check;
 - the Verifier can't be reached, refuses the check, or answers with something
-  that isn't a verdict (unless `--fail-open` covers the unreachable case).
+  that isn't a verdict (unless `--fail-open` covers the unreachable case);
+- the answer isn't signed by a Verifier your Spellguard server attests. That is
+  what something answering in the Verifier's place looks like, so `--fail-open`
+  never covers it.
 
 The agent sees an MCP error that names the policy. Image and audio content in
 results carries no text and isn't checked. The guard proxies tools only; an
 upstream's resources and prompts aren't exposed.
+
+## Verified answers
+
+The guard sends a fresh random nonce with every check. The Verifier signs its
+answer, the nonce and its own id with its session key, and the guard acts on the
+answer only when that signature matches a key Spellguard gave it. Spellguard
+hands out the keys of the Verifiers it has attested when the guard connects and
+each time the guard refreshes its token. A replayed answer fails the check
+because its nonce is wrong.
+
+A Verifier changes its session key once a day. When a signature matches none of
+the keys the guard holds, the guard asks Spellguard for the current keys and
+checks again before it blocks. It asks at most once every 10 seconds. A call made
+in the few seconds before Spellguard has attested a Verifier's new key is
+blocked.
 
 ## Lifecycle
 

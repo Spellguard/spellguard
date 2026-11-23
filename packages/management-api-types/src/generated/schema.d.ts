@@ -611,7 +611,12 @@ export interface components {
       agentId: string;
       managementToken: string;
       verifierUrl: string;
+      verifierKeys: components['schemas']['AttestedVerifierKey'][];
       tokenExpiresAt: string;
+    };
+    AttestedVerifierKey: {
+      verifierId: string;
+      publicKey: string;
     };
     ProxyConnectBody: {
       platform: string;

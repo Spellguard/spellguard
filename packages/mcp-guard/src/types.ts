@@ -29,6 +29,12 @@ export interface ProxyConnectResponse {
   agentId?: string;
   managementToken: string;
   verifierUrl: string;
+  /**
+   * The session keys of the Verifiers Spellguard attests. The guard acts on
+   * a verdict only when one of them signed it. Servers older than #1915 omit
+   * it, and the guard refuses to start against them.
+   */
+  verifierKeys?: unknown;
   tokenExpiresAt: string;
 }
 

@@ -7,7 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 once it reaches `1.0.0`. Pre-`1.0.0` releases may contain breaking changes
 in any minor version bump — see the release notes for details.
 
-## [Unreleased]
+## [0.3.0] - 2026-11-23
+
+In this release **`@spellguard/mcp-guard`** (version 0.2.0 on npm) checks that
+each Verifier answer is genuine before acting on it. Before, anything that
+could answer at the guard's Verifier URL could allow a tool call. This is a
+breaking change: the guard needs a Spellguard server that sends Verifier keys.
+The `audit-verify` docs now call the program that checks an audit export "the
+audit checker", so it can't be confused with the Verifier, and its README
+explains a check with two diagrams. See
+[Migrating from 0.2.0](#migrating-from-020) at the end of this section.
+
+### Security
+
+- **`@spellguard/mcp-guard`** — **BREAKING:** the guard acts on a Verifier
+  answer only when a Verifier your Spellguard server attests signed it, for the
+  fresh nonce the guard sent with that request. Before, anything that could
+  answer at the guard's Verifier URL (a rogue endpoint, a compromised hop, a DNS
+  or proxy mistake) could allow a call. Each `/v1/mcp/evaluate` and
+  `/v1/mcp/tools` request now carries `X-Spellguard-Verdict-Nonce`, and the
+  guard checks the answer's `X-Spellguard-Verdict-Signature` (Ed25519 over the
+  verifier id, the nonce, the time and the SHA-256 of the exact body) against
+  the keys Spellguard handed it. An unsigned or wrongly signed answer blocks the
+  call as `unverified-verdict`, even with `--fail-open`. An unverified
+  approved-tools list shows every tool, and each call is still checked. When a
+  signature matches no key the guard holds, it asks Spellguard for the current
+  keys (at most once every 10 seconds) and checks again before blocking, so a
+  Verifier's daily key rotation doesn't interrupt it. The guard refuses to
+  start against a Spellguard server that sends no Verifier keys, and says why.
+
+### Changed
+
+- **Management API** — proxy-connect and its token refresh return
+  `verifierKeys`: the verifier id and attested session key of every Verifier
+  that management currently attests (`AttestedVerifierKey` on
+  `ProxyConnectResponse` and `ProxyConnectRefreshResponse` in
+  `@spellguard/management-api-types`).
+- **`@spellguard/audit-verify`** — the docs call the program that checks an
+  export against its checkpoints "the audit checker". "Verifier" now means only
+  the Spellguard service that enforces policy and signs the records being
+  checked. `README.md` gains "How a check works": two diagrams
+  (`docs/inputs-and-output.svg`, `docs/one-record.svg`), the six checks in
+  order, and what each record status means. `SPEC.md` defines both terms. One
+  finding message changes in the Go and TypeScript implementations: "…but no
+  checkpoint the audit checker read does." The package path, the
+  `spellguard-audit-verify` command and every identifier are unchanged.
+
+### Migrating from 0.2.0
+
+1. **mcp-guard.** Upgrade to `@spellguard/mcp-guard` 0.2.0 only against a
+   Spellguard server that returns `verifierKeys` from proxy-connect. Against an
+   older server it refuses to start ("sent no Verifier keys"); keep 0.1.0 there
+   until the server is upgraded. A proxy or TLS-inspecting middlebox that
+   rewrites Verifier response bodies or strips the
+   `X-Spellguard-Verdict-Signature` header now makes every tool call block as
+   `unverified-verdict`.
+2. **audit-verify.** If you match on finding messages rather than codes, update
+   the `record_unlisted` text ("the audit checker read" instead of "the
+   verifier read").
 
 ## [0.2.0] - 2026-11-22
 
