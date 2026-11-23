@@ -174,7 +174,9 @@ class SpellguardInstance:
             if options.delivery_nonce_store is not None
             else DeliveryNonceCache()
         )
-        self._last_delivery_reattest = 0.0
+        # -inf, not 0: time.monotonic() counts from boot on Linux, so a 0 start
+        # skipped the first re-attest on a host up for under a minute (#1933).
+        self._last_delivery_reattest = float("-inf")
         self._DELIVERY_REATTEST_S = 60.0
         # #1407: report each refused or unverified delivery to management.
         self._report_bypass = DeliveryBypassReporter()

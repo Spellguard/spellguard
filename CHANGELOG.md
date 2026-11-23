@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 once it reaches `1.0.0`. Pre-`1.0.0` releases may contain breaking changes
 in any minor version bump — see the release notes for details.
 
+## [0.3.1] - 2026-11-23
+
+### Fixed
+
+- **`spellguard-client` (Python)** — on a host that booted less than a minute
+  earlier, a delivery signed by a rotated Verifier key was refused
+  (`401`, `unknown_key`) instead of making the client re-attest the Verifier
+  once. The once-a-minute throttle started at 0, and `time.monotonic()` counts
+  from boot on Linux. The first re-attestation now always runs. The TypeScript
+  client was not affected.
+
 ## [0.3.0] - 2026-11-23
 
 In this release **`@spellguard/mcp-guard`** (version 0.2.0 on npm) checks that

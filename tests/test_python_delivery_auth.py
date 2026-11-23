@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 from spellguard_amp.client.encrypt import derive_agent_key_pair, encrypt_for_verifier
 from spellguard_client.attestation import reset
+import spellguard_client.spellguard as spellguard_module
 from spellguard_client.spellguard import create_spellguard
 from spellguard_ctls.delivery import (
     DELIVERY_AUTH_HEADERS,
@@ -385,6 +386,35 @@ class TestPythonReceiveEnforcesDeliveryAuth:
         stranger = Ed25519PrivateKey.generate()
         body2 = _encrypted_body()
         assert _deliver(client, body2, _signed(body2, key=stranger)).status_code == 401
+
+    def test_re_registers_on_a_host_that_booted_seconds_ago(
+        self, client, verifier, monkeypatch
+    ):
+        # #1933: time.monotonic() counts from boot on Linux. On a host up for
+        # a few seconds (a fresh CI runner, a box that just started), the first
+        # unknown key must still make it re-attest once.
+        real_monotonic = time.monotonic
+        start = real_monotonic()
+
+        class _FreshBootClock:
+            def __getattr__(self, name: str) -> Any:
+                return getattr(time, name)
+
+            def monotonic(self) -> float:
+                return 5.0 + (real_monotonic() - start)
+
+        monkeypatch.setattr(spellguard_module, "time", _FreshBootClock())
+        rotated = Ed25519PrivateKey.generate()
+        verifier.responses = [
+            _registration(),
+            _registration(
+                sessionPublicKey=rotated.public_key().public_bytes_raw().hex()
+            ),
+        ]
+        body = _encrypted_body()
+        response = _deliver(client, body, _signed(body, key=rotated))
+        assert response.status_code == 200, response.text
+        assert len(verifier.requests) == 2
 
     def test_a_forged_old_version_header_does_not_switch_enforcement_off(self, client):
         body = _encrypted_body()
