@@ -93,12 +93,17 @@ export function addAdminKey(
 
 export function initAdminKeys(): void {
   adminKeyRing.clear();
-  const primary = process.env.MANAGEMENT_PUBLIC_KEY;
+  // Signing role — prefer the dedicated signing key over the legacy combined one.
+  const primary =
+    process.env.MANAGEMENT_SIGNING_PUBLIC_KEY ||
+    process.env.MANAGEMENT_PUBLIC_KEY;
   if (primary) {
     const keyId = addAdminKey(primary);
     console.log(`[AdminAuth] Loaded primary signing key: ${keyId}`);
   }
-  const previous = process.env.MANAGEMENT_PUBLIC_KEY_PREVIOUS;
+  const previous =
+    process.env.MANAGEMENT_SIGNING_PUBLIC_KEY_PREVIOUS ||
+    process.env.MANAGEMENT_PUBLIC_KEY_PREVIOUS;
   if (previous) {
     const expiryStr = process.env.MANAGEMENT_KEY_PREVIOUS_EXPIRES;
     const expiresAt = expiryStr

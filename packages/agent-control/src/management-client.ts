@@ -16,6 +16,17 @@ export const AGENT_GONE_HTTP_STATUSES: readonly number[] = [401, 403, 404, 410];
  * Accepts `undefined` (a network failure with no HTTP status) and treats it as
  * NOT gone — a missing status is transient, never "the agent is gone".
  */
+/**
+ * Strip trailing slashes and a trailing `/v1` without a regex: `/\/+$/` on a
+ * URL made of many slashes backtracks quadratically (CodeQL js/polynomial-redos).
+ */
+function normalizeManagementBaseUrl(baseUrl: string): string {
+  let url = baseUrl;
+  while (url.endsWith('/')) url = url.slice(0, -1);
+  if (url.endsWith('/v1')) url = url.slice(0, -3);
+  return url;
+}
+
 export function isAgentGoneStatus(httpStatus: number | undefined): boolean {
   return (
     httpStatus !== undefined && AGENT_GONE_HTTP_STATUSES.includes(httpStatus)
@@ -109,7 +120,7 @@ export function createManagementClient(
     // Strip a trailing slash AND a trailing `/v1` before appending `/v1`, so a
     // baseUrl of either `https://host` or `https://host/v1` (OpenClaw's docker
     // default carries `/v1`) yields a single `/v1`, never `/v1/v1`.
-    baseUrl: `${opts.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
+    baseUrl: `${normalizeManagementBaseUrl(opts.baseUrl)}/v1`,
     fetch: retryingFetch,
   });
   client.use(auth);

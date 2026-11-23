@@ -2,17 +2,30 @@
 # Build the NSM attestation binary (calls /dev/nsm via ioctl).
 FROM golang:1.22-alpine AS nsm-builder
 
+# Reproducible builds (#1410): BuildKit stamps the image, and with
+# `rewrite-timestamp=true` every layer's files, with this time instead of the
+# build's. Pass the commit's: --build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+ARG SOURCE_DATE_EPOCH
+
 WORKDIR /build
 COPY packages/verifier/nitro/nsm-attestation/ .
-RUN go mod tidy && go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-s -w' -o /nsm-attestation .
+# The committed go.sum pins the module graph; `go mod tidy` here resolved it
+# afresh on every build. -trimpath keeps build paths out of the binary.
+RUN go mod download && go mod verify
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /nsm-attestation .
 
 # ── Stage 2: Node.js builder ────────────────────────────────────────
 # Install workspace deps, build ctls/amp/verifier, then use pnpm deploy
 # to create a standalone deployment with only production dependencies.
 FROM node:24-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+ARG SOURCE_DATE_EPOCH
+
+# pnpm by version and hash: the root package.json's packageManager.
+# corepack turns on Node's compile cache, which leaves build-specific files in
+# /tmp; the layer must hold only pnpm.
+RUN export NODE_DISABLE_COMPILE_CACHE=1 && \
+    corepack enable && corepack prepare pnpm@9.15.0+sha512.76e2379760a4328ec4415815bcd6628dee727af3779aaa4c914e3944156c4299921a89f976381ee107d41f12cfa4b66681ca9c718f0668fa0831ed4c6d8ba56c --activate
 
 WORKDIR /app
 
@@ -42,9 +55,15 @@ RUN pnpm --filter @spellguard/verifier run build:nitro
 # Deploy: standalone package with only production deps.
 # The compiled dist/ is included in the deploy output.
 RUN pnpm --filter @spellguard/verifier deploy --prod /deploy
+# pnpm stamps node_modules/.modules.yaml with the time it ran (`prunedAt`);
+# use the build's SOURCE_DATE_EPOCH instead so the copy is byte-stable.
+RUN sed -i "s/^prunedAt: .*/prunedAt: $(date -u -d "@${SOURCE_DATE_EPOCH:-0}" '+%a, %d %b %Y %H:%M:%S GMT')/" \
+      /deploy/node_modules/.modules.yaml
 
 # ── Stage 3: runtime ────────────────────────────────────────────────
 FROM node:24-alpine
+
+ARG SOURCE_DATE_EPOCH
 
 # Install socat for vsock bridging inside the enclave
 RUN apk add --no-cache socat
@@ -55,8 +74,7 @@ WORKDIR /app
 COPY --from=builder /deploy/ ./
 
 # Copy enclave entrypoint
-COPY packages/verifier/nitro/enclave-init.sh /app/enclave-init.sh
-RUN chmod +x /app/enclave-init.sh
+COPY --chmod=0755 packages/verifier/nitro/enclave-init.sh /app/enclave-init.sh
 
 # Copy NSM attestation binary
 COPY --from=nsm-builder /nsm-attestation /opt/spellguard/nsm-attestation

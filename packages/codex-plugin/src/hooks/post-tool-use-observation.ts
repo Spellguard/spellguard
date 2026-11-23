@@ -58,6 +58,8 @@ export interface PostToolUseInput {
   remoteUrl?: string;
   agentId: string;
   scopedTokenId: string;
+  /** False when config is identity-only, locally revoked, or V5 is unusable. */
+  localCredentialAvailable?: boolean;
   clientSessionId: string;
   endpoint: string;
   agentSecret: string;
@@ -97,6 +99,8 @@ export type PostToolUseDecision =
   | { decision: 'allow'; observation?: ObserveResult | null }
   | { decision: 'skip' };
 
+type GitExec = (cmd: string, opts?: { cwd?: string }) => string;
+
 /**
  * Runtime PostToolUse entrypoint registered in `plugin.json`. Emits a `commit`
  * observation after a `git commit` Bash call completes successfully.
@@ -104,55 +108,24 @@ export type PostToolUseDecision =
 export async function runPostToolUse(
   input: PostToolUseInput,
 ): Promise<PostToolUseDecision> {
-  // Persist Edit/Write tool calls into the local edit store. We guard on
-  // the tool name *before* opening the SQLite store so non-Edit/Write
-  // tools (Read/Glob/Grep/Bash/etc.) don't pay the open cost. The store
-  // opens with a 24h auto-prune (see edit-store.ts) so retention is
-  // enforced at the natural call site.
-  if (input.toolName === 'Edit' || input.toolName === 'Write') {
-    const editStore = openEditStore({
-      rootDir: input.editsRootDir ?? join(homedir(), '.spellguard'),
-    });
-    try {
-      try {
-        // Key edits by git toplevel so the SessionStart watcher's
-        // emit-time queryByDir lookup aligns with what `git show` emits
-        // (repo-root-relative paths). resolveGitRoot falls back to cwd
-        // when not in a git repo, preserving existing non-repo behavior.
-        const workingDir = resolveGitRoot(input.cwd);
-        await recordEditFromToolUse({
-          store: editStore,
-          sessionContext: {
-            sessionId: input.clientSessionId,
-            agentId: input.agentId,
-            workingDir,
-          },
-          toolName: input.toolName,
-          toolInput: (input.toolInput ?? {}) as ToolInput,
-        });
-      } catch (err) {
-        // Edit-store failures must not break the unrelated git-commit
-        // observation path below. Log and continue.
-        console.error('[post-tool-use] edit-store record failed:', err);
-      }
-    } finally {
-      editStore.close();
-    }
-  }
+  await recordStructuredEdit(input);
 
-  if (input.toolName !== 'Bash' && input.toolName !== 'bash') {
+  const isBash = isBashTool(input.toolName);
+  const isApplyPatch = input.toolName === 'apply_patch';
+  if (!isBash && !isApplyPatch) {
     return { decision: 'skip' };
   }
 
   const cmd = input.toolArgs.join(' ');
-  const op = detectGitOp(cmd);
+  const op = isBash ? detectGitOp(cmd) : null;
   const isCommit = op === 'commit';
 
-  // Capture Bash-authored file changes into the edit store so diff-overlap can
-  // attribute them (see captureBashEditsForCommand). Non-fatal — it never throws.
-  await captureBashEditsForCommand(input, cmd, isCommit);
+  // Capture tool-authored file changes into the edit store so diff-overlap can
+  // attribute them (see captureToolEditsForCommand). Non-fatal — it never throws.
+  await captureToolEditsForCommand(input, cmd, isCommit);
 
-  if (!isCommit) return { decision: 'skip' };
+  if (!isBash || !isCommit) return { decision: 'skip' };
+  if (input.localCredentialAvailable === false) return { decision: 'skip' };
 
   const exec =
     input.execImpl ??
@@ -220,79 +193,20 @@ export async function runPostToolUse(
   // the commit, while the daemon path remains as a backstop for
   // commits that happen outside an active Claude Code session.
   // Non-fatal — any failure is logged inside the emitter and skipped.
-  try {
-    const editStoreRoot = input.editsRootDir ?? join(homedir(), '.spellguard');
-    const commitStore = openEditStore({ rootDir: editStoreRoot });
-    try {
-      const gitRoot = resolveGitRoot(input.cwd);
-      await emitCommitObservation({
-        store: commitStore,
-        diffProvider: async (s: string) => {
-          try {
-            const out = execFileSync('git', ['show', s], {
-              cwd: gitRoot,
-              encoding: 'utf8',
-              maxBuffer: 64 * 1024 * 1024,
-              stdio: ['ignore', 'pipe', 'ignore'],
-            });
-            return parseShowDiff(out);
-          } catch {
-            return {};
-          }
-        },
-        fetch,
-        apiBase: baseUrl,
-        agentId: input.agentId,
-        agentSecret: input.agentSecret,
-        workingDir: gitRoot,
-        remoteUrl,
-        commitEvent: {
-          sha,
-          branch,
-          // Pull authored/committed-at + author/committer identity from git
-          // so the row carries the same metadata as the daemon-watcher path
-          // would. `git log -1 --pretty=...%n` produces fields separated by
-          // a fixed delimiter that's unlikely to appear in any of them.
-          authoredAt: tryGitField(exec, input.cwd, '%aI'),
-          authorName: tryGitFieldOptional(exec, input.cwd, '%an'),
-          authorEmail: tryGitFieldOptional(exec, input.cwd, '%ae'),
-          committedAt: tryGitFieldOptional(exec, input.cwd, '%cI'),
-          committerName: tryGitFieldOptional(exec, input.cwd, '%cn'),
-          committerEmail: tryGitFieldOptional(exec, input.cwd, '%ce'),
-          message,
-          parentSha:
-            tryGitFieldOptional(exec, input.cwd, '%P')?.split(' ')[0] ?? null,
-          parentShas:
-            tryGitFieldOptional(exec, input.cwd, '%P')
-              ?.split(' ')
-              .filter((s) => s.length > 0) ?? [],
-          workingDir: gitRoot,
-        },
-        sessionContext: {
-          sessionId: input.clientSessionId,
-          agentId: input.agentId,
-        },
-      });
-    } finally {
-      commitStore.close();
-    }
-  } catch (err) {
-    // Surface to stderr — Claude Code captures hook stderr in the
-    // session transcript so operator can see emit failures while still
-    // letting the tool execution proceed.
-    process.stderr.write(
-      `[post-tool-use] emitCommitObservation failed: ${(err as Error)?.message ?? err}\n`,
-    );
-  }
+  await emitRichCommitObservation({
+    input,
+    exec,
+    baseUrl,
+    remoteUrl,
+    sha,
+    branch,
+    message,
+  });
 
   return { decision: 'allow', observation };
 }
 
-function tryGitField(
-  exec: (cmd: string, opts?: { cwd?: string }) => string,
-  cwd: string,
-  fmt: string,
-): string {
+function tryGitField(exec: GitExec, cwd: string, fmt: string): string {
   try {
     return exec(`git log -1 --pretty=tformat:${fmt}`, { cwd }).trim();
   } catch {
@@ -301,7 +215,7 @@ function tryGitField(
 }
 
 function tryGitFieldOptional(
-  exec: (cmd: string, opts?: { cwd?: string }) => string,
+  exec: GitExec,
   cwd: string,
   fmt: string,
 ): string | null {
@@ -319,7 +233,7 @@ function tryGitFieldOptional(
  * case. Always consumes the PreToolUse-stamped command start to clean up the
  * sidecar, even when the command is a tree-materializing git op (skipped).
  */
-async function captureBashEditsForCommand(
+async function captureToolEditsForCommand(
   input: PostToolUseInput,
   cmd: string,
   isCommit: boolean,
@@ -351,6 +265,10 @@ async function captureBashEditsForCommand(
   });
 }
 
+function isBashTool(toolName: string): boolean {
+  return toolName === 'Bash' || toolName === 'bash';
+}
+
 /**
  * True if HEAD is a merge commit (has a 2nd parent). `git rev-parse --verify
  * --quiet HEAD^2` exits 0 when a 2nd parent exists and non-zero otherwise
@@ -369,3 +287,108 @@ function headHasMultipleParents(cwd: string): boolean {
 }
 
 export default runPostToolUse;
+
+async function emitRichCommitObservation(args: {
+  input: PostToolUseInput;
+  exec: GitExec;
+  baseUrl: string;
+  remoteUrl: string;
+  sha: string;
+  branch: string;
+  message: string;
+}): Promise<void> {
+  const { input, exec, baseUrl, remoteUrl, sha, branch, message } = args;
+  try {
+    const editStoreRoot = input.editsRootDir ?? join(homedir(), '.spellguard');
+    const commitStore = openEditStore({ rootDir: editStoreRoot });
+    try {
+      const gitRoot = resolveGitRoot(input.cwd);
+      const parentText = tryGitFieldOptional(exec, input.cwd, '%P');
+      await emitCommitObservation({
+        store: commitStore,
+        diffProvider: async (s: string) => gitShowDiff(gitRoot, s),
+        fetch,
+        apiBase: baseUrl,
+        agentId: input.agentId,
+        agentSecret: input.agentSecret,
+        workingDir: gitRoot,
+        remoteUrl,
+        commitEvent: {
+          sha,
+          branch,
+          authoredAt: tryGitField(exec, input.cwd, '%aI'),
+          authorName: tryGitFieldOptional(exec, input.cwd, '%an'),
+          authorEmail: tryGitFieldOptional(exec, input.cwd, '%ae'),
+          committedAt: tryGitFieldOptional(exec, input.cwd, '%cI'),
+          committerName: tryGitFieldOptional(exec, input.cwd, '%cn'),
+          committerEmail: tryGitFieldOptional(exec, input.cwd, '%ce'),
+          message,
+          parentSha: parentText?.split(' ')[0] ?? null,
+          parentShas: parentText?.split(' ').filter((s) => s.length > 0) ?? [],
+          workingDir: gitRoot,
+        },
+        sessionContext: {
+          sessionId: input.clientSessionId,
+          agentId: input.agentId,
+        },
+      });
+    } finally {
+      commitStore.close();
+    }
+  } catch (err) {
+    // Surface to stderr so hook failures are visible without blocking the tool.
+    process.stderr.write(
+      `[post-tool-use] emitCommitObservation failed: ${(err as Error)?.message ?? err}\n`,
+    );
+  }
+}
+
+function gitShowDiff(gitRoot: string, sha: string) {
+  try {
+    const out = execFileSync('git', ['show', sha], {
+      cwd: gitRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return parseShowDiff(out);
+  } catch {
+    return {};
+  }
+}
+
+async function recordStructuredEdit(input: PostToolUseInput): Promise<void> {
+  // Persist Edit/Write tool calls into the local edit store. We guard on
+  // the tool name *before* opening the SQLite store so non-Edit/Write
+  // tools (Read/Glob/Grep/Bash/etc.) don't pay the open cost. The store
+  // opens with a 24h auto-prune (see edit-store.ts) so retention is
+  // enforced at the natural call site.
+  if (input.toolName !== 'Edit' && input.toolName !== 'Write') return;
+
+  const editStore = openEditStore({
+    rootDir: input.editsRootDir ?? join(homedir(), '.spellguard'),
+  });
+  try {
+    try {
+      // Key edits by git toplevel so the SessionStart watcher's emit-time
+      // queryByDir lookup aligns with what `git show` emits.
+      const workingDir = resolveGitRoot(input.cwd);
+      await recordEditFromToolUse({
+        store: editStore,
+        sessionContext: {
+          sessionId: input.clientSessionId,
+          agentId: input.agentId,
+          workingDir,
+        },
+        toolName: input.toolName,
+        toolInput: (input.toolInput ?? {}) as ToolInput,
+      });
+    } catch (err) {
+      // Edit-store failures must not break the unrelated git-commit
+      // observation path. Log and continue.
+      console.error('[post-tool-use] edit-store record failed:', err);
+    }
+  } finally {
+    editStore.close();
+  }
+}

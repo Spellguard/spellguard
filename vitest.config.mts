@@ -66,6 +66,16 @@ export class WorkflowEntrypoint {
     this.env = env;
   }
 }
+// RPC entrypoint base class — runtime-only at deploy time; stubbed (mirrors
+// the same stub in vitest.integration.config.mts) so modules that declare
+// \`class X extends WorkerEntrypoint\` (e.g. McpBackendEntrypoint) can be
+// imported and unit-tested under Node without spinning up workerd.
+export class WorkerEntrypoint {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+}
 `;
       }
     },
@@ -77,6 +87,13 @@ export default defineConfig({
   resolve: {
     dedupe: ['jose', 'react', 'react-dom', 'react-router-dom', 'hono'],
     alias: {
+      // The `/ai` subpath must precede the bare package alias: with the
+      // bare alias alone, `@spellguard/client/ai` (the demo fleet's
+      // spellguardTool import) cannot be resolved from a test.
+      '@spellguard/client/ai': resolve(
+        __dirname,
+        'packages/client/ts/src/ai.ts',
+      ),
       '@spellguard/client': resolve(
         __dirname,
         'packages/client/ts/src/index.ts',
@@ -114,6 +131,22 @@ export default defineConfig({
         __dirname,
         'packages/amp/ts/src/profile/index.ts',
       ),
+      '@spellguard/amp/policy-outcomes': resolve(
+        __dirname,
+        'packages/amp/ts/src/policy-outcomes.ts',
+      ),
+      '@spellguard/amp/policy-types': resolve(
+        __dirname,
+        'packages/amp/ts/src/policy-types.ts',
+      ),
+      '@spellguard/amp/document-limits': resolve(
+        __dirname,
+        'packages/amp/ts/src/document-limits.ts',
+      ),
+      '@spellguard/amp/agent-conduct': resolve(
+        __dirname,
+        'packages/amp/ts/src/agent-conduct.ts',
+      ),
       '@spellguard/amp': resolve(__dirname, 'packages/amp/ts/src/index.ts'),
       '@spellguard/ctls': resolve(__dirname, 'packages/ctls/ts/src'),
       '@spellguard/policy-sdk/testing': resolve(
@@ -124,6 +157,8 @@ export default defineConfig({
         __dirname,
         'packages/policy-sdk/src/index.ts',
       ),
+      // The Demo page's demo registry, read by the demo fleet, management
+      // and the dashboard (closed-only, like the fleet).
       '@spellguard/policy-catalog': resolve(
         __dirname,
         'packages/policy-catalog/src/index.ts',
@@ -141,6 +176,20 @@ export default defineConfig({
     },
   },
   test: {
+    // Hermetic seal: strip host-injected git env config (a live Spellguard
+    // session's own credential wiring) before any test runs — see the file.
+    // stub-rive-spinner: the ui-kit Spinner's Rive runtime needs matchMedia +
+    // canvas, which jsdom lacks — see the file.
+    // ensure-web-storage: some local jsdom toolchains yield an undefined
+    // window.localStorage — see the file.
+    // drain-unmount-timers: Radix finishes an unmount from a 0 ms timer that
+    // otherwise fires after jsdom teardown as an unhandled error — see the file.
+    setupFiles: [
+      'tests/setup/scrub-host-git-env.ts',
+      'tests/setup/stub-rive-spinner.ts',
+      'tests/setup/ensure-web-storage.ts',
+      'tests/setup/drain-unmount-timers.ts',
+    ],
     include: [
       'tests/**/*.test.ts',
       'tests/**/*.test.tsx',
@@ -165,7 +214,21 @@ export default defineConfig({
         // unit test that imports the full `typedApi` graph (e.g. the
         // openapi-contract guard) fails to load once a typed route transitively
         // reaches partyserver (via services/agent-control-push).
-        inline: ['partyserver'],
+        // @spellguard/ui-kit's barrel pulls in @rive-app/react-canvas (used by
+        // its Spinner). Rive is CJS and its named exports (e.g. `Alignment`)
+        // aren't statically resolvable under Node ESM — inline these so vite
+        // transforms them and the CJS↔ESM interop works in tests.
+        // @spellguard/illustrations' React entry imports its CSS, which Node
+        // can't load; inlined, vite handles the import.
+        inline: [
+          'partyserver',
+          /@spellguard\/ui-kit/,
+          /@spellguard\/illustrations/,
+          /@rive-app\//,
+          /framer-motion/,
+          /motion-dom/,
+          /motion-utils/,
+        ],
       },
     },
   },

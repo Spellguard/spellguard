@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { GithubCredentialScope } from '@spellguard/agent-control';
 import type { AgentCard } from '@spellguard/client';
 
 /**
@@ -69,7 +70,13 @@ export interface StatusData {
         source: 'socket';
         scopedTokenId: string;
         expiresAt: string;
-        repos: string[];
+        /**
+         * The discriminated credential scope, replacing a bare `repos: string[]`
+         * whose empty value could not distinguish an organization-wide grant
+         * from a grant of nothing. `undefined` = the store could not
+         * characterize it.
+         */
+        scope?: GithubCredentialScope;
         author: { name: string; email: string } | null;
       }
     | { source: 'none' };

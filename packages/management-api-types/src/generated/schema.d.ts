@@ -86,6 +86,24 @@ export interface paths {
             'application/json': components['schemas']['ErrorEnvelope'];
           };
         };
+        /** @description Reported framework not provisioned / binding mismatch */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorEnvelope'];
+          };
+        };
+        /** @description Unknown (non-canonical) framework value */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorEnvelope'];
+          };
+        };
         /** @description Plugin-sync rate limit exceeded */
         429: {
           headers: {
@@ -590,6 +608,7 @@ export interface components {
     };
     ProxyConnectResponse: {
       connectionId: string;
+      agentId: string;
       managementToken: string;
       verifierUrl: string;
       tokenExpiresAt: string;
@@ -638,9 +657,7 @@ export interface components {
       scoped_token_id?: string;
       expires_at: string;
       scoped_token?: string;
-      scope_summary: {
-        repos: string[];
-      };
+      scope_summary?: components['schemas']['GithubCredentialScope'];
       provider_data: {
         github_user_id: number;
         github_login: string;
@@ -651,6 +668,16 @@ export interface components {
       github_org_login?: string;
       installation_id?: number;
     };
+    GithubCredentialScope:
+      | {
+          /** @enum {string} */
+          mode: 'all';
+        }
+      | {
+          /** @enum {string} */
+          mode: 'selected';
+          repos: string[];
+        };
     ErrorEnvelope: {
       error: {
         code: string;

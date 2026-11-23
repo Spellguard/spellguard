@@ -36,10 +36,13 @@ function hexToPem(hex: string): string {
 }
 
 export async function initManagementPublicKey(): Promise<void> {
-  const keyInput = process.env.MANAGEMENT_PUBLIC_KEY;
+  // Signing role — prefer the dedicated signing key over the legacy combined one.
+  const keyInput =
+    process.env.MANAGEMENT_SIGNING_PUBLIC_KEY ||
+    process.env.MANAGEMENT_PUBLIC_KEY;
   if (!keyInput) {
     console.warn(
-      '[Verifier] MANAGEMENT_PUBLIC_KEY not set — management JWT verification disabled',
+      '[Verifier] MANAGEMENT_SIGNING_PUBLIC_KEY not set — management JWT verification disabled',
     );
     return;
   }

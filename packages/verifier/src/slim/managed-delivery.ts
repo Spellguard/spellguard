@@ -89,6 +89,23 @@ export function invalidateGatewayRegistration(agentId: string): void {
   registered.delete(agentId);
 }
 
+/**
+ * Forget ALL cached registrations so the next roster pass re-pushes every
+ * agent. Called when a gateway RESTART is detected: the gateway's in-memory
+ * subscription registry was wiped, but this cache still believes every agent is
+ * registered, so `warmRoster`'s cheap cache-hits would stop re-pushing and each
+ * recipient would only recover on its own next `session-failed` delivery (a
+ * cold lazy re-register in the message hot path). Clearing the cache lets the
+ * roster PROACTIVELY re-subscribe everyone.
+ *
+ * This is safe against the every-interval re-registration churn the roster
+ * pre-sync deliberately avoids ONLY because the caller fires it once per actual
+ * restart, never per pass — see `startRosterSync`'s gateway-restart watcher.
+ */
+export function resetGatewayRegistrations(): void {
+  registered.clear();
+}
+
 export function _resetForTesting(): void {
   registered.clear();
   inflight.clear();

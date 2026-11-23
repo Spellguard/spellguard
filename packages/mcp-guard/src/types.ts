@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+
 export interface McpGuardConfig {
   agentId: string;
   agentSecret: string;
   managementUrl: string;
   upstreamUrl?: string;
   upstreamToken?: string;
+  /** The wrapped server's executable. */
   wrapCommand?: string;
+  /** Its arguments, passed as argv (no shell, no splitting). */
+  wrapArgs?: string[];
+  /** Environment variables the wrapped server may see beyond the baseline. */
+  passEnv?: string[];
   workspace?: string;
   failOpen?: boolean;
   verifierTimeout?: number;
@@ -14,6 +21,12 @@ export interface McpGuardConfig {
 
 export interface ProxyConnectResponse {
   connectionId: string;
+  /**
+   * The agent ID the management token names, which the Verifier checks every
+   * request against. Older servers omit it; the guard then uses the
+   * configured ID.
+   */
+  agentId?: string;
   managementToken: string;
   verifierUrl: string;
   tokenExpiresAt: string;
@@ -50,12 +63,22 @@ export interface ChannelContext {
   channelName?: string;
   threadTs?: string;
   isDirectMessage?: boolean;
+  /** The tool under evaluation; names the Verifier's tool leg. */
+  tool?: string;
+  /** The guard's platform connection, so the Verifier's record lands on it. */
+  connectionId?: string;
 }
 
 export interface EvaluateResponse {
   result: 'allow' | 'block' | 'flag' | 'unscanned';
   detections: Detection[];
   redactions: Redaction[];
+  /**
+   * Who decided. `verifier`: the Verifier evaluated and recorded it.
+   * `guard`: the guard decided locally (Verifier unreachable or refused, a
+   * malformed verdict, an oversized payload) and must record it itself.
+   */
+  source: 'verifier' | 'guard';
 }
 
 export interface EvaluateBatchResponse {
@@ -65,6 +88,7 @@ export interface EvaluateBatchResponse {
     detections: Detection[];
     redactions: Redaction[];
   }>;
+  source: 'verifier' | 'guard';
 }
 
 export interface Detection {
@@ -99,9 +123,11 @@ export interface TrafficEntry {
 
 export interface Upstream {
   connect(): Promise<void>;
-  toolsList(): Promise<unknown>;
+  toolsList(): Promise<Tool[]>;
   toolsCall(name: string, args: Record<string, unknown>): Promise<unknown>;
   close(): Promise<void>;
+  /** Called once if the upstream goes away on its own (the child exits). */
+  onClose?: () => void;
 }
 
 export interface PlatformParser {

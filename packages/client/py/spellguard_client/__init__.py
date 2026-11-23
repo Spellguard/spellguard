@@ -142,7 +142,6 @@ from spellguard_client.ai import (
 from spellguard_client.spellguard import (
     SpellguardInstance,
     create_spellguard,
-    verify_verifier_request,
 )
 
 # Lockfile / dependency reporting (advisory pipeline input)
@@ -233,7 +232,6 @@ __all__ = [
     # spellguard instance
     "SpellguardInstance",
     "create_spellguard",
-    "verify_verifier_request",
     # lockfile / dependency reporting
     "SUPPORTED_LOCKFILES",
     "LockfileFile",

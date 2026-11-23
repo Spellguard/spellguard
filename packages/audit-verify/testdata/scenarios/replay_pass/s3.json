@@ -1,0 +1,86 @@
+{
+  "bucket": "spellguard-audit-checkpoints-test",
+  "versions": [
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000001.json",
+      "version_id": "v1-a",
+      "last_modified": "2026-11-10T00:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T01:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":1,\"previous_sha256\":null,\"written_at\":\"2026-11-10T00:17:00.000Z\",\"kind\":\"records\",\"leaves\":[{\"id\":\"00000000-0000-4000-8000-000000001001\",\"sha256\":\"e98df178f94a6d6f0e52027a8af6c1e1e194bf25576e9bcb446c857b23b945a0\"},{\"id\":\"00000000-0000-4000-8000-000000001002\",\"sha256\":\"fcefe9f3e4c808dbb028b8a649241dadc9c653cef372256f76d9c6912cdaaaa1\"},{\"id\":\"00000000-0000-4000-8000-000000001003\",\"sha256\":\"0396c471fda6365dc06830bff29831dfb9e26c338eb8f379c2aa52dddf6d9e1f\"},{\"id\":\"00000000-0000-4000-8000-000000001004\",\"sha256\":\"b8b2641e07becd505ce8924ffe6fe0844090fa8534dbc3975ff34851dfab0073\"},{\"id\":\"00000000-0000-4000-8000-000000001005\",\"sha256\":\"c8c1f38a081023f11dd07a95da093542d76ba02ba9802b2aa9057c892b375169\"},{\"id\":\"00000000-0000-4000-8000-000000001006\",\"sha256\":\"4715b0de2595e1fe495e74b07ae6f118fe6f86f44a17a803a3ee5769b97d8be2\"}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000002.json",
+      "version_id": "v2-a",
+      "last_modified": "2026-11-10T01:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T02:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":2,\"previous_sha256\":\"a76976328c4414658b48cf419cfd0e89f1a929b19c10349c86a0ed7262ccfbf5\",\"written_at\":\"2026-11-10T01:17:00.000Z\",\"kind\":\"records\",\"leaves\":[{\"id\":\"00000000-0000-4000-8000-000000001007\",\"sha256\":\"525acb0ae8aed803250419b90ce03c25cd48c7fc9a77ced7e3af8a05f8fe65d0\"},{\"id\":\"00000000-0000-4000-8000-000000001008\",\"sha256\":\"4bcd2d4ea5ded0ba4474eb3a954196ded10690673263dd0d7630fe00e37ebb55\"},{\"id\":\"00000000-0000-4000-8000-000000001009\",\"sha256\":\"6f33ef8fc067c57fce0f327e3676d0a28e1eb12ed0b01e62c247579ee55e2590\"},{\"id\":\"00000000-0000-4000-8000-00000000100a\",\"sha256\":\"0fe5f35db3e7f36cbf2e00e4a86dcac1d4b1d4b11dae6eb35705464ddaee2541\"}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000003.json",
+      "version_id": "v3-a",
+      "last_modified": "2026-11-10T02:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T03:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":3,\"previous_sha256\":\"fe80bb886b14f8916b928807fa5eee6bcb8cd6d40f12159fbc438ff91967ffe0\",\"written_at\":\"2026-11-10T02:17:00.000Z\",\"kind\":\"disposal\",\"reason\":\"retention\",\"retention_days\":30,\"leaves\":[{\"id\":\"00000000-0000-4000-8000-000000001002\",\"sha256\":\"fcefe9f3e4c808dbb028b8a649241dadc9c653cef372256f76d9c6912cdaaaa1\",\"checkpoint_seq\":1},{\"id\":\"00000000-0000-4000-8000-000000001003\",\"sha256\":\"0396c471fda6365dc06830bff29831dfb9e26c338eb8f379c2aa52dddf6d9e1f\",\"checkpoint_seq\":1}]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000004.json",
+      "version_id": "v4-a",
+      "last_modified": "2026-11-10T03:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T04:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":4,\"previous_sha256\":\"1bffa879a34c4d2fb6dc2325c254b4a2a218aef72e9f1512166d9e3ebbd6da87\",\"written_at\":\"2026-11-10T03:17:00.000Z\",\"kind\":\"heartbeat\",\"leaves\":[]}\n"
+    },
+    {
+      "key": "audit-checkpoints/00000000-0000-4000-8000-0000000000a0/00000000-0000-4000-8000-0000000000b0/000000000005.json",
+      "version_id": "v5-a",
+      "last_modified": "2026-11-10T04:17:04.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2026-11-11T05:17:04.000Z",
+      "body": "{\"format\":1,\"generation\":\"00000000-0000-4000-8000-0000000000a0\",\"stream\":\"00000000-0000-4000-8000-0000000000b0\",\"seq\":5,\"previous_sha256\":\"b3a4d02ba3dd286280b24292506048d2ffd333f24fafe7698ba05386c81c689a\",\"written_at\":\"2026-11-10T04:17:00.000Z\",\"kind\":\"records\",\"leaves\":[{\"id\":\"00000000-0000-4000-8000-00000000100b\",\"sha256\":\"992a5b3e69072c340ed81bde6afdda4fc89e93e55e19569fa79c17779c6c85e8\"},{\"id\":\"00000000-0000-4000-8000-00000000100c\",\"sha256\":\"b653a427e3c874ca42caf7916bd166d38460af50e30f66fdc57768866f3936ff\"}]}\n"
+    },
+    {
+      "key": "spellguard/archive/message-6.json",
+      "version_id": "a-message-6",
+      "last_modified": "2026-11-10T00:17:00.000Z",
+      "lock_mode": null,
+      "retain_until": null,
+      "body": "archive 6"
+    },
+    {
+      "key": "spellguard/archive/message-11.json",
+      "version_id": "a-message-11",
+      "last_modified": "2026-11-10T00:17:00.000Z",
+      "lock_mode": null,
+      "retain_until": null,
+      "body": "archive 11"
+    },
+    {
+      "key": "spellguard/archive/message-12.json",
+      "version_id": "a-message-12",
+      "last_modified": "2026-11-10T00:17:00.000Z",
+      "lock_mode": null,
+      "retain_until": null,
+      "body": "archive 12"
+    },
+    {
+      "key": "spellguard/archive/message-13.json",
+      "version_id": "a-message-13",
+      "last_modified": "2026-11-10T00:17:00.000Z",
+      "lock_mode": null,
+      "retain_until": null,
+      "body": "archive 13"
+    },
+    {
+      "key": "audit-checkpoints/keys/0d9073359ae9f4da.json",
+      "version_id": "k1-a",
+      "last_modified": "2026-11-09T22:17:00.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2027-12-14T22:17:00.000Z",
+      "body": "{\"format\":1,\"kind\":\"verifier-audit-key\",\"algorithm\":\"ed25519\",\"key_id\":\"0d9073359ae9f4da\",\"public_key\":\"c59366398f7bc6f6a6950d684eac7480622afef37c3f0d80ac62c96273983e5f\"}\n"
+    }
+  ],
+  "delete_markers": []
+}

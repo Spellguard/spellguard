@@ -18,9 +18,17 @@
  *        path which is client-driven).
  *
  *   2. Extracts the instance fingerprint, in order:
- *      - Lightsail / AWS EC2: IMDS v1 at
- *        `http://169.254.169.254/latest/meta-data/instance-id` (no auth
- *        required, ~10 ms LAN-local fetch).
+ *      - Lightsail / AWS EC2: IMDS v2 (session-token PUT to
+ *        `http://169.254.169.254/latest/api/token`, then a token-authed GET of
+ *        `/latest/meta-data/instance-id`), falling back to the tokenless v1
+ *        GET only when the token endpoint answers but rejects the PUT.
+ *        Lightsail blueprints and hardened EC2 launch templates set
+ *        `HttpTokens=required`, so the v1 GET 401s there — proven live on the
+ *        `openclaw_ls_1_0` blueprint (v1 → 401, v2 → `i-…`). A v1-only fetch
+ *        therefore degraded EVERY Lightsail box to the unstable fallback
+ *        fingerprint below, which broke same-box claim recovery (the DO
+ *        rejects a different-fingerprint redeem as a replay), stranding the
+ *        box in `provisioning` whenever the first claim attempt died.
  *      - Railway: `RAILWAY_SERVICE_ID` env var (Railway exposes it in every
  *        service's runtime env).
  *      - Fallback: `unknown-${hostname()}-${Date.now()}` — the server
@@ -107,9 +115,9 @@ export interface RunManagedBootstrapOptions {
    */
   env?: NodeJS.ProcessEnv;
   /**
-   * Override the IMDS fetcher. Defaults to a 1500 ms `fetch` against
-   * `http://169.254.169.254/latest/meta-data/instance-id`. Tests pass a
-   * stub that returns `null` to simulate "not on AWS".
+   * Override the IMDS fetcher. Defaults to {@link defaultFetchInstanceId}
+   * (IMDS v2 with a v1 fallback, 1500 ms per hop). Tests pass a stub that
+   * returns `null` to simulate "not on AWS".
    */
   fetchInstanceId?: () => Promise<string | null>;
   /**
@@ -175,30 +183,89 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s;
 }
 
-/**
- * Default IMDS v1 fetcher. Times out at 1.5 s — IMDS is LAN-local and
- * typically replies in under 10 ms; a longer timeout would delay startup
- * on non-AWS hosts where the link-local IP times out at the TCP layer.
- *
- * Returns `null` on any failure (timeout, non-200, network error). The
- * caller treats `null` the same as a thrown error: fall through to the
- * next detection method.
- */
-async function defaultFetchInstanceId(): Promise<string | null> {
+/** IMDS endpoints (LAN-local link-local address on every AWS box). */
+const IMDS_TOKEN_URL = 'http://169.254.169.254/latest/api/token';
+const IMDS_INSTANCE_ID_URL =
+  'http://169.254.169.254/latest/meta-data/instance-id';
+/** Per-hop IMDS timeout — IMDS is LAN-local and typically replies in <10 ms. */
+const IMDS_TIMEOUT_MS = 1500;
+
+/** `fetch` with a hard per-request timeout (IMDS hops only). */
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1500);
+  const timer = setTimeout(() => controller.abort(), IMDS_TIMEOUT_MS);
   try {
-    const res = await fetch(
-      'http://169.254.169.254/latest/meta-data/instance-id',
-      { signal: controller.signal },
-    );
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Default IMDS fetcher: **IMDS v2 first, v1 fallback**.
+ *
+ * Lightsail blueprints (proven live on `openclaw_ls_1_0`: the tokenless v1
+ * GET returns 401) and hardened EC2 launch templates set
+ * `HttpTokens=required`, so the instance-id is only readable with a v2
+ * session token. Sequence:
+ *
+ *   1. PUT `/latest/api/token`. A NETWORK failure here (timeout / refused)
+ *      means there is no IMDS endpoint at all (non-AWS host) — return `null`
+ *      immediately so non-AWS startup pays a single 1.5 s timeout, exactly
+ *      as the old v1-only fetcher did.
+ *   2. Token granted → GET the instance-id with the token header.
+ *   3. Token rejected (v1-only IMDS builds) or the v2 read failed → fall back
+ *      to the tokenless v1 GET.
+ *
+ * Returns `null` on any failure. The caller treats `null` the same as a
+ * thrown error: fall through to the next detection method.
+ *
+ * Exported for unit tests (which inject `fetchImpl`); production callers go
+ * through `resolveInstanceFingerprint`.
+ */
+export async function defaultFetchInstanceId(
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  let token = '';
+  try {
+    const tokenRes = await fetchWithTimeout(fetchImpl, IMDS_TOKEN_URL, {
+      method: 'PUT',
+      headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '60' },
+    });
+    if (tokenRes.ok) token = (await tokenRes.text()).trim();
+  } catch {
+    // No IMDS endpoint at all (non-AWS host) — do NOT retry via v1; that
+    // would double the startup delay off-AWS for no possible gain.
+    return null;
+  }
+
+  if (token.length > 0) {
+    try {
+      const res = await fetchWithTimeout(fetchImpl, IMDS_INSTANCE_ID_URL, {
+        headers: { 'X-aws-ec2-metadata-token': token },
+      });
+      if (res.ok) {
+        const text = (await res.text()).trim();
+        if (text.length > 0) return text;
+      }
+    } catch {
+      // Fall through to the v1 attempt below.
+    }
+  }
+
+  // v1 fallback — IMDS answered the token PUT but didn't grant a token (or
+  // the v2 read failed): v1-only builds accept the tokenless GET.
+  try {
+    const res = await fetchWithTimeout(fetchImpl, IMDS_INSTANCE_ID_URL);
     if (!res.ok) return null;
     const text = (await res.text()).trim();
     return text.length > 0 ? text : null;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

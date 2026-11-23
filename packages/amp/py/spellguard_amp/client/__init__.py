@@ -12,6 +12,7 @@ from spellguard_amp.client.encrypt import (
     base64_to_bytes,
     bytes_to_base64,
     decrypt_from_verifier,
+    derive_agent_key_pair,
     encrypt_for_verifier,
     hash_payload,
 )
@@ -21,6 +22,7 @@ from spellguard_amp.types import A2AResponse, AttestationLevel, UnilateralSendRe
 __all__ = [
     "encrypt_for_verifier",
     "decrypt_from_verifier",
+    "derive_agent_key_pair",
     "hash_payload",
     "bytes_to_base64",
     "base64_to_bytes",

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>spellguard-audit-checkpoints-test</Name><Prefix>audit-checkpoints/4de38a9a-abd7-4cfa-ac05-9c31067a3e21/ef089c37-90fb-4733-8190-a8364e153054/</Prefix><KeyMarker>audit-checkpoints/4de38a9a-abd7-4cfa-ac05-9c31067a3e21/ef089c37-90fb-4733-8190-a8364e153054/000000000001.json</KeyMarker><VersionIdMarker></VersionIdMarker><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated></ListVersionsResult>

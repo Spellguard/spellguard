@@ -13,7 +13,8 @@ set -eu
 # ── Load environment config ──────────────────────────────────────
 # The .env file is baked into the image at build time from a GitHub Actions
 # environment variable. It contains all env vars the
-# Verifier server needs (MANAGEMENT_URL, VERIFIER_ID, MANAGEMENT_PUBLIC_KEY, etc.).
+# Verifier server needs (MANAGEMENT_URL, VERIFIER_ID,
+# MANAGEMENT_SIGNING_PUBLIC_KEY, MANAGEMENT_ARCHIVE_PUBLIC_KEY, etc.).
 # ── Bring up loopback interface ─────────────────────────────────
 # Nitro Enclaves have no networking by default — not even loopback.
 # Without this, 127.0.0.1 is unreachable and the server can't bind.
@@ -61,7 +62,8 @@ echo "[enclave-init]   VERIFIER_PLATFORM=${VERIFIER_PLATFORM:-<not set>}"
 echo "[enclave-init]   MANAGEMENT_URL=${MANAGEMENT_URL:-<not set>}"
 echo "[enclave-init]   VERIFIER_EXTERNAL_URL=${VERIFIER_EXTERNAL_URL:-<not set>}"
 echo "[enclave-init]   DYNAMODB_NONCE_TABLE=${DYNAMODB_NONCE_TABLE:-<not set>}"
-echo "[enclave-init]   MANAGEMENT_PUBLIC_KEY=${MANAGEMENT_PUBLIC_KEY:+set (${#MANAGEMENT_PUBLIC_KEY} chars)}"
+echo "[enclave-init]   MANAGEMENT_SIGNING_PUBLIC_KEY=${MANAGEMENT_SIGNING_PUBLIC_KEY:+set (${#MANAGEMENT_SIGNING_PUBLIC_KEY} chars)}"
+echo "[enclave-init]   MANAGEMENT_ARCHIVE_PUBLIC_KEY=${MANAGEMENT_ARCHIVE_PUBLIC_KEY:+set (${#MANAGEMENT_ARCHIVE_PUBLIC_KEY} chars)}"
 
 # Run the esbuild bundle — all internal imports (ctls, amp, local files)
 # are resolved at build time. No tsx, no ESM resolution issues.

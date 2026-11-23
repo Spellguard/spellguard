@@ -36,24 +36,32 @@ class TestPythonToolCheckResult:
 
 
 class TestPythonCheckToolPolicy:
-    """check_tool_policy() tests."""
+    """check_tool_policy() tests.
+
+    These two asserted the pre-2026-08 fail-OPEN posture. Product-findings S2
+    inverted it: a check that cannot complete blocks. The full matrix (every
+    failure mode, and the fail_open opt-out) lives in
+    tests/test_python_tool_policy_fail_closed.py.
+    """
 
     @pytest.mark.asyncio
-    async def test_fails_open_when_no_channel(self):
-        """When no channel is configured, check_tool_policy should fail open."""
+    async def test_fails_closed_when_no_channel(self):
+        """With nothing configured there is no channel, so the call blocks."""
         # get_or_create_channel will raise since nothing is configured
         result = await check_tool_policy("input", "testTool", {"key": "value"})
-        assert result.effect == "allow"
+        assert result.effect == "block"
+        assert result.reason == "channel_unavailable"
 
     @pytest.mark.asyncio
-    async def test_fails_open_on_exception(self):
-        """Network errors should result in allow (fail-open)."""
+    async def test_fails_closed_on_exception(self):
+        """A channel that cannot be established blocks rather than allows."""
         with patch(
             "spellguard_client.attestation.get_or_create_channel",
             side_effect=RuntimeError("Connection refused"),
         ):
             result = await check_tool_policy("output", "testTool", result="data")
-            assert result.effect == "allow"
+            assert result.effect == "block"
+            assert result.reason == "channel_unavailable"
 
 
 class TestPythonSpellguardTool:

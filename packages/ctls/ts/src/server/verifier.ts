@@ -45,6 +45,8 @@ export interface VerifyEvidenceOptions {
   verifierPort?: string;
   /** Agent's Ed25519 public key (hex) for real signature verification */
   agentPublicKey?: string;
+  /** Caller independently verified continuity of this agent identity. */
+  identityVerified?: boolean;
   /** Verifier's own attestation type — included in the attestation result */
   verifierAttestationType?: 'nitro' | 'phala' | 'internal' | 'mock';
 }
@@ -149,15 +151,18 @@ export async function verifyEvidence(
     expiresAt,
   };
 
-  // Step 1 above already verified the evidence signature against the
-  // agent's management-tracked public key, so the registering party
-  // demonstrably controls the agent identity AND signed off on the
-  // claimed endpoint.  That makes endpoint updates on re-registration
-  // safe — preventing them only locks legitimate redeploys (e.g.
-  // moving to a custom domain) out of an existing agentId without
-  // adding any real anti-hijacking guarantee on top of the signature.
+  // Re-registration replaces the channel token, so it is safe only when the
+  // caller proved continuity through the management-tracked public key or a
+  // separately verified agent secret. The legacy field-presence fallback
+  // proves no continuity even when the endpoint is unchanged. The resulting
+  // lockout for an unverified caller (no allowEndpointUpdate) is bounded by the
+  // existing registration's expiresAt: registerAgent evicts an expired record
+  // before applying the anti-hijack guard, so a restarted standalone / fail-open
+  // agent recovers once the stale token lifetime elapses, without a verifier
+  // process restart.
   const regResult = registerAgent(registeredAgent, {
-    allowEndpointUpdate: true,
+    allowEndpointUpdate:
+      options?.agentPublicKey !== undefined || options?.identityVerified,
   });
   if (!regResult.success) {
     return failResult(regResult.error);
@@ -176,6 +181,8 @@ export async function verifyEvidence(
       refreshEndpoint: '/channels/refresh',
     },
     verifierAttestationType: options?.verifierAttestationType,
+    // #1244: this Verifier signs every delivery with sessionPublicKey.
+    deliveryAuth: 'v1',
   };
 }
 

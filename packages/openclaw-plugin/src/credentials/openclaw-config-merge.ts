@@ -38,7 +38,11 @@
 
 import {
   chmodSync,
+  closeSync,
+  constants as fsConstants,
+  fsyncSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -251,12 +255,16 @@ function applyOpenrouterEntry(
   const apiKey = entry.secrets.api_key;
   const modelId = entry.secrets.model_id;
   if (!apiKey || !modelId) {
+    // Name the missing fields from literals only — nothing derived from the
+    // secret value reaches the log (CodeQL js/clear-text-logging).
+    const missing: string[] = [];
+    if (!apiKey) missing.push('api_key');
+    if (!modelId) missing.push('model_id');
     console.warn({
       event: 'openclaw_config_merge.skipped',
       reason: 'openrouter_missing_secrets',
       provider: 'openrouter',
-      hasApiKey: Boolean(apiKey),
-      hasModelId: Boolean(modelId),
+      missing,
     });
     return;
   }
@@ -545,7 +553,51 @@ function ensureSlackChannelDefaults(channels: Record<string, unknown>): void {
  * Returns true on success, false on any error (the module's no-throw contract
  * means errors are handled by the caller via the return value).
  */
-function atomicWrite(configPath: string, content: string): boolean {
+export type TerminalCleanupDurabilityStep =
+  | 'renamed'
+  | 'file_fsynced'
+  | 'directory_fsynced'
+  | 'verified';
+
+export interface TerminalCleanupDurabilityDeps {
+  /** Narrow syscall seams for deterministic power-loss fault tests. */
+  open?: (path: string) => number;
+  fsync?: (fd: number) => void;
+  close?: (fd: number) => void;
+  onStep?: (step: TerminalCleanupDurabilityStep) => void;
+}
+
+function fsyncFileAndParent(
+  configPath: string,
+  deps: TerminalCleanupDurabilityDeps = {},
+): void {
+  const open =
+    deps.open ?? ((path: string) => openSync(path, fsConstants.O_RDONLY));
+  const fsync = deps.fsync ?? fsyncSync;
+  const close = deps.close ?? closeSync;
+
+  const fileFd = open(configPath);
+  try {
+    fsync(fileFd);
+    deps.onStep?.('file_fsynced');
+  } finally {
+    close(fileFd);
+  }
+
+  const directoryFd = open(dirname(configPath));
+  try {
+    fsync(directoryFd);
+    deps.onStep?.('directory_fsynced');
+  } finally {
+    close(directoryFd);
+  }
+}
+
+function atomicWrite(
+  configPath: string,
+  content: string,
+  durability: TerminalCleanupDurabilityDeps = {},
+): boolean {
   let fileMode = 0o600;
   try {
     fileMode = statSync(configPath).mode & 0o777;
@@ -559,6 +611,11 @@ function atomicWrite(configPath: string, content: string): boolean {
     writeFileSync(tmpFile, content, 'utf-8');
     chmodSync(tmpFile, fileMode);
     renameSync(tmpFile, configPath);
+    durability.onStep?.('renamed');
+    // The renamed file's data and the directory entry must both survive power
+    // loss before terminal cleanup may be accepted or its sidecar intent
+    // cleared. Fsyncing only the temp file would not make the rename durable.
+    fsyncFileAndParent(configPath, durability);
     return true;
   } finally {
     // Always remove the temp dir — even if write/chmod/rename failed.
@@ -652,4 +709,120 @@ export function mergeProviderCredsIntoOpenClawConfig(
     return { changed: false };
   }
   return { changed: true };
+}
+
+/** Remove every framework surface that can contain a Spellguard credential. */
+export function removeManagedCredsFromOpenClawConfig(
+  configPath?: string,
+  deps: {
+    write?: (path: string, content: string) => unknown;
+    durability?: TerminalCleanupDurabilityDeps;
+    /** Sidecar-store proof that the canonical OpenRouter slot is Spellguard-owned. */
+    managedOpenrouter?: boolean;
+  } = {},
+):
+  | { ok: true; changed: boolean; status: 'changed' | 'already_clean' }
+  | {
+      ok: false;
+      changed: false;
+      reason: 'unreadable' | 'write_failed' | 'verification_failed';
+    } {
+  const resolvedPath = configPath ?? resolveOpenClawConfigPath();
+  let cfg: Record<string, unknown>;
+  try {
+    cfg = JSON.parse(readFileSync(resolvedPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return { ok: false, changed: false, reason: 'unreadable' };
+  }
+  const hasManagedMaterial = (value: Record<string, unknown>): boolean => {
+    const channels =
+      typeof value.channels === 'object' && value.channels !== null
+        ? (value.channels as Record<string, unknown>)
+        : {};
+    const hasManagedAccount = (key: string): boolean => {
+      const channel = channels[key];
+      if (typeof channel !== 'object' || channel === null) return false;
+      const accounts = (channel as Record<string, unknown>).accounts;
+      return (
+        typeof accounts === 'object' &&
+        accounts !== null &&
+        MANAGED_ACCOUNT_ID in accounts
+      );
+    };
+    const teams = channels.msteams;
+    const models = value.models as Record<string, unknown> | undefined;
+    const providers = models?.providers as Record<string, unknown> | undefined;
+    const agents = value.agents as Record<string, unknown> | undefined;
+    const defaults = agents?.defaults as Record<string, unknown> | undefined;
+    const model = defaults?.model as Record<string, unknown> | undefined;
+    return (
+      hasManagedAccount('slack') ||
+      hasManagedAccount('discord') ||
+      (typeof teams === 'object' &&
+        teams !== null &&
+        (teams as Record<string, unknown>)._spellguardManaged === true) ||
+      (deps.managedOpenrouter === true &&
+        ((typeof providers?.openrouter === 'object' &&
+          providers.openrouter !== null) ||
+          (typeof model?.primary === 'string' &&
+            model.primary.startsWith('openrouter/'))))
+    );
+  };
+  if (!hasManagedMaterial(cfg)) {
+    try {
+      // A previous attempt may have renamed the clean bytes and crashed before
+      // either durability barrier. Re-establish both barriers on retry rather
+      // than clearing the still-pending sidecar intent from a cache-only read.
+      fsyncFileAndParent(resolvedPath, deps.durability);
+      const verified = JSON.parse(readFileSync(resolvedPath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      if (hasManagedMaterial(verified)) {
+        return { ok: false, changed: false, reason: 'verification_failed' };
+      }
+      deps.durability?.onStep?.('verified');
+      return { ok: true, changed: false, status: 'already_clean' };
+    } catch {
+      return { ok: false, changed: false, reason: 'write_failed' };
+    }
+  }
+  const revoked: ProviderCredEntry = {
+    kind: 'manual',
+    credentialId: 'terminal-agent-revocation',
+    secrets: {},
+    revoked: true,
+  };
+  const providersToRemove = ['slack', 'discord', 'teams'];
+  if (deps.managedOpenrouter === true) providersToRemove.push('openrouter');
+  for (const provider of providersToRemove) {
+    applyProviderEntry(cfg, provider, revoked);
+  }
+  const content = `${JSON.stringify(cfg, null, 2)}\n`;
+  try {
+    if (deps.write) {
+      deps.write(resolvedPath, content);
+      fsyncFileAndParent(resolvedPath, deps.durability);
+    } else {
+      atomicWrite(resolvedPath, content, deps.durability);
+    }
+  } catch {
+    return { ok: false, changed: false, reason: 'write_failed' };
+  }
+  try {
+    const verified = JSON.parse(readFileSync(resolvedPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    if (hasManagedMaterial(verified)) {
+      return { ok: false, changed: false, reason: 'verification_failed' };
+    }
+    deps.durability?.onStep?.('verified');
+  } catch {
+    return { ok: false, changed: false, reason: 'verification_failed' };
+  }
+  return { ok: true, changed: true, status: 'changed' };
 }

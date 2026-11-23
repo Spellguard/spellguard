@@ -1,0 +1,102 @@
+{
+  // Session provenance policies (internal design notes).
+  //
+  // Both judge a `create_order` tool call against what the agent received
+  // earlier in the same conversation: the floor checks that each value is
+  // stated by a document or a tool output from the counterparty, and the
+  // semantic check asks Clef which values the document intends and
+  // whether it carries an instruction aimed at the agent.
+  //
+  // The tool and its parameters are the ones the supply-chain preset's
+  // mandate (`supply-chain-mandate-conformance`) constrains, so the two
+  // layers judge the same call: the mandate checks each value's shape and
+  // range, these check where the value came from.
+  //
+  // NOT part of the `supply-chain` industry preset. The demo fleet's
+  // provenance mode binds both to its order-intake agent at launch. Sources
+  // are documents and tool outputs from the counterparty only, so a chat line
+  // cannot plant a value without an attached document, and a call with no
+  // such source in its session is blocked (`missing_source: block`).
+  //
+  // The resolver orders an agent's bindings by ascending priority, so the
+  // floor (90) runs before the semantic check (95) and its message is the one
+  // a blocked call returns first.
+  "policies": [
+    {
+      "slug": "supply-chain-order-provenance",
+      "name": "Supply-Chain Order Provenance",
+      "description": "On the create_order tool call, requires the quote id, quantity and unit price to be values stated by a document or tool output from the counterparty in the same conversation. Fails closed: a call with no session, or with no such document or tool output in its session, is blocked",
+      "type": "session-invariant",
+      "level": "org",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "on": { "tool": "create_order" },
+        "facts": [
+          {
+            "name": "quote_id",
+            "param": "quote_id",
+            "kind": "identifier",
+            "pattern": "^Q-\\d{4}$"
+          },
+          { "name": "quantity", "param": "quantity", "kind": "number" },
+          { "name": "unit_price", "param": "unit_price", "kind": "money" }
+        ],
+        "sources": ["document", "tool:output"],
+        "sources_from": "counterparty",
+        "rule": "present_in_sources",
+        "missing_source": "block"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 90,
+        "scope": "tools"
+      },
+      "provenance": {
+        "source": "design:session-provenance-policy",
+        "dateAdded": "2026-10-22",
+        "reference": "internal design notes"
+      }
+    },
+    {
+      "slug": "supply-chain-order-semantics",
+      "name": "Supply-Chain Order Semantics",
+      "description": "On the create_order tool call, asks Clef which quote id, quantity and unit price the counterparty's documents intend, and whether they carry an instruction aimed at the agent; blocks a call that used other values or followed such an instruction. Fails closed: a call with no session, no counterparty document or tool output, or no answer from the decision model is blocked",
+      "type": "semantic-consistency",
+      "level": "org",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "model": "clef",
+        "on": { "tool": "create_order" },
+        "facts": [
+          {
+            "name": "quote_id",
+            "param": "quote_id",
+            "kind": "identifier",
+            "pattern": "^Q-\\d{4}$"
+          },
+          { "name": "quantity", "param": "quantity", "kind": "number" },
+          { "name": "unit_price", "param": "unit_price", "kind": "money" }
+        ],
+        "sources": ["document", "tool:output"],
+        "sources_from": "counterparty",
+        "checks": { "injection": true, "ambiguity": true, "faithful": true },
+        "thresholds": { "block_below": 0.5, "flag_below": 0.85 },
+        "missing_source": "block"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95,
+        "scope": "tools"
+      },
+      "provenance": {
+        "source": "design:session-provenance-policy",
+        "dateAdded": "2026-10-22",
+        "reference": "internal design notes"
+      }
+    }
+  ]
+}

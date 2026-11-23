@@ -8,11 +8,17 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { AuthClient } from './auth/client';
-import { EvaluateClient } from './evaluate/client';
+import { buildChildEnv } from './child-env';
+import { normalizeBaseUrl } from './config';
+import { EvaluateClient, guardBlock } from './evaluate/client';
+import { MAX_SCAN_BYTES, argumentsPayload, resultPayload } from './payload';
 import { detectPlatform } from './platforms/detector';
+import { GenericParser } from './platforms/generic';
 import { TrafficReporter } from './report/reporter';
 import type {
+  ChannelContext,
   ContentItem,
+  EvaluateResponse,
   McpGuardConfig,
   PlatformParser,
   TrafficEntry,
@@ -20,6 +26,40 @@ import type {
 } from './types';
 import { LocalUpstream } from './upstream/local';
 import { RemoteUpstream } from './upstream/remote';
+import { VERSION } from './version';
+
+type Direction = 'inbound' | 'outbound';
+
+/** A verdict stops the call (or withholds the result). */
+function stops(verdict: EvaluateResponse): boolean {
+  // Redactions stop too, until span-level rewriting exists: forwarding the
+  // unredacted content would ignore the policy.
+  return verdict.result === 'block' || verdict.redactions.length > 0;
+}
+
+function reason(verdict: EvaluateResponse): string {
+  const d = verdict.detections[0];
+  if (!d) {
+    return verdict.redactions.length > 0
+      ? 'content requires redaction'
+      : 'content policy violation';
+  }
+  return d.detail ? `${d.policy}: ${d.detail}` : d.policy;
+}
+
+function tooLarge(
+  bytes: number,
+  what: 'arguments' | 'result',
+): EvaluateResponse {
+  const subject =
+    what === 'arguments'
+      ? "this call's arguments are"
+      : "this tool's result is";
+  return guardBlock(
+    'payload-too-large',
+    `Blocked: ${subject} ${Math.ceil(bytes / 1024)} KiB, and the guard checks at most ${MAX_SCAN_BYTES / 1024} KiB. Content that can't be checked doesn't pass.`,
+  );
+}
 
 export class McpGuardProxy {
   private server: Server;
@@ -27,289 +67,300 @@ export class McpGuardProxy {
   private authClient: AuthClient;
   private evaluateClient: EvaluateClient;
   private reporter: TrafficReporter;
-  private platformParser: PlatformParser | null = null;
+  private platformParser: PlatformParser = new GenericParser();
+  private closeNotified = false;
+
+  /**
+   * Called once when the guard has nothing left to do: the MCP client closed
+   * its end, or the wrapped server exited. The owner (the CLI) stops the
+   * guard and exits, so no guard or server outlives its client (#1501).
+   */
+  onClose?: (reason: string) => void;
 
   constructor(private config: McpGuardConfig) {
-    // Create upstream
+    const base = normalizeBaseUrl(config.managementUrl);
+    const managementUrl = base.ok ? base.url : config.managementUrl;
+
     if (config.upstreamUrl) {
       this.upstream = new RemoteUpstream(
         config.upstreamUrl,
         config.upstreamToken,
       );
     } else if (config.wrapCommand) {
-      this.upstream = new LocalUpstream(config.wrapCommand);
+      const [command, ...inlineArgs] = config.wrapArgs
+        ? [config.wrapCommand]
+        : config.wrapCommand.trim().split(/\s+/);
+      this.upstream = new LocalUpstream(
+        command,
+        config.wrapArgs ?? inlineArgs,
+        buildChildEnv(process.env, config.passEnv ?? []),
+      );
+      this.upstream.onClose = () =>
+        this.notifyClose('the wrapped MCP server exited');
     } else {
       throw new Error('Either --upstream or --wrap must be specified');
     }
 
-    // Create auth client
     this.authClient = new AuthClient(
-      config.managementUrl,
+      managementUrl,
       config.agentId,
       config.agentSecret,
     );
-
-    // Create evaluate client
     this.evaluateClient = new EvaluateClient(this.authClient, {
       failOpen: config.failOpen ?? false,
       timeout: config.verifierTimeout ?? 5000,
     });
+    this.reporter = new TrafficReporter(this.authClient, managementUrl);
 
-    // Create reporter
-    this.reporter = new TrafficReporter(this.authClient, config.managementUrl);
-
-    // Create MCP server
     this.server = new Server(
-      { name: 'spellguard-mcp-guard', version: '0.1.0' },
+      { name: 'spellguard-mcp-guard', version: VERSION },
       { capabilities: { tools: {} } },
     );
-
     this.setupHandlers();
   }
 
   async start(): Promise<void> {
-    // 1. Connect upstream
+    // 1. Start or reach the server being guarded.
     await this.upstream.connect();
 
-    // 2. Detect platform from upstream tools
+    // 2. Recognize the platform from its tools (Slack, or generic).
     const tools = await this.upstream.toolsList();
     this.platformParser = detectPlatform(tools as unknown[]);
-    console.error(
-      `[mcp-guard] Detected platform: ${this.platformParser.platform}`,
-    );
-
-    // 3. Authenticate with management server
     const platform = this.platformParser.platform;
-    const upstreamDesc =
-      this.config.upstreamUrl || this.config.wrapCommand || 'unknown';
+    console.error(`[mcp-guard] Detected platform: ${platform}`);
+
+    // 3. Authenticate with Spellguard.
     await this.authClient.connect(
       platform,
       this.config.upstreamUrl ? 'remote' : 'local',
-      upstreamDesc,
+      this.config.upstreamUrl ||
+        [this.config.wrapCommand, ...(this.config.wrapArgs ?? [])].join(' '),
       this.config.workspace,
     );
-    console.error('[mcp-guard] Connected to management server');
+    console.error('[mcp-guard] Connected to Spellguard');
 
-    // 4. Start reporter
+    // 4. Heartbeats and the guard's own traffic records.
     this.reporter.start();
 
-    // 5. Start MCP server on stdio (the agent connects here)
+    // 5. Serve the MCP client on stdio, and stop when it goes away. The SDK's
+    //    stdio transport doesn't notice stdin ending, so watch for it here.
     const transport = new StdioServerTransport();
+    transport.onclose = () => this.notifyClose('the MCP client disconnected');
     await this.server.connect(transport);
-    console.error(`[mcp-guard] MCP proxy ready (platform: ${platform})`);
+    process.stdin.once('end', () =>
+      this.notifyClose('the MCP client closed stdin'),
+    );
+    process.stdin.once('close', () =>
+      this.notifyClose('the MCP client closed stdin'),
+    );
+    console.error(
+      `[mcp-guard] MCP Guard ${VERSION} ready (platform: ${platform})`,
+    );
   }
 
   async stop(): Promise<void> {
-    await this.reporter.close();
-    await this.authClient.close();
-    await this.upstream.close();
-    await this.server.close();
+    // Settle every step, so one failure can't leave the wrapped server running.
+    await Promise.allSettled([this.reporter.close()]);
+    await Promise.allSettled([this.upstream.close(), this.authClient.close()]);
+    await Promise.allSettled([this.server.close()]);
+  }
+
+  private notifyClose(why: string): void {
+    if (this.closeNotified) return;
+    this.closeNotified = true;
+    this.onClose?.(why);
   }
 
   private setupHandlers(): void {
-    // Handle tools/list -- forward from upstream
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       const tools = await this.upstream.toolsList();
-      return { tools };
+      const allowed = await this.evaluateClient.allowedTools(
+        tools.map((t) => t.name),
+      );
+      if (!allowed) return { tools };
+      const hidden = tools.filter((t) => !allowed.has(t.name));
+      if (hidden.length > 0) {
+        console.error(
+          `[mcp-guard] Hiding ${hidden.length} tool(s) your approved-tools policy doesn't allow: ${hidden
+            .map((t) => t.name)
+            .join(', ')}`,
+        );
+      }
+      return { tools: tools.filter((t) => allowed.has(t.name)) };
     });
 
-    // Handle tools/call -- intercept, evaluate, forward or block
-    this.server.setRequestHandler(
-      CallToolRequestSchema,
-      async (request): Promise<CallToolResult> => {
-        const toolName = request.params.name;
-        const args = (request.params.arguments ?? {}) as Record<
-          string,
-          unknown
-        >;
-
-        if (!this.platformParser) {
-          // No platform detected, forward directly
-          return (await this.upstream.toolsCall(
-            toolName,
-            args,
-          )) as CallToolResult;
-        }
-
-        const parsed = this.platformParser.parseToolCall(toolName, args);
-
-        if (!parsed) {
-          // Unknown tool, forward directly
-          return (await this.upstream.toolsCall(
-            toolName,
-            args,
-          )) as CallToolResult;
-        }
-
-        if (parsed.direction === 'outbound') {
-          return this.handleOutbound(
-            toolName,
-            args,
-            parsed,
-            this.platformParser,
-          );
-        }
-        return this.handleInbound(toolName, args, parsed, this.platformParser);
-      },
+    this.server.setRequestHandler(CallToolRequestSchema, async (request) =>
+      this.handleCall(
+        request.params.name,
+        (request.params.arguments ?? {}) as Record<string, unknown>,
+      ),
     );
   }
 
-  private async handleOutbound(
+  /**
+   * Every call is checked twice: its arguments before it reaches the server,
+   * and its result before it reaches the agent. Whatever the tool, platform
+   * or argument shape (#1501).
+   */
+  private async handleCall(
     toolName: string,
     args: Record<string, unknown>,
-    parsed: ParsedCall,
-    parser: PlatformParser,
   ): Promise<CallToolResult> {
-    // 1. Evaluate content via Verifier
-    const evalResult = await this.evaluateClient.evaluate({
-      agentId: this.config.agentId,
-      platform: parser.platform,
-      direction: 'outbound',
+    const parser = this.platformParser;
+    const parsed = parser.parseToolCall(toolName, args);
+    const context: ChannelContext = {
       tool: toolName,
-      context: {
-        channel: parsed.channelId ?? undefined,
-        channelName: parsed.channelName ?? undefined,
-        threadTs: parsed.threadTs ?? undefined,
-      },
-      content: parsed.content,
-    });
+      connectionId: this.safeConnectionId(),
+      channel: parsed?.channelId ?? undefined,
+      channelName: parsed?.channelName ?? undefined,
+      threadTs: parsed?.threadTs ?? undefined,
+    };
 
-    // 2. Report traffic
-    this.reporter.report(
-      this.buildTrafficEntry(
-        toolName,
-        'outbound',
-        parsed,
-        evalResult.result,
-        evalResult.detections,
-      ),
+    // 1. The call.
+    const argsPayload = argumentsPayload(args);
+    const outbound = argsPayload.ok
+      ? await this.evaluateClient.evaluate({
+          agentId: this.authClient.getAgentId(),
+          platform: parser.platform,
+          direction: 'outbound',
+          tool: toolName,
+          context,
+          content: argsPayload.content,
+        })
+      : tooLarge(argsPayload.bytes, 'arguments');
+    this.recordGuardDecision(
+      toolName,
+      'outbound',
+      context,
+      parsed?.channelType ?? null,
+      outbound,
+      argsPayload.ok ? argsPayload.content : [],
     );
-
-    // 3. If blocked, return error
-    if (evalResult.result === 'block') {
+    if (stops(outbound)) {
       return {
         content: [
           {
-            type: 'text' as const,
-            text: `[Spellguard] Message blocked by policy: ${evalResult.detections[0]?.detail || 'content policy violation'}`,
+            type: 'text',
+            text: `[Spellguard] Tool call blocked by policy (${reason(outbound)})`,
           },
         ],
         isError: true,
       };
     }
 
-    // 4. If redactions present, block until span-level rewriting is implemented
-    if (evalResult.redactions.length > 0) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: '[Spellguard] Outbound content requires redaction — blocked.',
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    // 5. If allowed/flagged/unscanned, forward to upstream
+    // 2. Forward it.
     const result = (await this.upstream.toolsCall(
       toolName,
       args,
     )) as CallToolResult;
 
-    // 6. Parse result to populate caches (e.g. channel name cache)
-    parser.parseToolResult(toolName, result);
+    // 3. The result. Channel reads a platform parser understands are checked
+    //    message by message, as channel messages, and only blocked messages
+    //    are removed. Everything else is checked whole, on the tool leg.
+    const messages = parser.parseToolResult(toolName, result);
+    if (
+      parsed?.direction === 'inbound' &&
+      messages &&
+      messages.messages.length > 0
+    ) {
+      return this.filterMessages(
+        toolName,
+        context,
+        parsed.channelType,
+        result,
+        messages.messages,
+      );
+    }
 
+    const resultContent = resultPayload(result);
+    if (resultContent === null) return result; // no text to check
+    const inbound = resultContent.ok
+      ? await this.evaluateClient.evaluate({
+          agentId: this.authClient.getAgentId(),
+          platform: parser.platform,
+          direction: 'inbound',
+          tool: toolName,
+          context,
+          content: resultContent.content,
+        })
+      : tooLarge(resultContent.bytes, 'result');
+    this.recordGuardDecision(
+      toolName,
+      'inbound',
+      context,
+      parsed?.channelType ?? null,
+      inbound,
+      resultContent.ok ? resultContent.content : [],
+    );
+    if (stops(inbound)) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `[Spellguard] The result of ${toolName} was withheld by policy (${reason(inbound)})`,
+          },
+        ],
+        isError: true,
+      };
+    }
     return result;
   }
 
-  private async handleInbound(
+  private async filterMessages(
     toolName: string,
-    args: Record<string, unknown>,
-    parsed: ParsedCall,
-    parser: PlatformParser,
+    context: ChannelContext,
+    channelType: string | null,
+    result: CallToolResult,
+    messages: Array<{ messageId: string; content: ContentItem[] }>,
   ): Promise<CallToolResult> {
-    // 1. Forward to upstream first (read operations)
-    const result = (await this.upstream.toolsCall(
-      toolName,
-      args,
-    )) as CallToolResult;
-
-    // 2. Parse the result for inbound messages
-    const inboundMessages = parser.parseToolResult(toolName, result);
-
-    if (!inboundMessages || inboundMessages.messages.length === 0) {
-      // No parseable messages, report and return as-is
-      this.reporter.report(
-        this.buildTrafficEntry(toolName, 'inbound', parsed, 'allow', []),
-      );
-      return result;
-    }
-
-    // 3. Batch evaluate inbound messages via Verifier
-    const batchResult = await this.evaluateClient.evaluateBatch({
-      agentId: this.config.agentId,
-      platform: parser.platform,
+    const batch = await this.evaluateClient.evaluateBatch({
+      agentId: this.authClient.getAgentId(),
+      platform: this.platformParser.platform,
       direction: 'inbound',
       batch: true,
-      messages: inboundMessages.messages.map((msg) => ({
+      messages: messages.map((msg) => ({
         messageId: msg.messageId,
         content: msg.content,
+        // No `tool` here: these are channel messages, and the Verifier checks
+        // them on the message leg.
         context: {
-          channel: parsed.channelId ?? undefined,
-          channelName: parsed.channelName ?? undefined,
+          channel: context.channel,
+          channelName: context.channelName,
+          connectionId: context.connectionId,
         },
       })),
     });
 
-    // 4. Report traffic for each message (include message content as preview)
-    const msgContentMap = new Map(
-      inboundMessages.messages.map((m) => [
-        m.messageId,
-        m.content.map((c) => c.value).join(' '),
-      ]),
-    );
-    for (const msgResult of batchResult.results) {
-      const msgText = msgContentMap.get(msgResult.messageId) ?? '';
-      const parsedWithContent = {
-        ...parsed,
-        content: msgText
-          ? [{ type: 'text' as const, value: msgText }]
-          : parsed.content,
-      };
-      this.reporter.report(
-        this.buildTrafficEntry(
+    if (batch.source === 'guard') {
+      const byId = new Map(messages.map((m) => [m.messageId, m.content]));
+      for (const r of batch.results) {
+        this.recordGuardDecision(
           toolName,
           'inbound',
-          parsedWithContent,
-          msgResult.result,
-          msgResult.detections,
-        ),
-      );
+          context,
+          channelType,
+          { ...r, source: 'guard' },
+          byId.get(r.messageId) ?? [],
+        );
+      }
     }
 
-    // 5. If any messages were blocked or need redaction, filter them from the result
     const blockedIds = new Set(
-      batchResult.results
+      batch.results
         .filter((r) => r.result === 'block' || r.redactions.length > 0)
         .map((r) => r.messageId),
     );
-
-    if (blockedIds.size > 0) {
-      return this.redactBlockedMessages(result, blockedIds);
-    }
-
-    return result;
+    return blockedIds.size > 0
+      ? this.redactBlockedMessages(result, blockedIds)
+      : result;
   }
 
   private redactBlockedMessages(
     result: CallToolResult,
     blockedIds: Set<string>,
   ): CallToolResult {
-    // Handle MCP SDK response format:
-    // { content: [{ type: "text", text: JSON.stringify({ messages: [...] }) }] }
-    // CallToolResult.content is an array of content blocks.
-    const redacted = {
+    // Slack read results carry { messages: [...] } as JSON in a text block.
+    return {
       ...result,
       content: result.content.map((block) => {
         if (block.type === 'text' && typeof block.text === 'string') {
@@ -323,65 +374,63 @@ export class McpGuardProxy {
               return { ...block, text: JSON.stringify(data) };
             }
           } catch {
-            // Not JSON, return as-is
+            // Not JSON; leave it.
           }
         }
         return block;
       }),
     };
-    return redacted;
   }
 
-  private buildTrafficEntry(
+  private safeConnectionId(): string | undefined {
+    try {
+      return this.authClient.getConnectionId();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The Verifier records every check it makes. The guard records only the
+   * decisions the Verifier never saw (a local block, or fail-open
+   * "unscanned"), so each event is recorded once (#1501).
+   */
+  private recordGuardDecision(
     toolName: string,
-    direction: 'inbound' | 'outbound',
-    parsed: ParsedCall,
-    result: string,
-    detections: {
-      engine: string;
-      policy: string;
-      confidence: number;
-      detail: string;
-    }[],
-  ): TrafficEntry {
-    const textLength = parsed.content.reduce(
-      (sum, c) => sum + c.value.length,
-      0,
-    );
-    const urlCount = parsed.content.filter((c) => c.type === 'url').length;
-
-    const fullText = parsed.content.map((c) => c.value).join(' ');
-    const contentPreview =
-      fullText.length > 0
-        ? fullText.length > 300
-          ? `${fullText.slice(0, 300)}…`
-          : fullText
-        : null;
-
-    return {
+    direction: Direction,
+    context: ChannelContext,
+    channelType: string | null,
+    verdict: EvaluateResponse,
+    content: ContentItem[],
+  ): void {
+    if (verdict.source !== 'guard') return;
+    const text = content.map((c) => c.value).join(' ');
+    const entry: TrafficEntry = {
       timestamp: new Date().toISOString(),
       direction,
       tool: toolName,
       channel: {
-        id: parsed.channelId || 'unknown',
-        name: parsed.channelName,
-        type: parsed.channelType,
+        id: context.channel || 'unknown',
+        name: context.channelName ?? null,
+        type: channelType,
       },
-      threadTs: parsed.threadTs,
-      result,
-      detections,
-      contentPreview,
-      contentSummary: { textLength, urlCount, hasAttachment: false },
+      threadTs: context.threadTs ?? null,
+      result: verdict.result,
+      detections: verdict.detections,
+      // Never the content itself: these are calls the Verifier didn't scan,
+      // so their arguments may hold anything, credentials included (REM-092).
+      // The feed shows why instead.
+      contentPreview:
+        verdict.detections[0]?.detail ??
+        (verdict.result === 'unscanned'
+          ? 'Not checked: the Verifier was unreachable and this guard runs fail-open.'
+          : null),
+      contentSummary: {
+        textLength: text.length,
+        urlCount: content.filter((c) => c.type === 'url').length,
+        hasAttachment: false,
+      },
     };
+    this.reporter.report(entry);
   }
 }
-
-/** Convenience type for the parsed tool-call shape returned by PlatformParser */
-type ParsedCall = {
-  direction: 'inbound' | 'outbound';
-  channelId: string | null;
-  channelName: string | null;
-  channelType: string | null;
-  threadTs: string | null;
-  content: ContentItem[];
-};

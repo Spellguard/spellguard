@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { hashPayload } from './crypto/commitment';
+import { filterByScope } from './proxy/policy-evaluator';
+import type {
+  ResolvedPolicyBinding,
+  ResolvedPolicyConfig,
+} from './proxy/policy-evaluator-types';
+
 export type AdminEvaluateError = {
   code: string;
   message: string;
@@ -283,6 +290,44 @@ export function checkReplayDefense(params: {
   }
 
   return null;
+}
+
+/**
+ * Select the bindings the tester evaluates, applying the SAME scope filter the
+ * leg it simulates applies.
+ *
+ * `/admin/evaluate` is a dry run of a MESSAGE, so it must select bindings the
+ * way `proxy/router.ts` does — `filterByScope(…, 'messages')`. It used to
+ * evaluate the raw direction list, so a binding scoped to `tools` or `llm`
+ * blocked in the tester even though it can never fire on a message. That is
+ * the mirror image of outage #478 (product-findings audit #544
+ * §12b): there an unscoped binding wrongly governed inference, here a scoped
+ * binding wrongly governed the test surface. Both came from scope being
+ * applied on some legs and not others — hence one filter, every leg.
+ */
+export function selectAdminEvaluateBindings(
+  policies: Pick<ResolvedPolicyConfig, 'inbound' | 'outbound'>,
+  direction: 'inbound' | 'outbound',
+): ResolvedPolicyBinding[] {
+  return filterByScope(
+    direction === 'inbound' ? policies.inbound : policies.outbound,
+    'messages',
+  );
+}
+
+/**
+ * Commitment hash for a tester run.
+ *
+ * Management ingests every audit row through `Buffer.from(hash, 'hex')`
+ * (`services/internal/log-ingestion.ts`), and Node's hex decoder does not
+ * throw on a non-hex string — it stops at the first invalid character and
+ * yields a short or EMPTY buffer. The old `eval_<messageId>` literal therefore
+ * wrote a zero-length `message_hash` on every tester row. A real SHA-256 of
+ * the evaluated payload is both well-formed for that column and an honest
+ * commitment to what was actually evaluated.
+ */
+export function adminEvaluateCommitmentHash(message: string): string {
+  return hashPayload(message);
 }
 
 /** Build a sanitized summary that only exposes detection types, not patterns/messages. */

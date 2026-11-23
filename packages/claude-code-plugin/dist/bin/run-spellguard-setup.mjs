@@ -12,7 +12,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -44,10 +48,10 @@ var require_constants = __commonJS({
       EMPTY_BUFFER: Buffer.alloc(0),
       GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
       hasBlob,
-      kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
-      kListener: Symbol("kListener"),
-      kStatusCode: Symbol("status-code"),
-      kWebSocket: Symbol("websocket"),
+      kForOnEventAttribute: /* @__PURE__ */ Symbol("kIsForOnEventAttribute"),
+      kListener: /* @__PURE__ */ Symbol("kListener"),
+      kStatusCode: /* @__PURE__ */ Symbol("status-code"),
+      kWebSocket: /* @__PURE__ */ Symbol("websocket"),
       NOOP: () => {
       }
     };
@@ -66,8 +70,8 @@ var require_node_gyp_build = __commonJS({
     var abi = process.versions.modules;
     var runtime = isElectron() ? "electron" : isNwjs() ? "node-webkit" : "node";
     var arch = process.env.npm_config_arch || os.arch();
-    var platform3 = process.env.npm_config_platform || os.platform();
-    var libc = process.env.LIBC || (isAlpine(platform3) ? "musl" : "glibc");
+    var platform2 = process.env.npm_config_platform || os.platform();
+    var libc = process.env.LIBC || (isAlpine(platform2) ? "musl" : "glibc");
     var armv = process.env.ARM_VERSION || (arch === "arm64" ? "8" : vars.arm_version) || "";
     var uv = (process.versions.uv || "").split(".")[0];
     module.exports = load;
@@ -87,12 +91,12 @@ var require_node_gyp_build = __commonJS({
         var debug = getFirst(path.join(dir, "build/Debug"), matchBuild);
         if (debug) return debug;
       }
-      var prebuild = resolve3(dir);
+      var prebuild = resolve4(dir);
       if (prebuild) return prebuild;
-      var nearby = resolve3(path.dirname(process.execPath));
+      var nearby = resolve4(path.dirname(process.execPath));
       if (nearby) return nearby;
       var target = [
-        "platform=" + platform3,
+        "platform=" + platform2,
         "arch=" + arch,
         "runtime=" + runtime,
         "abi=" + abi,
@@ -105,18 +109,18 @@ var require_node_gyp_build = __commonJS({
         // eslint-disable-line
       ].filter(Boolean).join(" ");
       throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
-      function resolve3(dir2) {
-        var tuples = readdirSync2(path.join(dir2, "prebuilds")).map(parseTuple);
-        var tuple = tuples.filter(matchTuple(platform3, arch)).sort(compareTuples)[0];
+      function resolve4(dir2) {
+        var tuples = readdirSync3(path.join(dir2, "prebuilds")).map(parseTuple);
+        var tuple = tuples.filter(matchTuple(platform2, arch)).sort(compareTuples)[0];
         if (!tuple) return;
         var prebuilds = path.join(dir2, "prebuilds", tuple.name);
-        var parsed = readdirSync2(prebuilds).map(parseTags);
+        var parsed = readdirSync3(prebuilds).map(parseTags);
         var candidates = parsed.filter(matchTags(runtime, abi));
         var winner = candidates.sort(compareTags(runtime))[0];
         if (winner) return path.join(prebuilds, winner.file);
       }
     };
-    function readdirSync2(dir) {
+    function readdirSync3(dir) {
       try {
         return fs.readdirSync(dir);
       } catch (err) {
@@ -124,7 +128,7 @@ var require_node_gyp_build = __commonJS({
       }
     }
     function getFirst(dir, filter) {
-      var files = readdirSync2(dir).filter(filter);
+      var files = readdirSync3(dir).filter(filter);
       return files[0] && path.join(dir, files[0]);
     }
     function matchBuild(name) {
@@ -133,17 +137,17 @@ var require_node_gyp_build = __commonJS({
     function parseTuple(name) {
       var arr = name.split("-");
       if (arr.length !== 2) return;
-      var platform4 = arr[0];
+      var platform3 = arr[0];
       var architectures = arr[1].split("+");
-      if (!platform4) return;
+      if (!platform3) return;
       if (!architectures.length) return;
       if (!architectures.every(Boolean)) return;
-      return { name, platform: platform4, architectures };
+      return { name, platform: platform3, architectures };
     }
-    function matchTuple(platform4, arch2) {
+    function matchTuple(platform3, arch2) {
       return function(tuple) {
         if (tuple == null) return false;
-        if (tuple.platform !== platform4) return false;
+        if (tuple.platform !== platform3) return false;
         return tuple.architectures.includes(arch2);
       };
     }
@@ -152,9 +156,9 @@ var require_node_gyp_build = __commonJS({
     }
     function parseTags(file) {
       var arr = file.split(".");
-      var extension = arr.pop();
+      var extension2 = arr.pop();
       var tags = { file, specificity: 0 };
-      if (extension !== "node") return;
+      if (extension2 !== "node") return;
       for (var i = 0; i < arr.length; i++) {
         var tag = arr[i];
         if (tag === "node" || tag === "electron" || tag === "node-webkit") {
@@ -211,8 +215,8 @@ var require_node_gyp_build = __commonJS({
       if (process.env.ELECTRON_RUN_AS_NODE) return true;
       return typeof window !== "undefined" && window.process && window.process.type === "renderer";
     }
-    function isAlpine(platform4) {
-      return platform4 === "linux" && fs.existsSync("/etc/alpine-release");
+    function isAlpine(platform3) {
+      return platform3 === "linux" && fs.existsSync("/etc/alpine-release");
     }
     load.parseTags = parseTags;
     load.matchTags = matchTags;
@@ -345,8 +349,8 @@ var require_buffer_util = __commonJS({
 var require_limiter = __commonJS({
   "../../node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
-    var kDone = Symbol("kDone");
-    var kRun = Symbol("kRun");
+    var kDone = /* @__PURE__ */ Symbol("kDone");
+    var kRun = /* @__PURE__ */ Symbol("kRun");
     var Limiter = class {
       /**
        * Creates a new `Limiter`.
@@ -401,13 +405,13 @@ var require_permessage_deflate = __commonJS({
     var { kStatusCode } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
     var TRAILER = Buffer.from([0, 0, 255, 255]);
-    var kPerMessageDeflate = Symbol("permessage-deflate");
-    var kTotalLength = Symbol("total-length");
-    var kCallback = Symbol("callback");
-    var kBuffers = Symbol("buffers");
-    var kError = Symbol("error");
+    var kPerMessageDeflate = /* @__PURE__ */ Symbol("permessage-deflate");
+    var kTotalLength = /* @__PURE__ */ Symbol("total-length");
+    var kCallback = /* @__PURE__ */ Symbol("callback");
+    var kBuffers = /* @__PURE__ */ Symbol("buffers");
+    var kError = /* @__PURE__ */ Symbol("error");
     var zlibLimiter;
-    var PerMessageDeflate = class {
+    var PerMessageDeflate2 = class {
       /**
        * Creates a PerMessageDeflate instance.
        *
@@ -418,6 +422,9 @@ var require_permessage_deflate = __commonJS({
        *     acknowledge disabling of client context takeover
        * @param {Number} [options.concurrencyLimit=10] The number of concurrent
        *     calls to zlib
+       * @param {Boolean} [options.isServer=false] Create the instance in either
+       *     server or client mode
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
        *     use of a custom server window size
        * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
@@ -428,15 +435,12 @@ var require_permessage_deflate = __commonJS({
        *     deflate
        * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
        *     inflate
-       * @param {Boolean} [isServer=false] Create the instance in either server or
-       *     client mode
-       * @param {Number} [maxPayload=0] The maximum allowed message length
        */
-      constructor(options, isServer, maxPayload) {
-        this._maxPayload = maxPayload | 0;
+      constructor(options) {
         this._options = options || {};
         this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
-        this._isServer = !!isServer;
+        this._maxPayload = this._options.maxPayload | 0;
+        this._isServer = !!this._options.isServer;
         this._deflate = null;
         this._inflate = null;
         this.params = null;
@@ -745,7 +749,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module.exports = PerMessageDeflate;
+    module.exports = PerMessageDeflate2;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -1029,7 +1033,7 @@ var require_receiver = __commonJS({
   "../../node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
       EMPTY_BUFFER,
@@ -1059,6 +1063,10 @@ var require_receiver = __commonJS({
        *     extensions
        * @param {Boolean} [options.isServer=false] Specifies whether to operate in
        *     client or server mode
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -1069,6 +1077,8 @@ var require_receiver = __commonJS({
         this._binaryType = options.binaryType || BINARY_TYPES[0];
         this._extensions = options.extensions || {};
         this._isServer = !!options.isServer;
+        this._maxBufferedChunks = options.maxBufferedChunks | 0;
+        this._maxFragments = options.maxFragments | 0;
         this._maxPayload = options.maxPayload | 0;
         this._skipUTF8Validation = !!options.skipUTF8Validation;
         this[kWebSocket] = void 0;
@@ -1098,6 +1108,18 @@ var require_receiver = __commonJS({
        */
       _write(chunk, encoding, cb) {
         if (this._opcode === 8 && this._state == GET_INFO) return cb();
+        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
+          cb(
+            this.createError(
+              RangeError,
+              "Too many buffered chunks",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            )
+          );
+          return;
+        }
         this._bufferedBytes += chunk.length;
         this._buffers.push(chunk);
         this.startLoop(cb);
@@ -1196,7 +1218,7 @@ var require_receiver = __commonJS({
           return;
         }
         const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
           const error = this.createError(
             RangeError,
             "RSV1 must be clear",
@@ -1427,6 +1449,17 @@ var require_receiver = __commonJS({
           return;
         }
         if (data.length) {
+          if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+            const error = this.createError(
+              RangeError,
+              "Too many message fragments",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            );
+            cb(error);
+            return;
+          }
           this._messageLength = this._totalPayloadLength;
           this._fragments.push(data);
         }
@@ -1440,7 +1473,7 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
@@ -1452,6 +1485,17 @@ var require_receiver = __commonJS({
                 false,
                 1009,
                 "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              );
+              cb(error);
+              return;
+            }
+            if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+              const error = this.createError(
+                RangeError,
+                "Too many message fragments",
+                false,
+                1008,
+                "WS_ERR_TOO_MANY_BUFFERED_PARTS"
               );
               cb(error);
               return;
@@ -1622,11 +1666,14 @@ var require_sender = __commonJS({
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
-    var PerMessageDeflate = require_permessage_deflate();
+    var {
+      types: { isUint8Array }
+    } = __require("util");
+    var PerMessageDeflate2 = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
-    var kByteLength = Symbol("kByteLength");
+    var kByteLength = /* @__PURE__ */ Symbol("kByteLength");
     var maskBuffer = Buffer.alloc(4);
     var RANDOM_POOL_SIZE = 8 * 1024;
     var randomPool;
@@ -1775,8 +1822,10 @@ var require_sender = __commonJS({
           buf.writeUInt16BE(code, 0);
           if (typeof data === "string") {
             buf.write(data, 2);
-          } else {
+          } else if (isUint8Array(data)) {
             buf.set(data, 2);
+          } else {
+            throw new TypeError("Second argument must be a string or a Uint8Array");
           }
         }
         const options = {
@@ -1906,7 +1955,7 @@ var require_sender = __commonJS({
        * @public
        */
       send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
@@ -2030,7 +2079,7 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         this._bufferedBytes += options[kByteLength];
         this._state = DEFLATING;
         perMessageDeflate.compress(data, options.fin, (_, buf) => {
@@ -2109,14 +2158,14 @@ var require_event_target = __commonJS({
   "../../node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
-    var kCode = Symbol("kCode");
-    var kData = Symbol("kData");
-    var kError = Symbol("kError");
-    var kMessage = Symbol("kMessage");
-    var kReason = Symbol("kReason");
-    var kTarget = Symbol("kTarget");
-    var kType = Symbol("kType");
-    var kWasClean = Symbol("kWasClean");
+    var kCode = /* @__PURE__ */ Symbol("kCode");
+    var kData = /* @__PURE__ */ Symbol("kData");
+    var kError = /* @__PURE__ */ Symbol("kError");
+    var kMessage = /* @__PURE__ */ Symbol("kMessage");
+    var kReason = /* @__PURE__ */ Symbol("kReason");
+    var kTarget = /* @__PURE__ */ Symbol("kTarget");
+    var kType = /* @__PURE__ */ Symbol("kType");
+    var kWasClean = /* @__PURE__ */ Symbol("kWasClean");
     var Event2 = class {
       /**
        * Create a new `Event`.
@@ -2468,11 +2517,11 @@ var require_extension = __commonJS({
       return offers;
     }
     function format(extensions) {
-      return Object.keys(extensions).map((extension) => {
-        let configurations = extensions[extension];
+      return Object.keys(extensions).map((extension2) => {
+        let configurations = extensions[extension2];
         if (!Array.isArray(configurations)) configurations = [configurations];
         return configurations.map((params) => {
-          return [extension].concat(
+          return [extension2].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
               if (!Array.isArray(values)) values = [values];
@@ -2498,7 +2547,7 @@ var require_websocket = __commonJS({
     var { randomBytes: randomBytes2, createHash } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL } = __require("url");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
     var { isBlob } = require_validation();
@@ -2518,7 +2567,7 @@ var require_websocket = __commonJS({
     } = require_event_target();
     var { format, parse } = require_extension();
     var { toBuffer } = require_buffer_util();
-    var kAborted = Symbol("kAborted");
+    var kAborted = /* @__PURE__ */ Symbol("kAborted");
     var protocolVersions = [8, 13];
     var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
@@ -2657,6 +2706,10 @@ var require_websocket = __commonJS({
        *     multiple times in the same tick
        * @param {Function} [options.generateMask] The function used to generate the
        *     masking key
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message size
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -2668,6 +2721,8 @@ var require_websocket = __commonJS({
           binaryType: this.binaryType,
           extensions: this._extensions,
           isServer: this._isServer,
+          maxBufferedChunks: options.maxBufferedChunks,
+          maxFragments: options.maxFragments,
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
@@ -2706,8 +2761,8 @@ var require_websocket = __commonJS({
           this.emit("close", this._closeCode, this._closeMessage);
           return;
         }
-        if (this._extensions[PerMessageDeflate.extensionName]) {
-          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        if (this._extensions[PerMessageDeflate2.extensionName]) {
+          this._extensions[PerMessageDeflate2.extensionName].cleanup();
         }
         this._receiver.removeAllListeners();
         this._readyState = _WebSocket.CLOSED;
@@ -2869,7 +2924,7 @@ var require_websocket = __commonJS({
           fin: true,
           ...options
         };
-        if (!this._extensions[PerMessageDeflate.extensionName]) {
+        if (!this._extensions[PerMessageDeflate2.extensionName]) {
           opts.compress = false;
         }
         this._sender.send(data || EMPTY_BUFFER, opts, cb);
@@ -2967,6 +3022,8 @@ var require_websocket = __commonJS({
         autoPong: true,
         closeTimeout: CLOSE_TIMEOUT,
         protocolVersion: protocolVersions[1],
+        maxBufferedChunks: 1024 * 1024,
+        maxFragments: 128 * 1024,
         maxPayload: 100 * 1024 * 1024,
         skipUTF8Validation: false,
         perMessageDeflate: true,
@@ -2995,7 +3052,7 @@ var require_websocket = __commonJS({
       } else {
         try {
           parsedUrl = new URL(address);
-        } catch (e) {
+        } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
@@ -3043,13 +3100,13 @@ var require_websocket = __commonJS({
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
       if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate(
-          opts.perMessageDeflate !== true ? opts.perMessageDeflate : {},
-          false,
-          opts.maxPayload
-        );
+        perMessageDeflate = new PerMessageDeflate2({
+          ...opts.perMessageDeflate,
+          isServer: false,
+          maxPayload: opts.maxPayload
+        });
         opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
         });
       }
       if (protocols.length) {
@@ -3192,23 +3249,25 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
             const message = "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
+          maxBufferedChunks: opts.maxBufferedChunks,
+          maxFragments: opts.maxFragments,
           maxPayload: opts.maxPayload,
           skipUTF8Validation: opts.skipUTF8Validation
         });
@@ -3523,9 +3582,9 @@ var require_websocket_server = __commonJS({
     var http = __require("http");
     var { Duplex } = __require("stream");
     var { createHash } = __require("crypto");
-    var extension = require_extension();
-    var PerMessageDeflate = require_permessage_deflate();
-    var subprotocol = require_subprotocol();
+    var extension2 = require_extension();
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var subprotocol2 = require_subprotocol();
     var WebSocket3 = require_websocket();
     var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
     var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
@@ -3551,6 +3610,10 @@ var require_websocket_server = __commonJS({
        *     called
        * @param {Function} [options.handleProtocols] A hook to handle protocols
        * @param {String} [options.host] The hostname where to bind the server
+       * @param {Number} [options.maxBufferedChunks=1048576] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=131072] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=104857600] The maximum allowed message
        *     size
        * @param {Boolean} [options.noServer=false] Enable no server mode
@@ -3572,6 +3635,8 @@ var require_websocket_server = __commonJS({
         options = {
           allowSynchronousEvents: true,
           autoPong: true,
+          maxBufferedChunks: 1024 * 1024,
+          maxFragments: 128 * 1024,
           maxPayload: 100 * 1024 * 1024,
           skipUTF8Validation: false,
           perMessageDeflate: false,
@@ -3748,7 +3813,7 @@ var require_websocket_server = __commonJS({
         let protocols = /* @__PURE__ */ new Set();
         if (secWebSocketProtocol !== void 0) {
           try {
-            protocols = subprotocol.parse(secWebSocketProtocol);
+            protocols = subprotocol2.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
@@ -3758,16 +3823,16 @@ var require_websocket_server = __commonJS({
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
         if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate(
-            this.options.perMessageDeflate,
-            true,
-            this.options.maxPayload
-          );
+          const perMessageDeflate = new PerMessageDeflate2({
+            ...this.options.perMessageDeflate,
+            isServer: true,
+            maxPayload: this.options.maxPayload
+          });
           try {
-            const offers = extension.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
-              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            const offers = extension2.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate2.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
+              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
@@ -3838,10 +3903,10 @@ var require_websocket_server = __commonJS({
             ws._protocol = protocol;
           }
         }
-        if (extensions[PerMessageDeflate.extensionName]) {
-          const params = extensions[PerMessageDeflate.extensionName].params;
-          const value = extension.format({
-            [PerMessageDeflate.extensionName]: [params]
+        if (extensions[PerMessageDeflate2.extensionName]) {
+          const params = extensions[PerMessageDeflate2.extensionName].params;
+          const value = extension2.format({
+            [PerMessageDeflate2.extensionName]: [params]
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
@@ -3851,6 +3916,8 @@ var require_websocket_server = __commonJS({
         socket.removeListener("error", socketOnError);
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
+          maxBufferedChunks: this.options.maxBufferedChunks,
+          maxFragments: this.options.maxFragments,
           maxPayload: this.options.maxPayload,
           skipUTF8Validation: this.options.skipUTF8Validation
         });
@@ -4166,8 +4233,8 @@ var ReconnectingWebSocket = class ReconnectingWebSocket2 extends EventTarget {
     return delay;
   }
   _wait() {
-    return new Promise((resolve3) => {
-      setTimeout(resolve3, this._getNextDelay());
+    return new Promise((resolve4) => {
+      setTimeout(resolve4, this._getNextDelay());
     });
   }
   _getNextProtocols(protocolsProvider) {
@@ -4487,8 +4554,11 @@ function getWSOptions(partySocketOptions) {
 
 // ../../node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
+var import_extension = __toESM(require_extension(), 1);
+var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
 var import_receiver = __toESM(require_receiver(), 1);
 var import_sender = __toESM(require_sender(), 1);
+var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
@@ -4973,17 +5043,853 @@ function removeTrailingSlash(url) {
 }
 
 // ../agent-control/dist/index.mjs
+import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+var A2A_TASK_STATES = [
+  "SUBMITTED",
+  "WORKING",
+  "INPUT_REQUIRED",
+  "COMPLETED",
+  "CANCELED",
+  "FAILED",
+  "REJECTED",
+  "AUTH_REQUIRED"
+];
+var A2A_ROLES = ["USER", "AGENT"];
+var TASK_STATE_SET = new Set(A2A_TASK_STATES);
+var ROLE_SET = new Set(A2A_ROLES);
+var PART_CONTENT_KEYS = ["text", "raw", "url", "data"];
+var PART_KEYS = /* @__PURE__ */ new Set([
+  ...PART_CONTENT_KEYS,
+  "metadata",
+  "filename",
+  "mediaType"
+]);
+var MESSAGE_KEYS = /* @__PURE__ */ new Set([
+  "messageId",
+  "role",
+  "parts",
+  "contextId",
+  "taskId",
+  "metadata",
+  "extensions",
+  "referenceTaskIds"
+]);
+var ARTIFACT_KEYS = /* @__PURE__ */ new Set([
+  "artifactId",
+  "parts",
+  "name",
+  "description",
+  "metadata",
+  "extensions"
+]);
+var STATUS_KEYS = /* @__PURE__ */ new Set(["state", "message", "timestamp"]);
+var TASK_KEYS = /* @__PURE__ */ new Set([
+  "id",
+  "status",
+  "contextId",
+  "artifacts",
+  "history",
+  "metadata"
+]);
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function rejectUnknownKeys(obj, allowed, path, errors) {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) {
+      errors.push(`${path}: unknown field '${key}' is not permitted`);
+    }
+  }
+}
+function checkOptionalString(obj, key, path, errors) {
+  if (key in obj && typeof obj[key] !== "string") {
+    errors.push(`${path}.${key}: expected string`);
+  }
+}
+function checkOptionalStringArray(obj, key, path, errors) {
+  if (!(key in obj)) return;
+  const arr = obj[key];
+  if (!Array.isArray(arr)) {
+    errors.push(`${path}.${key}: expected array of string`);
+    return;
+  }
+  arr.forEach((el, i) => {
+    if (typeof el !== "string") {
+      errors.push(`${path}.${key}[${i}]: expected string`);
+    }
+  });
+}
+function checkOptionalObject(obj, key, path, errors) {
+  if (key in obj && !isPlainObject(obj[key])) {
+    errors.push(`${path}.${key}: expected object`);
+  }
+}
+function validatePart(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, PART_KEYS, path, errors);
+  const contentPresent = PART_CONTENT_KEYS.filter((k) => k in input);
+  if (contentPresent.length !== 1) {
+    errors.push(
+      `${path}: exactly one content field (text|raw|url|data) required, found ${contentPresent.length}`
+    );
+  }
+  if ("text" in input && typeof input.text !== "string") {
+    errors.push(`${path}.text: expected string`);
+  }
+  if ("raw" in input && typeof input.raw !== "string") {
+    errors.push(`${path}.raw: expected string`);
+  }
+  if ("url" in input && typeof input.url !== "string") {
+    errors.push(`${path}.url: expected string`);
+  }
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalString(input, "filename", path, errors);
+  checkOptionalString(input, "mediaType", path, errors);
+}
+function validateParts(input, path, errors) {
+  if (!Array.isArray(input)) {
+    errors.push(`${path}: expected array of parts`);
+    return;
+  }
+  if (input.length < 1) {
+    errors.push(`${path}: at least one part required`);
+  }
+  input.forEach((p, i) => validatePart(p, `${path}[${i}]`, errors));
+}
+function validateMessageInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, MESSAGE_KEYS, path, errors);
+  if (typeof input.messageId !== "string" || input.messageId.length === 0) {
+    errors.push(`${path}.messageId: required non-empty string`);
+  }
+  if (typeof input.role !== "string" || !ROLE_SET.has(input.role)) {
+    errors.push(
+      `${path}.role: required, must be one of ${A2A_ROLES.join(" | ")}`
+    );
+  }
+  if (!("parts" in input)) {
+    errors.push(`${path}.parts: required`);
+  } else {
+    validateParts(input.parts, `${path}.parts`, errors);
+  }
+  checkOptionalString(input, "contextId", path, errors);
+  checkOptionalString(input, "taskId", path, errors);
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalStringArray(input, "extensions", path, errors);
+  checkOptionalStringArray(input, "referenceTaskIds", path, errors);
+}
+function validateArtifactInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, ARTIFACT_KEYS, path, errors);
+  if (typeof input.artifactId !== "string" || input.artifactId.length === 0) {
+    errors.push(`${path}.artifactId: required non-empty string`);
+  }
+  if (!("parts" in input)) {
+    errors.push(`${path}.parts: required`);
+  } else {
+    validateParts(input.parts, `${path}.parts`, errors);
+  }
+  checkOptionalString(input, "name", path, errors);
+  checkOptionalString(input, "description", path, errors);
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalStringArray(input, "extensions", path, errors);
+}
+function validateStatusInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, STATUS_KEYS, path, errors);
+  if (typeof input.state !== "string" || !TASK_STATE_SET.has(input.state)) {
+    errors.push(
+      `${path}.state: required, must be one of ${A2A_TASK_STATES.join(" | ")}`
+    );
+  }
+  if ("message" in input) {
+    validateMessageInto(input.message, `${path}.message`, errors);
+  }
+  checkOptionalString(input, "timestamp", path, errors);
+}
+function validateTaskInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, TASK_KEYS, path, errors);
+  if (typeof input.id !== "string" || input.id.length === 0) {
+    errors.push(`${path}.id: required non-empty string`);
+  }
+  if (!("status" in input)) {
+    errors.push(`${path}.status: required`);
+  } else {
+    validateStatusInto(input.status, `${path}.status`, errors);
+  }
+  checkOptionalString(input, "contextId", path, errors);
+  if ("artifacts" in input) {
+    if (!Array.isArray(input.artifacts)) {
+      errors.push(`${path}.artifacts: expected array`);
+    } else {
+      input.artifacts.forEach(
+        (a, i) => validateArtifactInto(a, `${path}.artifacts[${i}]`, errors)
+      );
+    }
+  }
+  if ("history" in input) {
+    if (!Array.isArray(input.history)) {
+      errors.push(`${path}.history: expected array`);
+    } else {
+      input.history.forEach(
+        (m, i) => validateMessageInto(m, `${path}.history[${i}]`, errors)
+      );
+    }
+  }
+  checkOptionalObject(input, "metadata", path, errors);
+}
+function validateA2aMessage(input) {
+  const errors = [];
+  validateMessageInto(input, "message", errors);
+  return errors.length === 0 ? { valid: true, value: input, errors: [] } : { valid: false, value: null, errors };
+}
+function validateA2aTask(input) {
+  const errors = [];
+  validateTaskInto(input, "task", errors);
+  return errors.length === 0 ? { valid: true, value: input, errors: [] } : { valid: false, value: null, errors };
+}
+function isGithubCredentialScope(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const mode = value.mode;
+  if (mode === "all") return true;
+  if (mode !== "selected") return false;
+  const repos = value.repos;
+  return Array.isArray(repos) && repos.length > 0 && repos.every((r) => typeof r === "string");
+}
+function describeGithubCredentialScope(scope) {
+  if (!scope) return "unknown";
+  return scope.mode === "all" ? "all repositories in the organization" : `[${scope.repos.join(", ")}]`;
+}
+var A2A_PROTOCOL_LIMITS = {
+  ordinaryFrameBytes: 65536,
+  taskCreateOuterFrameBytes: 327680,
+  taskUpdateOuterFrameBytes: 1572864,
+  taskCreateInputBytes: 262144,
+  taskCreateEnvelopeBytes: 65536,
+  identifierBytes: 256,
+  messageTextBytes: 16384,
+  messagePartsBytes: 65536,
+  artifactsPerUpdate: 50,
+  artifactLabelBytes: 256,
+  artifactValueBytes: 2048,
+  taskUpdateResultBytes: 1048576,
+  diagnosticsPerUpdate: 16,
+  diagnosticsBytesPerUpdate: 8192
+};
+var A2A_TASK_TYPE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+var DECIMAL_REVISION_RE = /^[1-9][0-9]*$/;
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+var CANONICAL_FRAMEWORKS = /* @__PURE__ */ new Set([
+  "claude_code",
+  "codex",
+  "openclaw",
+  "hermes"
+]);
+var HANDLER_STATES = /* @__PURE__ */ new Set([
+  "current",
+  "outdated_unedited",
+  "owner_modified",
+  "example_scaffold",
+  "not_installed_apply_pending",
+  "not_installed_custom",
+  "missing_deleted",
+  "custom_no_reference",
+  "not_reported"
+]);
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function hasOnlyKeys(value, allowed) {
+  const keySet = new Set(allowed);
+  return Object.keys(value).every((key) => keySet.has(key));
+}
+function isNonEmptyString(value, maxBytes = Number.MAX_SAFE_INTEGER) {
+  if (typeof value !== "string" || value.length === 0) return false;
+  const size = utf8ByteLength(value);
+  return size !== null && size <= maxBytes;
+}
+function utf8ByteLength(value) {
+  let size = 0;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint >= 55296 && codePoint <= 57343) return null;
+    if (codePoint <= 127) size += 1;
+    else if (codePoint <= 2047) size += 2;
+    else if (codePoint <= 65535) size += 3;
+    else size += 4;
+  }
+  return size;
+}
+function unicodeScalarCompare(left, right) {
+  const a = [...left].map((char) => char.codePointAt(0));
+  const b = [...right].map((char) => char.codePointAt(0));
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    if (a[index] !== b[index])
+      return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+function conservativeJsonStringBudget(value) {
+  let size = 2;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint >= 55296 && codePoint <= 57343) return null;
+    if (codePoint <= 31) size += 6;
+    else if (codePoint === 34 || codePoint === 92) size += 2;
+    else {
+      const bytes = utf8ByteLength(char);
+      if (bytes === null) return null;
+      size += bytes;
+    }
+  }
+  return size;
+}
+function conservativeJsonSizeBudget(value) {
+  const ancestors = /* @__PURE__ */ new WeakSet();
+  const visit = (current) => {
+    if (current === null) return 4;
+    if (typeof current === "boolean") return current ? 4 : 5;
+    if (typeof current === "number")
+      return Number.isFinite(current) ? 24 : null;
+    if (typeof current === "string")
+      return conservativeJsonStringBudget(current);
+    if (typeof current !== "object") return null;
+    if (ancestors.has(current)) return null;
+    ancestors.add(current);
+    try {
+      if (Array.isArray(current)) {
+        let size2 = 2 + Math.max(0, current.length - 1);
+        for (const item of current) {
+          const itemSize = visit(item);
+          if (itemSize === null) return null;
+          size2 += itemSize;
+        }
+        return size2;
+      }
+      const prototype = Object.getPrototypeOf(current);
+      if (prototype !== Object.prototype && prototype !== null || Object.getOwnPropertySymbols(current).length > 0) {
+        return null;
+      }
+      const object = current;
+      const keys = Object.keys(object).sort(unicodeScalarCompare);
+      let size = 2 + Math.max(0, keys.length - 1);
+      for (const key of keys) {
+        const keySize = conservativeJsonStringBudget(key);
+        const itemSize = visit(object[key]);
+        if (keySize === null || itemSize === null) return null;
+        size += keySize + 1 + itemSize;
+      }
+      return size;
+    } catch {
+      return null;
+    } finally {
+      ancestors.delete(current);
+    }
+  };
+  return visit(value);
+}
+function serializedJsonByteLength(value) {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === void 0 ? null : utf8ByteLength(serialized);
+  } catch {
+    return null;
+  }
+}
+function a2aMessageTextWithinLimit(value) {
+  return value.parts.every((part) => {
+    if (part.text === void 0) return true;
+    const size = utf8ByteLength(part.text);
+    return size !== null && size <= A2A_PROTOCOL_LIMITS.messageTextBytes;
+  });
+}
+function a2aArtifactWithinLimits(value) {
+  if (value.name !== void 0 && (utf8ByteLength(value.name) === null || utf8ByteLength(value.name) > A2A_PROTOCOL_LIMITS.artifactLabelBytes)) {
+    return false;
+  }
+  return value.parts.every((part) => {
+    if (part.text !== void 0 && (utf8ByteLength(part.text) === null || utf8ByteLength(part.text) > A2A_PROTOCOL_LIMITS.artifactValueBytes)) {
+      return false;
+    }
+    if (part.url !== void 0 && (utf8ByteLength(part.url) === null || utf8ByteLength(part.url) > A2A_PROTOCOL_LIMITS.artifactValueBytes)) {
+      return false;
+    }
+    if (part.data !== void 0) {
+      const size = typeof part.data === "string" ? utf8ByteLength(part.data) : conservativeJsonSizeBudget(part.data);
+      if (size === null || size > A2A_PROTOCOL_LIMITS.artifactValueBytes) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+function validA2aMessage(value, textLimit = false, partsLimit = false) {
+  const result = validateA2aMessage(value);
+  const partsBudget = result.valid ? serializedJsonByteLength(result.value.parts) : null;
+  return result.valid && conservativeJsonSizeBudget(value) !== null && (!partsLimit || partsBudget !== null && partsBudget <= A2A_PROTOCOL_LIMITS.messagePartsBytes) && (!textLimit || a2aMessageTextWithinLimit(result.value));
+}
+function validA2aArtifact(value) {
+  const task = validateA2aTask({
+    id: "contract-validation",
+    status: { state: "SUBMITTED" },
+    artifacts: [value]
+  });
+  return task.valid && conservativeJsonSizeBudget(value) !== null && a2aArtifactWithinLimits(task.value.artifacts?.[0]);
+}
+function validTaskUpdateDiagnostics(value) {
+  if (!Array.isArray(value) || value.length > A2A_PROTOCOL_LIMITS.diagnosticsPerUpdate)
+    return false;
+  let aggregate = 0;
+  for (const item of value) {
+    if (!isPlainObject2(item) || !hasOnlyKeys(item, ["kind", "reasonCode", "message", "details"]) || typeof item.kind !== "string" || !A2A_TASK_TYPE_PATTERN.test(item.kind) || item.reasonCode !== void 0 && typeof item.reasonCode !== "string" || item.message !== void 0 && typeof item.message !== "string" || item.details !== void 0 && !isPlainObject2(item.details))
+      return false;
+    const reasonBytes = item.reasonCode === void 0 ? 0 : utf8ByteLength(item.reasonCode);
+    const messageBytes = item.message === void 0 ? 0 : utf8ByteLength(item.message);
+    const detailsBytes = item.details === void 0 || Object.keys(item.details).length === 0 ? 0 : utf8ByteLength(JSON.stringify(item.details));
+    if (reasonBytes === null || messageBytes === null || detailsBytes === null)
+      return false;
+    aggregate += reasonBytes + messageBytes + detailsBytes;
+  }
+  return aggregate <= A2A_PROTOCOL_LIMITS.diagnosticsBytesPerUpdate;
+}
+function isRevision(value) {
+  return typeof value === "string" && DECIMAL_REVISION_RE.test(value);
+}
+function isTaskType(value) {
+  return typeof value === "string" && A2A_TASK_TYPE_PATTERN.test(value);
+}
+function isDispatchEventContext(value) {
+  if (!isPlainObject2(value) || !hasOnlyKeys(value, ["origin", "sender", "provider", "delivery_id"]) || !isPlainObject2(value.sender) || !hasOnlyKeys(value.sender, ["kind", "identity"]))
+    return false;
+  const sender = value.sender;
+  if (value.origin === "send") {
+    return (sender.kind === "user" || sender.kind === "agent") && typeof sender.identity === "string" && UUID_RE.test(sender.identity) && value.provider === void 0 && value.delivery_id === void 0;
+  }
+  return value.origin === "webhook" && sender.kind === "coordinator" && sender.identity === "spellguard" && isNonEmptyString(value.provider, A2A_PROTOCOL_LIMITS.identifierBytes) && isNonEmptyString(value.delivery_id, A2A_PROTOCOL_LIMITS.identifierBytes);
+}
+var DELIVERY_OUTCOMES = /* @__PURE__ */ new Set([
+  "injected",
+  "resumed",
+  "ledger_only",
+  "delivery_failed"
+]);
+function isDeliveryOutcome(value) {
+  return typeof value === "string" && DELIVERY_OUTCOMES.has(value);
+}
+function isTaskTypeList(value) {
+  return Array.isArray(value) && value.every(isTaskType);
+}
+function isBlockedTaskTypes(value) {
+  return Array.isArray(value) && value.every(
+    (entry) => isPlainObject2(entry) && hasOnlyKeys(entry, ["task_type", "cause"]) && isTaskType(entry.task_type) && isNonEmptyString(entry.cause, 500)
+  );
+}
+function isHandlerInventory(value) {
+  return Array.isArray(value) && value.every(
+    (entry) => isPlainObject2(entry) && hasOnlyKeys(entry, [
+      "task_type",
+      "state",
+      "path",
+      "installed_hash",
+      "current_hash",
+      "dist_hash",
+      "blocking_cause"
+    ]) && isTaskType(entry.task_type) && typeof entry.state === "string" && HANDLER_STATES.has(entry.state) && isNonEmptyString(entry.path, 4096) && (entry.installed_hash === void 0 || isNonEmptyString(entry.installed_hash, 256)) && (entry.current_hash === void 0 || isNonEmptyString(entry.current_hash, 256)) && (entry.dist_hash === void 0 || isNonEmptyString(entry.dist_hash, 256)) && (entry.blocking_cause === void 0 || isNonEmptyString(entry.blocking_cause, 500))
+  );
+}
+function isConfigApplication(value) {
+  return isRevision(value.config_revision) && isTaskTypeList(value.applied_task_types) && isBlockedTaskTypes(value.blocked_task_types) && (value.superseded === void 0 || typeof value.superseded === "boolean");
+}
+function isMaintenanceApplication(value) {
+  return isNonEmptyString(value.operation_id, 256) && (value.status === "applied" || value.status === "blocked") && isRevision(value.config_revision) && (value.reason === void 0 || isNonEmptyString(value.reason, 500));
+}
+var PUBLIC_TASK_RESPONSE_KEYS = [
+  "id",
+  "contextId",
+  "organizationId",
+  "senderKind",
+  "senderAgentId",
+  "senderUserId",
+  "recipientAgentId",
+  "originatingAgentId",
+  "originatingAgentIdentity",
+  "originatingSessionId",
+  "framework",
+  "type",
+  "state",
+  "artifactUrl",
+  "metadata",
+  "resultPayload",
+  "deferred",
+  "lastProgressAt",
+  "lastSupervisionKeepaliveAt",
+  "effectiveDeadlineAt",
+  "workingTimeoutSeconds",
+  "hasUnansweredWorkerMessage",
+  "threadRecordCount",
+  "threadWriteAttemptCount",
+  "suppressedMessageCount",
+  "suppressedProgressCount",
+  "artifactCount",
+  "terminalAt",
+  "createdAt",
+  "updatedAt"
+];
+var TASK_SUMMARY_RESPONSE_KEYS = [
+  ...PUBLIC_TASK_RESPONSE_KEYS.filter(
+    (key) => key !== "originatingAgentId" && key !== "originatingAgentIdentity" && key !== "originatingSessionId"
+  ),
+  "typeLabel",
+  "stateLabel"
+];
+function nullableString(value) {
+  return value === null || typeof value === "string";
+}
+function exactKeys(value, keys) {
+  return Object.keys(value).length === keys.length && hasOnlyKeys(value, keys);
+}
+function validTaskResponseBase(value, summary) {
+  const keys = summary ? TASK_SUMMARY_RESPONSE_KEYS : PUBLIC_TASK_RESPONSE_KEYS;
+  return exactKeys(value, keys) && isNonEmptyString(value.id) && isNonEmptyString(value.contextId) && isNonEmptyString(value.organizationId) && (value.senderKind === "agent" || value.senderKind === "coordinator" || value.senderKind === "user") && nullableString(value.senderAgentId) && nullableString(value.senderUserId) && isNonEmptyString(value.recipientAgentId) && (summary || nullableString(value.originatingAgentId) && nullableString(value.originatingAgentIdentity) && nullableString(value.originatingSessionId)) && nullableString(value.framework) && isNonEmptyString(value.type) && A2A_TASK_STATES.includes(value.state) && nullableString(value.artifactUrl) && isPlainObject2(value.metadata) && typeof value.deferred === "boolean" && nullableString(value.lastProgressAt) && nullableString(value.lastSupervisionKeepaliveAt) && nullableString(value.effectiveDeadlineAt) && (value.workingTimeoutSeconds === null || typeof value.workingTimeoutSeconds === "number") && typeof value.hasUnansweredWorkerMessage === "boolean" && typeof value.threadRecordCount === "number" && typeof value.threadWriteAttemptCount === "number" && typeof value.suppressedMessageCount === "number" && typeof value.suppressedProgressCount === "number" && typeof value.artifactCount === "number" && nullableString(value.terminalAt) && isNonEmptyString(value.createdAt) && isNonEmptyString(value.updatedAt) && (!summary || isNonEmptyString(value.typeLabel) && isNonEmptyString(value.stateLabel));
+}
+function validatePublicTaskResponse(value) {
+  return isPlainObject2(value) && validTaskResponseBase(value, false);
+}
+function validateTaskDetailResponse(value) {
+  if (!isPlainObject2(value)) return false;
+  const { thread, artifacts, diagnostics, ...summary } = value;
+  return validTaskResponseBase(summary, true) && Array.isArray(thread) && Array.isArray(artifacts) && Array.isArray(diagnostics) && thread.every(validateTaskThreadResponse) && artifacts.every(validateTaskArtifactResponse) && diagnostics.every(validateTaskDiagnosticResponse);
+}
+function nonnegativeInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+function validateTaskThreadResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "sequence",
+    "recordKind",
+    "messageId",
+    "senderRole",
+    "senderKind",
+    "senderAgentId",
+    "senderAgentIdentity",
+    "senderUserId",
+    "senderUserIdentity",
+    "senderDisplayName",
+    "text",
+    "parts",
+    "postTerminal",
+    "deliveryState",
+    "deliveryReason",
+    "terminalState",
+    "terminalCause",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && nonnegativeInteger(value.sequence) && (value.recordKind === "progress" || value.recordKind === "message" || value.recordKind === "terminal") && nullableString(value.messageId) && (value.senderRole === null || value.senderRole === "USER" || value.senderRole === "AGENT") && (value.senderKind === null || value.senderKind === "agent" || value.senderKind === "user" || value.senderKind === "coordinator" || value.senderKind === "handler" || value.senderKind === "daemon") && nullableString(value.senderAgentId) && nullableString(value.senderAgentIdentity) && nullableString(value.senderUserId) && nullableString(value.senderUserIdentity) && nullableString(value.senderDisplayName) && nullableString(value.text) && typeof value.postTerminal === "boolean" && nullableString(value.deliveryState) && nullableString(value.deliveryReason) && (value.terminalState === null || A2A_TASK_STATES.includes(value.terminalState)) && (value.terminalCause === null || isPlainObject2(value.terminalCause)) && isNonEmptyString(value.createdAt);
+}
+function validateTaskArtifactResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "artifactId",
+    "sequence",
+    "type",
+    "value",
+    "displayLabel",
+    "metadata",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && isNonEmptyString(value.artifactId) && nonnegativeInteger(value.sequence) && isNonEmptyString(value.type) && typeof value.value === "string" && nullableString(value.displayLabel) && isPlainObject2(value.metadata) && isNonEmptyString(value.createdAt);
+}
+function validateTaskDiagnosticResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "sequence",
+    "kind",
+    "reasonCode",
+    "message",
+    "details",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && nonnegativeInteger(value.sequence) && isNonEmptyString(value.kind) && nullableString(value.reasonCode) && nullableString(value.message) && isPlainObject2(value.details) && isNonEmptyString(value.createdAt);
+}
+function validateA2aAckResult(value) {
+  if (!isPlainObject2(value) || typeof value.kind !== "string") return false;
+  switch (value.kind) {
+    case "task_update":
+      return hasOnlyKeys(value, ["kind", "outcome", "response"]) && (value.outcome === "persisted" || value.outcome === "already_terminal" || value.outcome === "thread_bound_reached") && (value.response === void 0 || validatePublicTaskResponse(value.response));
+    case "message":
+      return hasOnlyKeys(value, ["kind", "outcome", "message_id", "response"]) && value.outcome === "persisted" && isNonEmptyString(value.message_id) && (value.response === void 0 || isPlainObject2(value.response) && exactKeys(value.response, ["messageId", "postTerminal"]) && isNonEmptyString(value.response.messageId) && typeof value.response.postTerminal === "boolean");
+    case "task_create":
+      return hasOnlyKeys(value, ["kind", "task", "outcome", "response"]) && validateA2aTask(value.task).valid && conservativeJsonSizeBudget(value.task) !== null && (value.outcome === void 0 || value.outcome === "created" || value.outcome === "duplicate" || value.outcome === "delivery_failed" || // Acceptance, not failure: the recipient box was asleep, the task is
+      // durably parked and a wake was requested. The server emits this for
+      // task_create; rejecting it drops the entire ack frame (see the
+      // declared `A2aAckResult` union and the Go daemon's mirror).
+      value.outcome === "pending_wake") && (value.response === void 0 || validatePublicTaskResponse(value.response));
+    case "task_read":
+      return hasOnlyKeys(value, ["kind", "task", "response"]) && validateA2aTask(value.task).valid && conservativeJsonSizeBudget(value.task) !== null && (value.response === void 0 || validateTaskDetailResponse(value.response));
+    case "config_applied":
+      return hasOnlyKeys(value, [
+        "kind",
+        "config_revision",
+        "applied_task_types",
+        "blocked_task_types",
+        "superseded"
+      ]) && isConfigApplication(value);
+    case "maintenance":
+      return hasOnlyKeys(value, [
+        "kind",
+        "operation_id",
+        "status",
+        "config_revision",
+        "reason"
+      ]) && isMaintenanceApplication(value);
+    default:
+      return false;
+  }
+}
+function validateA2aContractFrame(value, direction) {
+  if (!isPlainObject2(value) || typeof value.type !== "string") return false;
+  const serverBase = direction === "server" && isNonEmptyString(value.seq) && isNonEmptyString(value.ts);
+  const clientBase = direction === "client" && isNonEmptyString(value.client_msg_id, A2A_PROTOCOL_LIMITS.identifierBytes);
+  switch (value.type) {
+    case "a2a_task_dispatch":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "task",
+        "message",
+        "framework",
+        "recipient_agent_id",
+        "sender_agent_id",
+        "org_id",
+        "event_context"
+      ]) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && (value.sender_agent_id === void 0 || isNonEmptyString(
+        value.sender_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.org_id === void 0 || isNonEmptyString(
+        value.org_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework)) && (value.event_context === void 0 || isDispatchEventContext(value.event_context)) && validateA2aTask(value.task).valid && validateA2aMessage(value.message).valid;
+    case "config_updated":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "config",
+        "triggers_rotation",
+        "config_revision"
+      ]) && isPlainObject2(value.config) && typeof value.triggers_rotation === "boolean" && isRevision(value.config_revision);
+    case "a2a_maintenance":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "operation_id",
+        "action",
+        "config_revision"
+      ]) && isNonEmptyString(value.operation_id, 256) && value.action === "backfill" && isRevision(value.config_revision);
+    case "a2a_config_applied":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "config_revision",
+        "applied_task_types",
+        "blocked_task_types",
+        "superseded"
+      ]) && isConfigApplication(value);
+    case "a2a_handler_inventory":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "config_revision",
+        "handlers"
+      ]) && isRevision(value.config_revision) && isHandlerInventory(value.handlers);
+    case "a2a_maintenance_result":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "operation_id",
+        "status",
+        "config_revision",
+        "reason"
+      ]) && isMaintenanceApplication(value);
+    case "a2a_supervision_keepalive":
+    case "a2a_task_read":
+    case "a2a_deferred_accepted":
+      return clientBase && hasOnlyKeys(value, ["type", "client_msg_id", "taskId"]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes);
+    case "a2a_message_delivery":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "taskId",
+        "messageId",
+        "reason",
+        "outcome"
+      ]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes) && isNonEmptyString(
+        value.messageId,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && isDeliveryOutcome(value.outcome) && // A clean injection needs no explanation; every other terminal state
+      // must name why, so no message ends as an unexplained failure.
+      (value.outcome === "injected" ? value.reason === void 0 : isNonEmptyString(value.reason, A2A_PROTOCOL_LIMITS.identifierBytes));
+    case "a2a_session_register":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "session_id",
+        "framework",
+        "working_directory",
+        "taskId"
+      ]) && isNonEmptyString(value.session_id, 256) && typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework) && isNonEmptyString(value.working_directory, 4096) && (value.taskId === void 0 || isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes));
+    case "a2a_task_create": {
+      const messageBudget = conservativeJsonSizeBudget(value.message);
+      const frameBudget = conservativeJsonSizeBudget(value);
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "recipient_agent_id",
+        "task_type",
+        "idempotency_key",
+        "message",
+        "originating_session_id"
+      ]) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && isTaskType(value.task_type) && isNonEmptyString(value.idempotency_key, 256) && validA2aMessage(value.message, true) && messageBudget !== null && messageBudget <= A2A_PROTOCOL_LIMITS.taskCreateInputBytes && frameBudget !== null && frameBudget - messageBudget <= A2A_PROTOCOL_LIMITS.taskCreateEnvelopeBytes && (value.originating_session_id === void 0 || isNonEmptyString(value.originating_session_id, 256));
+    }
+    case "a2a_task_update": {
+      const artifacts = value.artifacts;
+      const artifact = value.artifact;
+      const artifactsValid = artifacts === void 0 || Array.isArray(artifacts) && artifacts.every(validA2aArtifact);
+      const artifactValid = artifact === void 0 || validA2aArtifact(artifact);
+      const artifactCount = (artifact === void 0 ? 0 : 1) + (Array.isArray(artifacts) ? artifacts.length : 0);
+      const resultBudget = value.result === void 0 ? 0 : conservativeJsonSizeBudget(value.result);
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "taskId",
+        "state",
+        "message",
+        "artifact",
+        "artifacts",
+        "result",
+        "diagnostics",
+        "reasonSource",
+        "deferred",
+        "framework"
+      ]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes) && typeof value.state === "string" && A2A_TASK_STATES.includes(value.state) && (value.message === void 0 || validA2aMessage(value.message, true)) && artifactValid && artifactsValid && artifactCount <= A2A_PROTOCOL_LIMITS.artifactsPerUpdate && resultBudget !== null && resultBudget <= A2A_PROTOCOL_LIMITS.taskUpdateResultBytes && (value.diagnostics === void 0 || validTaskUpdateDiagnostics(value.diagnostics)) && // Present-or-absent, and 'handler' is the ONLY admissible value: a
+      // daemon-authored reason is the default, so there is no positive daemon
+      // marker to accept — anything else is drift and fails the whole frame.
+      (value.reasonSource === void 0 || value.reasonSource === "handler") && (value.deferred === void 0 || value.deferred === true && value.state === "WORKING") && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework));
+    }
+    case "a2a_message": {
+      const common = validA2aMessage(value.message, true, true) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && (value.sender_agent_id === void 0 || isNonEmptyString(
+        value.sender_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework)) && (value.target_session_id === void 0 || isNonEmptyString(value.target_session_id, 256));
+      if (direction === "client") {
+        return clientBase && hasOnlyKeys(value, [
+          "type",
+          "client_msg_id",
+          "message",
+          "recipient_agent_id",
+          "sender_agent_id",
+          "framework",
+          "target_session_id"
+        ]) && common;
+      }
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "message",
+        "recipient_agent_id",
+        "sender_agent_id",
+        "framework",
+        "org_id",
+        "target_session_id"
+      ]) && common && (value.org_id === void 0 || isNonEmptyString(value.org_id, A2A_PROTOCOL_LIMITS.identifierBytes));
+    }
+    default:
+      return false;
+  }
+}
+function isGeneralizedServerEnvelopeValid(obj) {
+  if (obj.type === "ack" && obj.result !== void 0) {
+    return validateA2aAckResult(obj.result);
+  }
+  if (obj.type === "config_updated" && obj.config_revision !== void 0) {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_maintenance") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_task_dispatch") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_message") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  return true;
+}
 var KNOWN_SERVER_FRAME_TYPES = /* @__PURE__ */ new Set([
   "hello",
   "credential_delivered",
   "credential_rotated",
   "credential_revoked",
+  "github_grants_bundle",
+  "github_grants_commit_confirmed",
   "config_updated",
   "ack",
   "error",
   "resume_window_exceeded",
   "login_code",
-  "login_restart"
+  "login_restart",
+  "slack_event",
+  "slack_event_blocked",
+  "teams_activity",
+  "teams_activity_blocked",
+  // A2A collaboration-plane down frames (Task T2). `a2a_message` is
+  // bidirectional; this is its server→box direction.
+  "a2a_task_dispatch",
+  "a2a_message",
+  "a2a_maintenance"
+]);
+var A2A_FRAME_TYPES = /* @__PURE__ */ new Set([
+  "a2a_config_applied",
+  "a2a_deferred_accepted",
+  "a2a_message_delivery",
+  "a2a_handler_inventory",
+  "a2a_maintenance",
+  "a2a_maintenance_result",
+  "a2a_task_dispatch",
+  "a2a_task_update",
+  "a2a_message",
+  "a2a_session_register",
+  "a2a_supervision_keepalive",
+  "a2a_task_create",
+  "a2a_task_read"
 ]);
 function parseServerFrame(text) {
   if (typeof text !== "string" || text.length === 0) return null;
@@ -4997,10 +5903,123 @@ function parseServerFrame(text) {
   const obj = raw;
   if (typeof obj.type !== "string") return null;
   if (!KNOWN_SERVER_FRAME_TYPES.has(obj.type)) return null;
+  if (obj.type === "github_grants_bundle") {
+    if (!isGithubGrantsBundle(obj)) return null;
+    return obj;
+  }
+  if (obj.type === "github_grants_commit_confirmed") {
+    if (!hasOnlyKeys(obj, [
+      "type",
+      "protocol_version",
+      "seq",
+      "ts",
+      "delivery_id",
+      "grant_set_revision"
+    ]) || obj.protocol_version !== "5" || typeof obj.seq !== "string" || typeof obj.ts !== "string" || typeof obj.delivery_id !== "string" || !UUID_RE.test(obj.delivery_id) || !isRevision(obj.grant_set_revision))
+      return null;
+    return obj;
+  }
+  if (A2A_FRAME_TYPES.has(obj.type) && conservativeJsonSizeBudget(obj) === null)
+    return null;
   if (obj.type === "login_code") {
     if (typeof obj.code !== "string" || obj.code.length === 0) return null;
   }
+  if (!isGeneralizedServerEnvelopeValid(obj)) return null;
+  if (!isA2aServerPayloadValid(obj)) return null;
   return obj;
+}
+function isGithubGrantsBundle(value) {
+  if (!hasOnlyKeys(value, [
+    "type",
+    "protocol_version",
+    "seq",
+    "ts",
+    "delivery_id",
+    "grant_set_revision",
+    "credentials"
+  ]) || value.protocol_version !== "5" || typeof value.seq !== "string" || typeof value.ts !== "string" || typeof value.delivery_id !== "string" || !UUID_RE.test(value.delivery_id) || !isRevision(value.grant_set_revision) || !Array.isArray(value.credentials))
+    return false;
+  const grantIds = /* @__PURE__ */ new Set();
+  const installationIds = /* @__PURE__ */ new Set();
+  const credentialIds = /* @__PURE__ */ new Set();
+  const scopedTokenIds = /* @__PURE__ */ new Set();
+  const numericInstallationIds = /* @__PURE__ */ new Set();
+  const owners = /* @__PURE__ */ new Set();
+  let memberAgentId;
+  for (const raw of value.credentials) {
+    if (!isPlainObject2(raw)) return false;
+    const scope = raw.scope;
+    const providerData = raw.provider_data;
+    if (!hasOnlyKeys(raw, [
+      "grant_id",
+      "installation_record_id",
+      "credential_id",
+      "scoped_token_id",
+      "agent_id",
+      "provider",
+      "kind",
+      "status",
+      "grant_revision",
+      "grant_set_revision",
+      "github_org_login",
+      "github_org_display_name",
+      "installation_id",
+      "expires_at",
+      "scoped_token",
+      "access",
+      "scope",
+      "provider_data"
+    ]) || raw.provider !== "github" || raw.kind !== "issued" || raw.status !== "valid" || typeof raw.grant_id !== "string" || !UUID_RE.test(raw.grant_id) || typeof raw.installation_record_id !== "string" || !UUID_RE.test(raw.installation_record_id) || typeof raw.credential_id !== "string" || !UUID_RE.test(raw.credential_id) || // NOT a UUID, unlike the four relational ids around it. This is GitHub's
+    // INSTALLATION-TOKEN id — a number the mint path stringifies
+    // (`scopedTokenId()` in `services/github/github-api.ts`) into the `text`
+    // column `credentials.scoped_token_id`; real rows look like `5249971925`.
+    // A UUID test here rejected every bundle the server actually sends, so a
+    // marked agent's credential store stayed empty and git kept 401ing. It is
+    // an OPAQUE identifier everywhere else in the codebase (the API contract
+    // types it `z.string().min(1)`), and it is validated as one here: present,
+    // a string, non-empty. Uniqueness within the bundle is still enforced
+    // below.
+    typeof raw.scoped_token_id !== "string" || raw.scoped_token_id.length === 0 || typeof raw.agent_id !== "string" || !UUID_RE.test(raw.agent_id) || !isRevision(raw.grant_revision) || raw.grant_set_revision !== value.grant_set_revision || typeof raw.github_org_login !== "string" || raw.github_org_login.length === 0 || typeof raw.github_org_display_name !== "string" || raw.github_org_display_name.trim().length === 0 || typeof raw.installation_id !== "number" || !Number.isSafeInteger(raw.installation_id) || raw.installation_id <= 0 || typeof raw.expires_at !== "string" || !Number.isFinite(Date.parse(raw.expires_at)) || typeof raw.scoped_token !== "string" || raw.scoped_token.length === 0 || !["read", "write"].includes(raw.access) || !isPlainObject2(scope) || !isPlainObject2(providerData) || !hasOnlyKeys(providerData, [
+      "github_user_id",
+      "github_login",
+      "github_user_email",
+      "git_author_name",
+      "git_author_email"
+    ]) || typeof providerData.github_user_id !== "number" || !Number.isSafeInteger(providerData.github_user_id) || // Strictly positive: no GitHub account has id 0, and 0 is precisely the
+    // placeholder a missing identity used to produce server-side. The
+    // plugins write this into the box's real git config, so a bundle whose
+    // committer resolves to nobody is refused at the boundary too.
+    providerData.github_user_id <= 0 || typeof providerData.github_login !== "string" || providerData.github_login.trim().length === 0 || !(providerData.github_user_email === null || typeof providerData.github_user_email === "string") || typeof providerData.git_author_name !== "string" || providerData.git_author_name.trim().length === 0 || typeof providerData.git_author_email !== "string" || providerData.git_author_email.trim().length === 0)
+      return false;
+    const owner = raw.github_org_login;
+    const validScope = scope.mode === "all" && hasOnlyKeys(scope, ["mode"]) || scope.mode === "selected" && hasOnlyKeys(scope, ["mode", "repository_names"]) && Array.isArray(scope.repository_names) && scope.repository_names.length > 0 && scope.repository_names.every((name) => {
+      if (typeof name !== "string" || name !== name.toLowerCase())
+        return false;
+      const parts = name.split("/");
+      return parts.length === 2 && parts[0] === owner.toLowerCase() && parts[1].length > 0;
+    }) && new Set(scope.repository_names).size === scope.repository_names.length;
+    if (!validScope) return false;
+    const normalizedLogin = owner.toLowerCase();
+    if (grantIds.has(raw.grant_id) || installationIds.has(raw.installation_record_id) || credentialIds.has(raw.credential_id) || scopedTokenIds.has(raw.scoped_token_id) || numericInstallationIds.has(raw.installation_id) || memberAgentId !== void 0 && memberAgentId !== raw.agent_id || owners.has(normalizedLogin))
+      return false;
+    grantIds.add(raw.grant_id);
+    installationIds.add(raw.installation_record_id);
+    credentialIds.add(raw.credential_id);
+    scopedTokenIds.add(raw.scoped_token_id);
+    numericInstallationIds.add(raw.installation_id);
+    memberAgentId = raw.agent_id;
+    owners.add(normalizedLogin);
+  }
+  return true;
+}
+function isA2aServerPayloadValid(obj) {
+  if (obj.type === "a2a_task_dispatch") {
+    return validateA2aTask(obj.task).valid && validateA2aMessage(obj.message).valid && conservativeJsonSizeBudget(obj.task) !== null && conservativeJsonSizeBudget(obj.message) !== null;
+  }
+  if (obj.type === "a2a_message") {
+    return validA2aMessage(obj.message, true, true) && conservativeJsonSizeBudget(obj.message) !== null;
+  }
+  return true;
 }
 var AGENT_CONTROL_CLOSE_CODES = {
   NORMAL: 1e3,
@@ -5009,13 +6028,36 @@ var AGENT_CONTROL_CLOSE_CODES = {
   AUTH_FAILED: 4401,
   AGENT_OWNERSHIP: 4403,
   RESUME_WINDOW_EXCEEDED: 4413,
+  /**
+   * The channel displaced a registered socket that had stopped answering the
+   * keepalive, so a newcomer could take the single-socket slot (S2).
+   *
+   * Distinct from `ALREADY_CONNECTED` because it points the OTHER way: 4429
+   * tells a newcomer "someone live is already here", while this tells an
+   * incumbent "you look dead and have been replaced". It is deliberately NOT
+   * fatal to the client — a socket that receives it either really is a zombie
+   * whose process is gone, or is a live daemon that was mis-judged and must
+   * reconnect rather than exit.
+   */
+  STALE_SOCKET: 4410,
   ALREADY_CONNECTED: 4429,
   /**
    * Set ONLY on a deliberate move/re-bootstrap rotation; the sole trigger
    * for the plugin self-wipe. The close reason string is one of
    * `AUTH_SUPERSEDED_CLOSE_REASONS` — use that constant to match on it.
    */
-  AUTH_SUPERSEDED: 4409
+  AUTH_SUPERSEDED: 4409,
+  /**
+   * The agent is quarantined: its channel is suspended, not revoked (#1348).
+   * Sent only to a client that advertised `AGENT_SUSPEND_CAPABILITY`; any
+   * other gets AUTH_FAILED (4401). The client drops every credential it
+   * placed, keeps its identity, and reconnects with backoff (30 s, doubling to
+   * 5 min). A quarantined agent's capable reconnect is answered with this code
+   * too, until a release lets the upgrade through and the normal resume
+   * re-delivers what is still granted. The reason is
+   * `AGENT_SUSPENDED_CLOSE_REASON`.
+   */
+  AGENT_SUSPENDED: 4423
   // A SERVER_TRANSIENT (4503) code is intentionally not declared here: the
   // server's transient-failure paths (storage put errors, missing DB handle,
   // serialization throws) log and fall through rather than emitting a close
@@ -5026,6 +6068,7 @@ var AUTH_SUPERSEDED_CLOSE_REASONS = {
   ATTACHED_ELSEWHERE: "attached_elsewhere",
   REASSIGNED: "reassigned"
 };
+var AGENT_SUSPEND_CAPABILITY = "agent_suspend_v1";
 var FATAL_CLOSE_CODES = /* @__PURE__ */ new Set([
   // 4400 BOOTSTRAP_ERROR is wired up server-side. Without listing it here,
   // partysocket would auto-reconnect after a bootstrap-terminal failure and
@@ -5050,10 +6093,15 @@ var AgentControlClient = class {
     this.#lastServerSeq = opts.initialLastServerSeq ?? "0";
     this.#knownCredentials = opts.initialKnownCredentials ?? [];
   }
+  opts;
   #ps = null;
+  /** Preserve wire order across async receiver durability hooks. */
+  #messageChain = Promise.resolve();
   #closed = false;
   #lastServerSeq;
   #knownCredentials;
+  /** True only for a connection whose query advertised `resume=always`. */
+  #resumeAlwaysConnection = false;
   #firstConnect = true;
   #pendingRequests = /* @__PURE__ */ new Map();
   // Serializes refresh requests because `credential_delivered` carries no
@@ -5061,6 +6109,11 @@ var AgentControlClient = class {
   // would resolve them out-of-order. This serialization can be dropped if the
   // protocol later grows an `in_response_to` correlation field.
   #refreshChain = Promise.resolve();
+  // Redacted replay and the following divergence pass can announce the same
+  // issued identity before its first refresh completes. Keep one refresh per
+  // identity in flight so the second notice cannot rotate it again after the
+  // first response settles.
+  #redactedRefreshesInFlight = /* @__PURE__ */ new Set();
   // Rotation-fallback timers. Key = seq of the config_updated frame.
   // Cleared when a credential_rotated arrives before the 10s window expires.
   #rotationTimers = /* @__PURE__ */ new Map();
@@ -5069,11 +6122,24 @@ var AgentControlClient = class {
   // value, via the injectable #now()) so the timer can detect a zombie socket.
   #heartbeatTimer = null;
   #lastPongAt = 0;
+  /** Consecutive HTTP-upgrade auth failures seen before a socket opens. */
+  #consecutiveUpgradeAuthFailures = 0;
+  /**
+   * #1348: the last suspended (4423) wait, or null while the session is
+   * healthy. A suspended reconnect still opens (hello, then 4423), so this
+   * resets only on a frame past the hello, never on `open`.
+   */
+  #suspendedDelayMs = null;
+  #suspendedTimer = null;
   /** Open the socket. Subsequent reconnects are automatic. */
   start() {
     if (this.#closed || this.#ps) return;
     const BaseImpl = this.opts.WebSocketImpl ?? wrapper_default;
-    const Impl = makeErrorSafeWebSocket(BaseImpl, this.opts.upgradeHeaders);
+    const Impl = makeErrorSafeWebSocket(
+      BaseImpl,
+      this.opts.upgradeHeaders,
+      (err) => this.#observeUpgradeError(err)
+    );
     const apiBaseUrl = this.opts.apiBaseUrl.replace(/^https?:\/\//, "");
     const tls = this.opts.apiBaseUrl.startsWith("https://");
     const ps = new PartySocket({
@@ -5109,10 +6175,13 @@ var AgentControlClient = class {
     });
     this.#ps = ps;
     ps.addEventListener("open", () => {
+      this.#consecutiveUpgradeAuthFailures = 0;
       void this.#onOpen();
     });
     ps.addEventListener("message", (e) => {
-      void this.#handleMessage(e);
+      this.#messageChain = this.#messageChain.then(
+        () => this.#handleMessage(e)
+      );
     });
     ps.addEventListener("close", (event) => {
       this.#stopHeartbeat();
@@ -5130,6 +6199,10 @@ var AgentControlClient = class {
         this.close();
         return;
       }
+      if (code === AGENT_CONTROL_CLOSE_CODES.AGENT_SUSPENDED) {
+        this.#suspend(reason);
+        return;
+      }
       if (FATAL_CLOSE_CODES.has(code)) {
         this.opts.onFatalClose(code, reason);
         this.close();
@@ -5143,8 +6216,50 @@ var AgentControlClient = class {
       this.opts.onError?.(err);
     });
   }
-  /** Send a CredentialRequest and resolve to the delivered descriptors.
-   *  Times out if no `credential_delivered` arrives within `timeoutMs`. */
+  /**
+   * #1348: the agent is quarantined. PartySocket has already queued its own
+   * quick retry (its close handler reconnects before listeners run), so stop
+   * it and reconnect on the suspended backoff instead. Identity stays.
+   */
+  #suspend(reason) {
+    const ps = this.#ps;
+    if (this.#closed || !ps) return;
+    ps.close();
+    const { initial, max } = this.opts.suspendedBackoffMs ?? {
+      initial: 3e4,
+      max: 3e5
+    };
+    const retryInMs = this.#suspendedDelayMs === null ? initial : Math.min(this.#suspendedDelayMs * 2, max);
+    this.#suspendedDelayMs = retryInMs;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = setTimeout(() => {
+      this.#suspendedTimer = null;
+      if (!this.#closed && this.#ps === ps) ps.reconnect();
+    }, retryInMs);
+    this.#knownCredentials = [];
+    void Promise.resolve().then(() => this.opts.onKnownCredentialsChanged?.([])).then(() => this.opts.onSuspended?.({ reason, retryInMs })).catch(
+      (err) => this.opts.onError?.(
+        err instanceof Error ? err : new Error(String(err))
+      )
+    );
+  }
+  #observeUpgradeError(err) {
+    if (isUpgradeUnauthorized(err)) {
+      this.#consecutiveUpgradeAuthFailures += 1;
+      if (this.#consecutiveUpgradeAuthFailures >= 3) {
+        this.opts.onFatalClose(
+          AGENT_CONTROL_CLOSE_CODES.AUTH_FAILED,
+          "http_upgrade_unauthorized"
+        );
+        this.close();
+      }
+      return;
+    }
+    this.#consecutiveUpgradeAuthFailures = 0;
+  }
+  /** Send a CredentialRequest and resolve after the durable response apply.
+   *  V4 returns delivered descriptors; V5 resolves `[]` after its bundle hook
+   *  commits. Times out if no matching response arrives within `timeoutMs`. */
   async requestRefresh(args, opts = {}) {
     if (!this.#ps) throw new Error("client not started");
     const next = this.#refreshChain.catch(() => void 0).then(() => this.#sendRefresh(args, opts));
@@ -5156,15 +6271,17 @@ var AgentControlClient = class {
     if (!this.#ps) throw new Error("client not started");
     const clientMsgId = crypto.randomUUID();
     const timeoutMs = opts.timeoutMs ?? 3e4;
-    return await new Promise((resolve3, reject) => {
+    return await new Promise((resolve4, reject) => {
       const timer = setTimeout(() => {
         this.#pendingRequests.delete(clientMsgId);
         reject(new Error("credential_request_timeout"));
       }, timeoutMs);
       this.#pendingRequests.set(clientMsgId, {
-        resolve: resolve3,
+        resolve: resolve4,
         reject,
         timer,
+        requestedProvider: args.provider,
+        requestedReason: args.reason,
         // Carry the superseded id so the resolution path can prune it from
         // knownCredentials when the new credential is delivered.
         supersededProvider: args.provider,
@@ -5234,7 +6351,11 @@ var AgentControlClient = class {
           client_msg_id: crypto.randomUUID(),
           state: update.state,
           ...update.login_url ? { login_url: update.login_url } : {},
-          ...update.message ? { message: update.message } : {}
+          ...update.message ? { message: update.message } : {},
+          // T4.3 — carry the per-frame framework discriminator when the caller
+          // (the multiplexed Go box daemon) supplies it. Omitted for the
+          // single-framework Node daemon path so its frame stays byte-identical.
+          ...update.framework ? { framework: update.framework } : {}
         })
       );
     } catch {
@@ -5243,6 +6364,8 @@ var AgentControlClient = class {
   /** Close the socket and stop reconnecting. */
   close() {
     this.#closed = true;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = null;
     this.#stopHeartbeat();
     for (const [, p] of this.#pendingRequests) {
       clearTimeout(p.timer);
@@ -5324,11 +6447,27 @@ var AgentControlClient = class {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
   }
+  /**
+   * #1348: the Resume capabilities. AGENT_SUSPEND_CAPABILITY is added only
+   * when the plugin wired `onSuspended`, since only then does a suspension
+   * drop what it placed; a client that can't must keep getting 4401.
+   */
+  #resumeCapabilities() {
+    if (!this.opts.onSuspended) return this.opts.capabilities;
+    return [...this.opts.capabilities ?? [], AGENT_SUSPEND_CAPABILITY];
+  }
   async #buildQuery() {
     const creds = await this.opts.credentials();
     if (creds.mode === "secret") {
-      return { agent_secret: creds.agentSecret };
+      this.#resumeAlwaysConnection = true;
+      return {
+        agent_secret: creds.agentSecret,
+        resume: "always",
+        ...creds.framework ? { framework: creds.framework } : {},
+        ...this.opts.onSuspended ? { suspend: "1" } : {}
+      };
     }
+    this.#resumeAlwaysConnection = false;
     if (creds.mode === "managed-bootstrap") {
       return { nonce: creds.nonce };
     }
@@ -5414,16 +6553,14 @@ var AgentControlClient = class {
    * `case 'hello'`.
    */
   #sendResumeIfApplicable() {
-    if (!this.#ps) return;
-    const noStateYet = this.#lastServerSeq === "0" && this.#knownCredentials.length === 0;
-    if (noStateYet) return;
+    if (!this.#ps || !this.#resumeAlwaysConnection) return;
     this.#ps.send(
       JSON.stringify({
         type: "resume",
         client_msg_id: crypto.randomUUID(),
         last_server_seq: this.#lastServerSeq,
         known_credentials: this.#knownCredentials,
-        capabilities: this.opts.capabilities
+        capabilities: this.#resumeCapabilities()
       })
     );
   }
@@ -5440,10 +6577,39 @@ var AgentControlClient = class {
       );
       return;
     }
+    if (frame.type !== "hello") this.#suspendedDelayMs = null;
     try {
       await this.#dispatch(frame);
     } catch (err) {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  /**
+   * A V5 bundle is a complete authoritative GitHub set but carries no request
+   * correlation id. Refresh requests are serialized, so at most one pending
+   * request can match. A scoped refresh is satisfied only when the full set no
+   * longer contains the superseded id; an unscoped manual issuance is
+   * satisfied only by a secret-bearing set. The caller invokes this strictly
+   * after the receiver's durable apply hook succeeds.
+   */
+  #settlePendingGithubGrantBundle(frame) {
+    const activeIds = new Set(
+      frame.credentials.map((credential) => credential.scoped_token_id)
+    );
+    for (const [id, pending] of this.#pendingRequests) {
+      if (pending.requestedProvider !== "github") continue;
+      const matches = pending.supersededScopedTokenId ? !activeIds.has(pending.supersededScopedTokenId) : pending.requestedReason === "manual" && frame.credentials.length > 0;
+      if (!matches) continue;
+      clearTimeout(pending.timer);
+      if (pending.supersededScopedTokenId) {
+        this.#dropKnownCredential(
+          pending.supersededProvider,
+          pending.supersededScopedTokenId
+        );
+      }
+      pending.resolve([]);
+      this.#pendingRequests.delete(id);
+      break;
     }
   }
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pure protocol-frame dispatcher; each case is a leaf delegating to a typed handler. Splitting per-case would scatter the seq-advancement / pending-resolution invariants this method enforces in one place.
@@ -5462,14 +6628,14 @@ var AgentControlClient = class {
           this.#knownCredentials = [];
           await this.opts.onSeqAdvanced("0");
           await this.opts.onKnownCredentialsChanged?.([]);
-          if (this.#ps && preResetKnown.length > 0) {
+          if (this.#ps && this.#resumeAlwaysConnection) {
             this.#ps.send(
               JSON.stringify({
                 type: "resume",
                 client_msg_id: crypto.randomUUID(),
                 last_server_seq: "0",
                 known_credentials: preResetKnown,
-                capabilities: this.opts.capabilities
+                capabilities: this.#resumeCapabilities()
               })
             );
           }
@@ -5478,20 +6644,72 @@ var AgentControlClient = class {
         this.#sendResumeIfApplicable();
         return;
       }
+      case "github_grants_bundle": {
+        try {
+          if (!this.opts.onGithubGrantsBundle) {
+            throw new Error("github_grant_bundle_v1 handler is unavailable");
+          }
+          await this.opts.onGithubGrantsBundle(frame);
+          this.#settlePendingGithubGrantBundle(frame);
+          this.#ps?.send(
+            JSON.stringify({
+              type: "github_grants_applied",
+              protocol_version: "5",
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: true
+            })
+          );
+          await this.#advanceSeq(frame.seq);
+        } catch (error) {
+          this.#ps?.send(
+            JSON.stringify({
+              type: "github_grants_applied",
+              protocol_version: "5",
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: false,
+              error_code: "durable_apply_failed"
+            })
+          );
+          throw error;
+        }
+        return;
+      }
+      case "github_grants_commit_confirmed":
+        await this.opts.onGithubGrantsCommitConfirmed?.(frame);
+        await this.#advanceSeq(frame.seq);
+        return;
       case "credential_delivered": {
         const isBootstrapCause = frame.cause === "bootstrap" || frame.cause === "re_bootstrap";
-        if (!isBootstrapCause && await this.#handleIfRedacted(
+        const incomplete = this.#incompleteCredentials(frame.credentials);
+        if (!isBootstrapCause && await this.#handleIfIncomplete(
           frame.credentials,
           frame.seq,
           `credential_delivered{cause:'${frame.cause}'}`
         )) {
           return;
         }
-        await this.opts.onCredentialDelivered(frame);
-        this.#trackKnownCredentials(frame.credentials);
+        if (isBootstrapCause && incomplete.length > 0) {
+          await this.#dropIncompleteKnownCredentials(incomplete);
+        }
+        const usableCredentials = incomplete.length > 0 ? frame.credentials.filter(
+          (credential) => this.#credentialCarriesUsableSecret(credential)
+        ) : frame.credentials;
+        await this.opts.onCredentialDelivered(
+          usableCredentials === frame.credentials ? frame : { ...frame, credentials: usableCredentials }
+        );
+        this.#trackKnownCredentials(usableCredentials);
         await this.#advanceSeq(frame.seq);
         if (isBootstrapCause) {
           this.#queueRefreshForBareIssued(frame.credentials);
+          if (incomplete.some((credential) => credential.provider !== "github")) {
+            this.#reportIncomplete(
+              `credential_delivered{cause:'${frame.cause}'}`
+            );
+          }
         }
         if (frame.cause === "refresh_response" || frame.cause === "admin_reissue") {
           for (const [id, p] of this.#pendingRequests) {
@@ -5515,7 +6733,7 @@ var AgentControlClient = class {
           this.#rotationTimers.delete(seq);
         }
         const superseded = frame.superseded_scoped_token_id;
-        if (await this.#handleIfRedacted(
+        if (await this.#handleIfIncomplete(
           frame.credentials,
           frame.seq,
           "credential_rotated",
@@ -5554,6 +6772,7 @@ var AgentControlClient = class {
           await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
         }
         await this.#advanceSeq(frame.seq);
+        await this.opts.onCredentialRevokeSettled?.(frame);
         return;
       }
       case "config_updated": {
@@ -5634,42 +6853,101 @@ var AgentControlClient = class {
         await this.opts.onLoginRestart?.(frame);
         return;
       }
+      case "slack_event":
+      case "slack_event_blocked":
+      case "teams_activity":
+      case "teams_activity_blocked": {
+        this.#dispatchRelayFrame(frame);
+        return;
+      }
     }
   }
   /**
-   * Handles a credential frame that has any redacted credential (no
-   * `scoped_token`). See the redacted-replay contract in protocol.ts.
-   *
-   * Returns `true` if any credential was redacted (caller should return
-   * early, skipping `onCredentialDelivered`/`onCredentialRotated`).
-   * Returns `false` when all credentials carry a `scoped_token`.
-   *
-   * When redacted: advances seq, logs via `onError` (informational), and
-   * queues a fire-and-forget `requestRefresh` for each bare credential.
-   * `client_closed` rejections on teardown are swallowed silently.
+   * Fire-and-forget invocation of the relay-event handler. NEVER awaited on the
+   * dispatch path (R5): a synchronous throw is caught, and a returned rejecting
+   * promise gets a `.catch` — both route to `onError`, never to the socket or
+   * the seq cursor. No-op when `onRelayEvent` is unwired (relay frame ignored).
    */
-  async #handleIfRedacted(creds, seq, logLabel, supersededId) {
-    const issuedCreds = creds.filter(
-      (c) => {
-        const effKind = c.kind ?? (c.provider === "github" ? "issued" : c.kind);
-        return effKind === "issued";
+  #dispatchRelayFrame(frame) {
+    const handler = this.opts.onRelayEvent;
+    if (!handler) return;
+    try {
+      const r = handler(frame);
+      if (r && typeof r.catch === "function") {
+        r.catch((err) => {
+          this.opts.onError?.(
+            err instanceof Error ? err : new Error(String(err))
+          );
+        });
       }
-    );
-    if (!issuedCreds.some((c) => !c.scoped_token)) return false;
-    await this.#advanceSeq(seq);
-    const redactedNotice = `agent-control: redacted ${logLabel} \u2014 queuing credential_request to obtain fresh secret`;
-    if (this.opts.onInfo) {
-      this.opts.onInfo(redactedNotice);
-    } else {
-      this.opts.onError?.(new Error(redactedNotice));
+    } catch (err) {
+      this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
+  }
+  /**
+   * Settle a frame containing a provider-incomplete descriptor. Ring replay
+   * strips GitHub `scoped_token`, Slack/Discord `botToken`, Teams `password`,
+   * and OpenRouter `api_key`. Remove any prior projection entry durably, leave
+   * the consuming destination untouched, advance the replay cursor, and queue
+   * refresh only for the issued GitHub path.
+   */
+  async #handleIfIncomplete(creds, seq, logLabel, supersededId) {
+    const incomplete = this.#incompleteCredentials(creds);
+    if (incomplete.length === 0) return false;
+    await this.#dropIncompleteKnownCredentials(incomplete);
+    await this.#advanceSeq(seq);
+    this.#reportIncomplete(logLabel);
     this.#queueRefreshForBareIssued(creds, supersededId);
     return true;
+  }
+  #credentialCarriesUsableSecret(credential) {
+    const raw = credential;
+    switch (credential.provider) {
+      case "github":
+        return typeof raw.scoped_token === "string" && raw.scoped_token.length > 0;
+      case "slack":
+      case "discord":
+        return typeof raw.botToken === "string" && raw.botToken.length > 0;
+      case "teams":
+        return typeof raw.password === "string" && raw.password.length > 0;
+      case "openrouter":
+        return typeof raw.api_key === "string" && raw.api_key.length > 0;
+      default:
+        return true;
+    }
+  }
+  #incompleteCredentials(credentials) {
+    return credentials.filter(
+      (credential) => !this.#credentialCarriesUsableSecret(credential)
+    );
+  }
+  async #dropIncompleteKnownCredentials(credentials) {
+    const identities = new Set(
+      credentials.map((credential) => {
+        const raw = credential;
+        const id = raw.scoped_token_id ?? credential.credential_id;
+        return `${credential.provider}\0${String(id)}`;
+      })
+    );
+    const next = this.#knownCredentials.filter(
+      (known) => !identities.has(`${known.provider}\0${known.scoped_token_id}`)
+    );
+    if (next.length === this.#knownCredentials.length) return;
+    this.#knownCredentials = next;
+    await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
+  }
+  #reportIncomplete(logLabel) {
+    const notice = `agent-control: redacted/replay-incomplete ${logLabel} \u2014 preserving existing credential and awaiting authoritative hydration`;
+    if (this.opts.onInfo) {
+      this.opts.onInfo(notice);
+    } else {
+      this.opts.onError?.(new Error(notice));
+    }
   }
   /**
    * Queue a fire-and-forget `credential_request` for each ISSUED (github)
    * credential that arrived WITHOUT a `scoped_token`. Shared by the
-   * redacted-replay path (`#handleIfRedacted`) and the bootstrap/re_bootstrap
+   * redacted-replay path (`#handleIfIncomplete`) and the bootstrap/re_bootstrap
    * delivery path (where the descriptor is bare by design — see the C11 note
    * in `case 'credential_delivered'`). #refreshChain serializes concurrent
    * requests; `client_closed` / `client not started` rejections on teardown
@@ -5683,10 +6961,14 @@ var AgentControlClient = class {
       if (effKind !== "issued") continue;
       const issued = c;
       if (issued.scoped_token) continue;
+      const identity = supersededId ?? issued.scoped_token_id ?? issued.credential_id;
+      const refreshKey = `${issued.provider}\0${identity}`;
+      if (this.#redactedRefreshesInFlight.has(refreshKey)) continue;
+      this.#redactedRefreshesInFlight.add(refreshKey);
       void this.requestRefresh({
         reason: "expiry",
         provider: issued.provider,
-        superseded_scoped_token_id: supersededId ?? issued.scoped_token_id ?? issued.credential_id
+        superseded_scoped_token_id: identity
       }).catch((err) => {
         if (err instanceof Error && (err.message === "client_closed" || err.message === "client not started")) {
           return;
@@ -5694,6 +6976,8 @@ var AgentControlClient = class {
         this.opts.onError?.(
           err instanceof Error ? err : new Error(String(err))
         );
+      }).finally(() => {
+        this.#redactedRefreshesInFlight.delete(refreshKey);
       });
     }
   }
@@ -5758,7 +7042,30 @@ var AgentControlClient = class {
     }
   }
 };
-function makeErrorSafeWebSocket(Base, headers) {
+function upgradeStatusOf(err) {
+  if (typeof err !== "object" || err === null) return void 0;
+  const e = err;
+  for (const candidate of [
+    e.statusCode,
+    e.status,
+    e.response?.statusCode,
+    e.response?.status
+  ]) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return void 0;
+}
+function isUpgradeUnauthorized(err) {
+  const status = upgradeStatusOf(err);
+  if (status !== void 0) return status === 401;
+  const message = typeof err === "object" && err !== null && "message" in err ? String(err.message ?? "") : String(err ?? "");
+  return /\b(?:http|status(?:\s+code)?|code|response|upgrade|connection)\b[\s:=]*401\b/i.test(
+    message
+  ) || /\b401\s+unauthorized\b/i.test(message);
+}
+function makeErrorSafeWebSocket(Base, headers, onUpgradeError) {
   function Wrapped(url, protocols) {
     const ws = headers ? (
       // biome-ignore lint/suspicious/noExplicitAny: bridging to ws (url, protocols, options) signature (see above).
@@ -5767,9 +7074,17 @@ function makeErrorSafeWebSocket(Base, headers) {
       // biome-ignore lint/suspicious/noExplicitAny: bridging to ws (url, protocols) signature (see above).
       new Base(url, protocols)
     );
+    const observe = (value) => {
+      const wrapped = value;
+      const err = value instanceof Error ? value : wrapped.error instanceof Error ? wrapped.error : new Error(
+        typeof wrapped.message === "string" ? wrapped.message : String(value)
+      );
+      onUpgradeError?.(err);
+    };
     if (ws && typeof ws.on === "function") {
-      ws.on("error", () => {
-      });
+      ws.on("error", observe);
+    } else if (ws && typeof ws.addEventListener === "function") {
+      ws.addEventListener("error", observe);
     }
     return ws;
   }
@@ -5811,21 +7126,48 @@ async function resolveInstanceFingerprint(opts = {}) {
 function truncate(s, max) {
   return s.length > max ? s.slice(0, max) : s;
 }
-async function defaultFetchInstanceId() {
+var IMDS_TOKEN_URL = "http://169.254.169.254/latest/api/token";
+var IMDS_INSTANCE_ID_URL = "http://169.254.169.254/latest/meta-data/instance-id";
+var IMDS_TIMEOUT_MS = 1500;
+async function fetchWithTimeout(fetchImpl, url, init) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1500);
+  const timer = setTimeout(() => controller.abort(), IMDS_TIMEOUT_MS);
   try {
-    const res = await fetch(
-      "http://169.254.169.254/latest/meta-data/instance-id",
-      { signal: controller.signal }
-    );
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function defaultFetchInstanceId(fetchImpl = fetch) {
+  let token = "";
+  try {
+    const tokenRes = await fetchWithTimeout(fetchImpl, IMDS_TOKEN_URL, {
+      method: "PUT",
+      headers: { "X-aws-ec2-metadata-token-ttl-seconds": "60" }
+    });
+    if (tokenRes.ok) token = (await tokenRes.text()).trim();
+  } catch {
+    return null;
+  }
+  if (token.length > 0) {
+    try {
+      const res = await fetchWithTimeout(fetchImpl, IMDS_INSTANCE_ID_URL, {
+        headers: { "X-aws-ec2-metadata-token": token }
+      });
+      if (res.ok) {
+        const text = (await res.text()).trim();
+        if (text.length > 0) return text;
+      }
+    } catch {
+    }
+  }
+  try {
+    const res = await fetchWithTimeout(fetchImpl, IMDS_INSTANCE_ID_URL);
     if (!res.ok) return null;
     const text = (await res.text()).trim();
     return text.length > 0 ? text : null;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 async function runManagedBootstrap(opts = {}) {
@@ -5850,7 +7192,7 @@ async function runManagedBootstrap(opts = {}) {
   }
   const instanceFingerprint = await resolveInstanceFingerprint(opts);
   const timeoutMs = opts.timeoutMs ?? 10 * 60 * 1e3;
-  return await new Promise((resolve3, reject) => {
+  return await new Promise((resolve4, reject) => {
     let settled = false;
     let client = null;
     const settle = (err, result) => {
@@ -5862,7 +7204,7 @@ async function runManagedBootstrap(opts = {}) {
       } catch {
       }
       if (err) reject(err);
-      else if (result) resolve3(result);
+      else if (result) resolve4(result);
     };
     const timer = setTimeout(() => {
       settle(
@@ -5938,6 +7280,12 @@ async function runManagedBootstrap(opts = {}) {
   });
 }
 var AGENT_GONE_HTTP_STATUSES = [401, 403, 404, 410];
+function normalizeManagementBaseUrl(baseUrl) {
+  let url = baseUrl;
+  while (url.endsWith("/")) url = url.slice(0, -1);
+  if (url.endsWith("/v1")) url = url.slice(0, -3);
+  return url;
+}
 function isAgentGoneStatus(httpStatus) {
   return httpStatus !== void 0 && AGENT_GONE_HTTP_STATUSES.includes(httpStatus);
 }
@@ -5946,16 +7294,16 @@ function createManagementClient(opts) {
   const baseFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const retryDelay = opts.retryDelayMs ?? 1e3;
   const retryOn5xx = opts.retry ?? true;
-  const retryingFetch = async (input, init) => {
+  const retryingFetch = (async (input, init) => {
     const req = input instanceof Request ? input : new Request(String(input), init);
     if (!retryOn5xx) return baseFetch(req);
     const first = await baseFetch(req.clone());
     if (first.status >= 500) {
-      await new Promise((resolve3) => setTimeout(resolve3, retryDelay));
+      await new Promise((resolve4) => setTimeout(resolve4, retryDelay));
       return baseFetch(req);
     }
     return first;
-  };
+  });
   const auth = {
     onRequest({ request }) {
       if ((opts.auth ?? "agent-secret") === "bearer") {
@@ -5972,84 +7320,197 @@ function createManagementClient(opts) {
     // Strip a trailing slash AND a trailing `/v1` before appending `/v1`, so a
     // baseUrl of either `https://host` or `https://host/v1` (OpenClaw's docker
     // default carries `/v1`) yields a single `/v1`, never `/v1/v1`.
-    baseUrl: `${opts.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1`,
+    baseUrl: `${normalizeManagementBaseUrl(opts.baseUrl)}/v1`,
     fetch: retryingFetch
   });
   client.use(auth);
   return client;
 }
+var MANAGED_MARKER_BASENAME = ".managed";
+function spellguardRootDir(env = process.env, home = homedir()) {
+  const xdg = env.XDG_CONFIG_HOME;
+  return xdg ? join(xdg, "spellguard") : join(home, ".config", "spellguard");
+}
+function managedMarkerPath(root = spellguardRootDir()) {
+  return join(root, MANAGED_MARKER_BASENAME);
+}
+function readManagedMarker(root = spellguardRootDir()) {
+  const path = managedMarkerPath(root);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    const e = err;
+    if (e.code === "ENOENT") return { managed: false };
+    return {
+      managed: false,
+      diagnostic: `managed marker unreadable at ${path}: ${e.message}`
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker corrupt at ${path}: ${err.message}`
+    };
+  }
+  const marker = parsed;
+  if (!marker || typeof marker !== "object" || typeof marker.agent_id !== "string" || marker.agent_id === "") {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} missing agent_id`
+    };
+  }
+  let stats;
+  try {
+    stats = statSync(path);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker unstatable at ${path}: ${err.message}`
+    };
+  }
+  const perm = stats.mode & 511;
+  if (perm & 18) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} is group/world-writable (mode ${perm.toString(8)}); refusing to honor`
+    };
+  }
+  const readerUid = typeof process.getuid === "function" ? process.getuid() : void 0;
+  if (readerUid !== void 0 && readerUid !== 0 && typeof stats.uid === "number" && stats.uid !== 0 && stats.uid !== readerUid) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} owned by untrusted uid ${stats.uid} (reader uid ${readerUid}, not root); refusing to honor`
+    };
+  }
+  return { marker, managed: true };
+}
+function isManagedBox(root = spellguardRootDir()) {
+  return readManagedMarker(root).managed;
+}
 
 // src/lib/config-store.ts
+import { randomUUID } from "node:crypto";
 import {
-  chmodSync as chmodSync2,
-  closeSync as closeSync2,
+  chmodSync,
+  closeSync,
   copyFileSync,
   existsSync,
-  mkdirSync as mkdirSync2,
-  openSync as openSync2,
-  readFileSync,
-  renameSync as renameSync2,
-  rmSync as rmSync2,
-  statSync,
-  writeFileSync as writeFileSync2,
-  writeSync as writeSync2
+  constants as fsConstants,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync as readFileSync2,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync as statSync2,
+  symlinkSync,
+  writeFileSync,
+  writeSync
 } from "node:fs";
-import { homedir, platform as platform2 } from "node:os";
-import { dirname as dirname3, join as join2 } from "node:path";
+import { homedir as homedir2, platform } from "node:os";
+import { dirname as dirname2, join as join2 } from "node:path";
 
 // src/lib/framework-slug.ts
 var FRAMEWORK_SLUG = "claude-code";
 
-// src/lib/gh-token-file.ts
-import {
-  chmodSync,
-  closeSync,
-  mkdirSync,
-  openSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-  writeSync
-} from "node:fs";
-import { platform } from "node:os";
-import { dirname as dirname2, join } from "node:path";
-function writeGhTokenFile(path, token) {
-  if (!token) return;
-  mkdirSync(dirname2(path), { recursive: true, mode: 448 });
-  const tmpPath = `${path}.tmp`;
-  if (platform() !== "win32") {
-    const fd = openSync(tmpPath, "w", 384);
-    try {
-      writeSync(fd, token, 0, "utf-8");
-    } finally {
-      closeSync(fd);
-    }
-    chmodSync(tmpPath, 384);
-  } else {
-    writeFileSync(tmpPath, token, "utf-8");
-  }
-  renameSync(tmpPath, path);
-}
-function clearGhTokenFile(path) {
-  try {
-    rmSync(path, { force: true });
-  } catch {
-  }
-}
-
 // src/lib/config-store.ts
-function spellguardRootDir() {
+function spellguardRootDir2() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return xdg ? join2(xdg, "spellguard") : join2(homedir(), ".config", "spellguard");
+  return xdg ? join2(xdg, "spellguard") : join2(homedir2(), ".config", "spellguard");
 }
 function defaultConfigDir() {
-  return join2(spellguardRootDir(), FRAMEWORK_SLUG);
+  return join2(spellguardRootDir2(), FRAMEWORK_SLUG);
 }
 function defaultConfigPath() {
   return join2(defaultConfigDir(), "config.json");
 }
+function readPrivateConfigFile(path) {
+  const flags = fsConstants.O_RDONLY | (platform() === "win32" ? 0 : fsConstants.O_NOFOLLOW);
+  const fd = openSync(path, flags);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error("protected config path is not a file");
+    if (platform() !== "win32" && (stat.mode & 63) !== 0) {
+      throw new Error("protected config file permissions are too broad");
+    }
+    return readFileSync2(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
 function gitTokensPath(dir = defaultConfigDir()) {
   return join2(dir, "git-tokens");
+}
+function servedTokens(config) {
+  const served = /* @__PURE__ */ new Set();
+  if (config.revoked) return served;
+  const entries = Object.values(config.githubCredentials ?? {});
+  for (const entry of entries) {
+    if (!entry.revoked && entry.scopedToken) served.add(entry.scopedToken);
+  }
+  if (config.scopedToken && (entries.length === 0 || served.has(config.scopedToken))) {
+    served.add(config.scopedToken);
+  }
+  return served;
+}
+function keepTokens(config, keep) {
+  const kept = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (key === "scopedToken") {
+      const token = value;
+      if (token !== void 0 && (!token || keep.has(token))) {
+        kept[key] = token;
+      }
+    } else if (key === "githubCredentials" && value) {
+      kept[key] = Object.fromEntries(
+        Object.entries(
+          value
+        ).map(([org, entry]) => {
+          if (!entry.scopedToken || keep.has(entry.scopedToken)) {
+            return [org, entry];
+          }
+          const { scopedToken: _dropped, ...withoutToken } = entry;
+          return [org, withoutToken];
+        })
+      );
+    } else {
+      kept[key] = value;
+    }
+  }
+  return kept;
+}
+function writeConfigSnapshot(path, next) {
+  const bak = `${path}.bak`;
+  let previous;
+  try {
+    previous = JSON.parse(readFileSync2(path, "utf-8"));
+  } catch {
+    previous = void 0;
+  }
+  if (previous === null || typeof previous !== "object") {
+    if (next.revoked) {
+      rmSync(bak, { force: true });
+      return;
+    }
+    copyFileSync(path, bak);
+  } else {
+    const snapshot = keepTokens(
+      previous,
+      servedTokens(next)
+    );
+    writeFileSync(bak, JSON.stringify(snapshot, null, 2), {
+      encoding: "utf-8",
+      mode: 384
+    });
+  }
+  if (platform() !== "win32") chmodSync(bak, 384);
 }
 function writeGitTokensFile(config, dir = defaultConfigDir()) {
   const path = gitTokensPath(dir);
@@ -6057,7 +7518,7 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   let wildcardToken;
   let usableCount = 0;
   let keyedTotal = 0;
-  const keyed = config.githubCredentials;
+  const keyed = config.revoked ? void 0 : config.githubCredentials;
   if (keyed && Object.keys(keyed).length > 0) {
     keyedTotal = Object.keys(keyed).length;
     for (const [org, entry] of Object.entries(keyed)) {
@@ -6074,25 +7535,55 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   if (wildcardToken !== void 0 && usableCount === 1 && keyedTotal <= 1) {
     lines.push(`*	${wildcardToken}`);
   }
-  if (lines.length === 0) {
-    if (existsSync(path)) rmSync2(path, { force: true });
-    return;
-  }
-  mkdirSync2(dirname3(path), { recursive: true, mode: 448 });
-  const content = `${lines.join("\n")}
+  mkdirSync(dirname2(path), { recursive: true, mode: 448 });
+  const content = lines.length === 0 ? "" : `${lines.join("\n")}
 `;
   const tmpPath = `${path}.tmp`;
-  if (platform2() !== "win32") {
-    const fd = openSync2(tmpPath, "w", 384);
+  if (platform() !== "win32") {
+    const fd = openSync(tmpPath, "w", 384);
     try {
-      writeSync2(fd, content, 0, "utf-8");
+      writeSync(fd, content, 0, "utf-8");
     } finally {
-      closeSync2(fd);
+      closeSync(fd);
     }
   } else {
-    writeFileSync2(tmpPath, content, "utf-8");
+    writeFileSync(tmpPath, content, "utf-8");
   }
-  renameSync2(tmpPath, path);
+  renameSync(tmpPath, path);
+  const resetMarker = join2(
+    dirname2(path),
+    "github-grants",
+    "current",
+    ".reset-tombstone"
+  );
+  if (!config.revoked && config.scopedToken && existsSync(resetMarker)) {
+    rmSync(join2(dirname2(path), "github-grants"), {
+      recursive: true,
+      force: true
+    });
+  }
+}
+function healConfigMode(path, mode) {
+  if (mode === 384) return "ok";
+  const uid = process.getuid?.();
+  let ownerUid;
+  try {
+    ownerUid = statSync2(path).uid;
+  } catch {
+    return "unhealable";
+  }
+  if (uid === void 0 || ownerUid !== uid) return "unhealable";
+  try {
+    chmodSync(path, 384);
+  } catch {
+    return "unhealable";
+  }
+  try {
+    if ((statSync2(path).mode & 511) !== 384) return "unhealable";
+  } catch {
+    return "unhealable";
+  }
+  return "healed";
 }
 function mistypedGithubField(parsed) {
   if (parsed.scopedToken !== void 0 && typeof parsed.scopedToken !== "string")
@@ -6103,22 +7594,33 @@ function mistypedGithubField(parsed) {
     return "expiresAt";
   if (parsed.revokedMessage !== void 0 && typeof parsed.revokedMessage !== "string")
     return "revokedMessage";
+  if (parsed.githubReissue !== void 0 && (parsed.githubReissue === null || typeof parsed.githubReissue !== "object" || parsed.githubReissue.pending !== true))
+    return "githubReissue";
   return null;
 }
 function readConfig(path = defaultConfigPath()) {
   if (!existsSync(path)) return { config: null, reason: "missing" };
-  if (platform2() !== "win32") {
+  let permissionsHealed = false;
+  if (platform() !== "win32") {
+    let mode;
     try {
-      const stat = statSync(path);
-      const mode = stat.mode & 511;
-      if (mode !== 384) return { config: null, reason: "wrong_permissions" };
+      mode = statSync2(path).mode & 511;
     } catch {
       return { config: null, reason: "missing" };
     }
+    const healed = healConfigMode(path, mode);
+    if (healed === "unhealable") {
+      return {
+        config: null,
+        reason: "wrong_permissions",
+        foundMode: mode.toString(8).padStart(4, "0")
+      };
+    }
+    permissionsHealed = healed === "healed";
   }
   let raw;
   try {
-    raw = readFileSync(path, "utf-8");
+    raw = readFileSync2(path, "utf-8");
   } catch {
     return { config: null, reason: "missing" };
   }
@@ -6159,52 +7661,142 @@ function readConfig(path = defaultConfigPath()) {
         return { config: null, reason: "malformed" };
       }
     }
-    return { config: parsed };
+    return permissionsHealed ? { config: parsed, permissionsHealed: true } : { config: parsed };
   } catch {
     return { config: null, reason: "malformed", malformedField: "json" };
   }
 }
-function writeConfig(config, path = defaultConfigPath()) {
-  mkdirSync2(dirname3(path), { recursive: true, mode: 448 });
-  const content = JSON.stringify(config, null, 2);
+function writeConfig(config, path = defaultConfigPath(), testHooks = {}) {
+  mkdirSync(dirname2(path), { recursive: true, mode: 448 });
+  const persisted = keepTokens(config, servedTokens(config));
+  const content = JSON.stringify(persisted, null, 2);
   if (existsSync(path)) {
     try {
-      copyFileSync(path, `${path}.bak`);
-      if (platform2() !== "win32") chmodSync2(`${path}.bak`, 384);
+      writeConfigSnapshot(path, persisted);
     } catch {
     }
   }
   const tmpPath = `${path}.tmp`;
-  if (platform2() !== "win32") {
-    const fd = openSync2(tmpPath, "w", 384);
+  if (platform() !== "win32") {
+    const fd = openSync(tmpPath, "w", 384);
     try {
-      writeSync2(fd, content, 0, "utf-8");
+      writeSync(fd, content, 0, "utf-8");
     } finally {
-      closeSync2(fd);
+      closeSync(fd);
     }
   } else {
-    writeFileSync2(tmpPath, content, "utf-8");
+    writeFileSync(tmpPath, content, "utf-8");
   }
-  renameSync2(tmpPath, path);
-  writeGitTokensFile(config, dirname3(path));
+  writeGitTokensFile(persisted, dirname2(path));
+  testHooks.beforeConfigCommit?.();
+  renameSync(tmpPath, path);
 }
-function markConfigRevoked(path = defaultConfigPath()) {
+function markConfigRevoked(path = defaultConfigPath(), testHooks = {}) {
   const result = readConfig(path);
   if (result.config) {
+    invalidateActiveGithubGrantGeneration(
+      dirname2(path),
+      testHooks,
+      result.config.agentId
+    );
+    testHooks.afterV5Invalidation?.();
     writeConfig({ ...result.config, revoked: true }, path);
   }
+}
+function syncPath(path) {
+  const fd = openSync(path, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+function requireRealDirectory(path) {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`unsafe GitHub generation directory: ${path}`);
+  }
+}
+function removeSiblingGenerations(generations, activeName) {
+  requireRealDirectory(generations);
+  for (const entry of readdirSync(generations, { withFileTypes: true })) {
+    if (entry.name === activeName) continue;
+    const candidate = join2(generations, entry.name);
+    if (dirname2(candidate) !== generations) {
+      throw new Error("unsafe GitHub generation cleanup target");
+    }
+    const stat = lstatSync(candidate);
+    if (stat.isDirectory() && !stat.isSymbolicLink()) {
+      rmSync(candidate, { recursive: true });
+    } else {
+      rmSync(candidate);
+    }
+  }
+  syncPath(generations);
+}
+function invalidateActiveGithubGrantGeneration(configDir, testHooks = {}, configuredAgentId) {
+  const root = join2(configDir, "github-grants");
+  const generations = join2(root, "generations");
+  const deliveryId = randomUUID();
+  const generationName = `0-${deliveryId}`;
+  const generation = join2(generations, generationName);
+  mkdirSync(root, { recursive: true, mode: 448 });
+  requireRealDirectory(root);
+  if (!existsSync(generations)) mkdirSync(generations, { mode: 448 });
+  requireRealDirectory(generations);
+  mkdirSync(generation, { mode: 448 });
+  mkdirSync(join2(generation, "tokens"), { mode: 448 });
+  let agentId = configuredAgentId;
+  if (!agentId) {
+    try {
+      const active = JSON.parse(
+        readPrivateConfigFile(join2(root, "current", "state.json"))
+      );
+      if (typeof active.agentId === "string") agentId = active.agentId;
+      else if (typeof active.grants?.[0]?.agent_id === "string")
+        agentId = active.grants[0].agent_id;
+    } catch {
+    }
+  }
+  writeFileSync(
+    join2(generation, "state.json"),
+    JSON.stringify({
+      protocolVersion: 5,
+      ...agentId ? { agentId } : {},
+      deliveryId,
+      grantSetRevision: "0",
+      grants: []
+    }),
+    { mode: 384 }
+  );
+  writeFileSync(join2(generation, "manifest.tsv"), "\n", { mode: 384 });
+  writeFileSync(join2(generation, ".reset-tombstone"), "", { mode: 384 });
+  syncPath(join2(generation, "state.json"));
+  syncPath(join2(generation, "manifest.tsv"));
+  syncPath(join2(generation, ".reset-tombstone"));
+  syncPath(join2(generation, "tokens"));
+  syncPath(generation);
+  syncPath(generations);
+  testHooks.beforeV5Activation?.();
+  const pendingCurrent = join2(root, `.current.${randomUUID()}.tmp`);
+  symlinkSync(join2("generations", generationName), pendingCurrent);
+  renameSync(pendingCurrent, join2(root, "current"));
+  syncPath(root);
+  testHooks.afterV5Activation?.();
+  testHooks.beforeV5Cleanup?.();
+  removeSiblingGenerations(generations, generationName);
 }
 
 // src/lib/env-file-writer.ts
 import {
   appendFileSync,
-  chmodSync as chmodSync3,
+  chmodSync as chmodSync2,
   copyFileSync as copyFileSync2,
   existsSync as existsSync2,
-  mkdirSync as mkdirSync3,
-  writeFileSync as writeFileSync3
+  mkdirSync as mkdirSync2,
+  writeFileSync as writeFileSync2
 } from "node:fs";
-import { dirname as dirname4, join as join3, resolve } from "node:path";
+import { dirname as dirname3, join as join3, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/lib/git-insteadof-rules.ts
@@ -6231,7 +7823,7 @@ function isSshRewriteEnabled(env = process.env) {
 }
 
 // src/lib/env-file-writer.ts
-var HERE = dirname4(fileURLToPath(import.meta.url));
+var HERE = dirname3(fileURLToPath(import.meta.url));
 function bundledHelperPath() {
   return resolve(HERE, "..", "..", "bin", "spellguard-git-helper");
 }
@@ -6239,9 +7831,9 @@ function ensureStableHelper(configDir) {
   const bundled = bundledHelperPath();
   try {
     const dest = join3(configDir, "bin", "spellguard-git-helper");
-    mkdirSync3(dirname4(dest), { recursive: true });
+    mkdirSync2(dirname3(dest), { recursive: true });
     copyFileSync2(bundled, dest);
-    chmodSync3(dest, 493);
+    chmodSync2(dest, 493);
     return dest;
   } catch {
     return bundled;
@@ -6304,7 +7896,7 @@ function writeGitConfigEnv(spec) {
 ${lines.join("\n")}
 `, "utf-8");
   } else {
-    writeFileSync3(spec.envFilePath, `${lines.join("\n")}
+    writeFileSync2(spec.envFilePath, `${lines.join("\n")}
 `, "utf-8");
   }
 }
@@ -6312,10 +7904,10 @@ ${lines.join("\n")}
 // src/lib/gh-config-dir.ts
 import {
   existsSync as existsSync3,
-  mkdirSync as mkdirSync4,
-  renameSync as renameSync3,
-  rmSync as rmSync3,
-  writeFileSync as writeFileSync4
+  mkdirSync as mkdirSync3,
+  renameSync as renameSync2,
+  rmSync as rmSync2,
+  writeFileSync as writeFileSync3
 } from "node:fs";
 import { join as join4 } from "node:path";
 function ghConfigDirPath(configDir, agentId) {
@@ -6323,18 +7915,18 @@ function ghConfigDirPath(configDir, agentId) {
 }
 function writeGhSessionConfig(args) {
   const host = args.host ?? "github.com";
-  mkdirSync4(args.dir, { recursive: true, mode: 448 });
+  mkdirSync3(args.dir, { recursive: true, mode: 448 });
   const configYml = join4(args.dir, "config.yml");
   if (!existsSync3(configYml)) {
-    writeFileSync4(configYml, 'version: "1"\n', { mode: 384 });
+    writeFileSync3(configYml, 'version: "1"\n', { mode: 384 });
   }
   const hosts = `${host}:
     oauth_token: ${args.token}
     git_protocol: https
 `;
   const hostsTmp = join4(args.dir, "hosts.yml.tmp");
-  writeFileSync4(hostsTmp, hosts, { mode: 384 });
-  renameSync3(hostsTmp, join4(args.dir, "hosts.yml"));
+  writeFileSync3(hostsTmp, hosts, { mode: 384 });
+  renameSync2(hostsTmp, join4(args.dir, "hosts.yml"));
 }
 
 // src/lib/render-message.ts
@@ -6361,27 +7953,24 @@ function dropStaleDefaultKey(creds, installedRealKey, supersededId) {
     Object.entries(creds).filter(([key]) => key !== "__default")
   );
 }
-function syncGhTokenFile(deps, token) {
-  if (!deps.ghTokenPath) return;
-  if (token) writeGhTokenFile(deps.ghTokenPath, token);
-  else clearGhTokenFile(deps.ghTokenPath);
-}
 function handleCredentialUpdate(frame, deps) {
   const ghCreds = frame.credentials.filter(
     (c) => c.provider === "github" && Boolean(c.scoped_token)
   );
-  if (ghCreds.length === 0) return;
+  if (ghCreds.length === 0) return false;
   const cur = deps.readConfigImpl();
-  if (!cur.config) return;
+  if (!cur.config) return false;
   const hadKeyedMap = cur.config.githubCredentials !== void 0 && Object.keys(cur.config.githubCredentials).length > 0;
-  if (!hadKeyedMap && cur.config.revoked) return;
+  if (!hadKeyedMap && cur.config.revoked) return false;
   const githubCredentials = {
     ...cur.config.githubCredentials ?? {}
   };
   let firstInstalled = null;
   for (const ghCred of ghCreds) {
     const key = githubEntryKey(ghCred.github_org_login);
-    if (githubCredentials[key]?.revoked) continue;
+    const incomingId = ghCred.scoped_token_id ?? ghCred.credential_id;
+    const existing = githubCredentials[key];
+    if (existing?.revoked && existing.scopedTokenId === incomingId) continue;
     const entry = {
       scopedToken: ghCred.scoped_token,
       scopedTokenId: ghCred.scoped_token_id ?? ghCred.credential_id,
@@ -6399,7 +7988,7 @@ function handleCredentialUpdate(frame, deps) {
       };
     }
   }
-  if (firstInstalled === null) return;
+  if (firstInstalled === null) return false;
   const supersededId = "superseded_scoped_token_id" in frame ? frame.superseded_scoped_token_id : void 0;
   const installedRealKey = ghCreds.some(
     (c) => githubEntryKey(c.github_org_login) !== "__default"
@@ -6419,9 +8008,11 @@ function handleCredentialUpdate(frame, deps) {
     agentId: ghCreds[0].agent_id,
     gitAuthorName: firstInstalled.authorName,
     gitAuthorEmail: firstInstalled.authorEmail,
-    revoked: false
+    revoked: false,
+    githubReissue: void 0
   });
-  if (deps.envFilePath) {
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+  if (!managed && deps.envFilePath) {
     writeGitConfigEnv({
       envFilePath: deps.envFilePath,
       gitAuthorName: firstInstalled.authorName,
@@ -6440,7 +8031,7 @@ function handleCredentialUpdate(frame, deps) {
       token: firstInstalled.entry.scopedToken
     });
   }
-  syncGhTokenFile(deps, firstInstalled.entry.scopedToken);
+  return true;
 }
 
 // src/lib/apply-bundle.ts
@@ -6448,7 +8039,7 @@ var ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
 function require_(cond, message) {
   if (!cond) throw new Error(message);
 }
-function isNonEmptyString(v) {
+function isNonEmptyString2(v) {
   return typeof v === "string" && v.length > 0;
 }
 function parseBundle(raw) {
@@ -6463,13 +8054,13 @@ function parseBundle(raw) {
     "bundle must be a JSON object"
   );
   const b = parsed;
-  require_(isNonEmptyString(b.agent_id), "bundle.agent_id must be a string");
+  require_(isNonEmptyString2(b.agent_id), "bundle.agent_id must be a string");
   require_(
-    isNonEmptyString(b.agent_secret),
+    isNonEmptyString2(b.agent_secret),
     "bundle.agent_secret must be a string"
   );
   require_(
-    isNonEmptyString(b.spellguard_base_url),
+    isNonEmptyString2(b.spellguard_base_url),
     "bundle.spellguard_base_url must be a string"
   );
   require_(Array.isArray(b.credentials), "bundle.credentials must be an array");
@@ -6484,28 +8075,27 @@ function parseBundle(raw) {
       `bundle.credentials[${i}].provider must be 'github'`
     );
     require_(
-      isNonEmptyString(cr.credential_id),
+      isNonEmptyString2(cr.credential_id),
       `bundle.credentials[${i}].credential_id must be a string`
     );
     require_(
-      isNonEmptyString(cr.scoped_token),
+      isNonEmptyString2(cr.scoped_token),
       `bundle.credentials[${i}].scoped_token must be a string`
     );
     require_(
-      isNonEmptyString(cr.expires_at),
+      isNonEmptyString2(cr.expires_at),
       `bundle.credentials[${i}].expires_at must be a string`
     );
-    const scope = cr.scope_summary;
     require_(
-      scope != null && typeof scope === "object" && Array.isArray(scope.repos) && scope.repos.every((r) => typeof r === "string"),
-      `bundle.credentials[${i}].scope_summary.repos must be a string[]`
+      isGithubCredentialScope(cr.scope_summary),
+      `bundle.credentials[${i}].scope_summary must be {mode:'all'} or {mode:'selected',repos:[\u2026]} with at least one repository`
     );
     require_(
-      isNonEmptyString(cr.git_author_name),
+      isNonEmptyString2(cr.git_author_name),
       `bundle.credentials[${i}].git_author_name must be a string`
     );
     require_(
-      isNonEmptyString(cr.git_author_email),
+      isNonEmptyString2(cr.git_author_email),
       `bundle.credentials[${i}].git_author_email must be a string`
     );
     return cr;
@@ -6549,7 +8139,10 @@ function applyCredentialBundle(bundle) {
       agentId: bundle.agent_id,
       agentSecret: bundle.agent_secret,
       expiresAt: new Date(Date.now() + ONE_YEAR_MS).toISOString(),
-      scopeSummary: { repos: [] },
+      // No GitHub credential on this identity-only path, so there is no scope to
+      // record. This used to write `{ repos: [] }` — the same bytes a real
+      // organization-wide grant produced, which is how "everything" and
+      // "nothing" became indistinguishable in the first place. Omit instead.
       spellguardBaseUrl: bundle.spellguard_base_url,
       knownCredentials: bundle.credentials.map((c) => ({
         provider: "github",
@@ -6688,12 +8281,21 @@ import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 
 // src/lib/daemon-spawn.ts
-import { spawn } from "node:child_process";
-import { existsSync as existsSync4, readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname5, join as join5, sep } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  chmodSync as chmodSync3,
+  existsSync as existsSync4,
+  mkdirSync as mkdirSync4,
+  readFileSync as readFileSync3,
+  realpathSync,
+  renameSync as renameSync3,
+  unlinkSync,
+  writeFileSync as writeFileSync4
+} from "node:fs";
+import { dirname as dirname4, join as join5, resolve as resolve2, sep } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function daemonScriptPath() {
-  const here = dirname5(fileURLToPath2(import.meta.url));
+  const here = dirname4(fileURLToPath2(import.meta.url));
   const devPath = join5(
     here,
     "..",
@@ -6710,7 +8312,7 @@ function daemonScriptPath() {
 function readDaemonPid(pidPath) {
   if (!existsSync4(pidPath)) return null;
   try {
-    const raw = readFileSync2(pidPath, "utf-8").trim();
+    const raw = readFileSync3(pidPath, "utf-8").trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isFinite(pid) ? pid : null;
   } catch {
@@ -6784,8 +8386,8 @@ async function probeAgentIdentity(opts) {
 
 // src/lib/sqlite-self-install.ts
 import { spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as fsConstants, mkdirSync as mkdirSync5 } from "node:fs";
-import { dirname as dirname6, resolve as resolve2 } from "node:path";
+import { accessSync, constants as fsConstants2, mkdirSync as mkdirSync5 } from "node:fs";
+import { dirname as dirname5, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/lib/sqlite-backend.ts
@@ -6793,7 +8395,7 @@ import { createRequire } from "node:module";
 var localRequire = typeof __require === "function" ? __require : createRequire(import.meta.url);
 function suppressSqliteExperimentalWarning() {
   const original = process.emitWarning;
-  process.emitWarning = (warning, ...rest) => {
+  process.emitWarning = ((warning, ...rest) => {
     const optsOrType = rest[0];
     const type = typeof optsOrType === "object" && optsOrType !== null ? optsOrType.type : optsOrType;
     const name = typeof warning === "object" ? warning?.name : void 0;
@@ -6801,7 +8403,7 @@ function suppressSqliteExperimentalWarning() {
     const isSqliteExperimental = type === "ExperimentalWarning" || name === "ExperimentalWarning" || typeof message === "string" && message.includes("SQLite is an experimental");
     if (isSqliteExperimental) return;
     return original.call(process, warning, ...rest);
-  };
+  });
   return () => {
     process.emitWarning = original;
   };
@@ -6942,12 +8544,12 @@ var SELF_INSTALL_PACKAGES = [
 ];
 function resolvePluginRoot(overrideDir) {
   if (overrideDir) return overrideDir;
-  const here = dirname6(fileURLToPath3(import.meta.url));
-  return resolve2(here, "..", "..");
+  const here = dirname5(fileURLToPath3(import.meta.url));
+  return resolve3(here, "..", "..");
 }
 function isWritable(dir) {
   try {
-    accessSync(dir, fsConstants.W_OK);
+    accessSync(dir, fsConstants2.W_OK);
     return true;
   } catch {
     return false;
@@ -6958,7 +8560,7 @@ async function ensureSqliteBackend(opts = {}) {
   if (hasBackend()) return { status: "already" };
   const pluginRoot = resolvePluginRoot(opts.pluginRoot);
   try {
-    mkdirSync5(resolve2(pluginRoot, "node_modules"), { recursive: true });
+    mkdirSync5(resolve3(pluginRoot, "node_modules"), { recursive: true });
   } catch (err) {
     return {
       status: "skipped",
@@ -7034,14 +8636,14 @@ function defaultNpmInstall(args) {
 }
 
 // src/lib/stop-daemons.ts
-import { readFileSync as readFileSync3, readdirSync, unlinkSync } from "node:fs";
+import { readFileSync as readFileSync4, readdirSync as readdirSync2, unlinkSync as unlinkSync2 } from "node:fs";
 import { join as join6 } from "node:path";
 function stopLocalDaemons(opts) {
   const dir = join6(opts?.configDir ?? defaultConfigDir(), "agents");
   const kill = opts?.killImpl ?? process.kill.bind(process);
   let entries;
   try {
-    entries = readdirSync(dir).filter((f) => f.endsWith(".pid"));
+    entries = readdirSync2(dir).filter((f) => f.endsWith(".pid"));
   } catch {
     return [];
   }
@@ -7050,7 +8652,7 @@ function stopLocalDaemons(opts) {
     const p = join6(dir, f);
     let pid;
     try {
-      pid = Number.parseInt(readFileSync3(p, "utf8").trim(), 10);
+      pid = Number.parseInt(readFileSync4(p, "utf8").trim(), 10);
     } catch {
       continue;
     }
@@ -7061,7 +8663,7 @@ function stopLocalDaemons(opts) {
     } catch {
     }
     try {
-      unlinkSync(p);
+      unlinkSync2(p);
     } catch {
     }
   }
@@ -7148,10 +8750,10 @@ async function promptExistingConfigChoice(opts) {
       input: opts.input ?? process.stdin,
       output: opts.output ?? process.stdout
     });
-    return new Promise((resolve3) => {
+    return new Promise((resolve4) => {
       rl.question(q, (answer) => {
         rl.close();
-        resolve3(answer);
+        resolve4(answer);
       });
     });
   };
@@ -7235,7 +8837,9 @@ async function runSpellguardSetup(args = {}) {
         lines.push(`  expires_at=${existing.config.expiresAt}`);
       }
       if (existing.config.scopeSummary) {
-        lines.push(`  repos=${existing.config.scopeSummary.repos.join(", ")}`);
+        lines.push(
+          `  scope=${describeGithubCredentialScope(existing.config.scopeSummary)}`
+        );
       } else {
         lines.push(
           "  github=not connected (complete the dashboard GitHub-App install to grant repo access)"
@@ -7381,7 +8985,8 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
   } catch {
   }
   writeConfig(writtenConfig);
-  const daemonResult = ensureCredentialDaemonRunning({
+  const managed = (args.isManagedBox ?? isManagedBox)();
+  const daemonResult = managed ? { daemon: "skipped", reason: "managed_box" } : ensureCredentialDaemonRunning({
     config: writtenConfig,
     cwd: process.cwd(),
     envFilePath: process.env.CLAUDE_ENV_FILE,
@@ -7431,7 +9036,7 @@ Waiting up to 10 minutes for browser approval and agent name\u2026`
     const author = delivered.gitAuthorName && delivered.gitAuthorEmail ? ` Commits will be authored as: ${delivered.gitAuthorName} <${delivered.gitAuthorEmail}>.` : "";
     renderMessage({
       level: "info",
-      message: `Spellguard: GitHub credential received \u2014 repos=[${delivered.scopeSummary.repos.join(", ")}].${author}
+      message: `Spellguard: GitHub credential received \u2014 scope=${describeGithubCredentialScope(delivered.scopeSummary)}.${author}
   Git-credential protection for this session finishes wiring at the next session start (restart or /clear).`
     });
     return { ok: true, daemon: daemonResult, githubCredential: "delivered" };
@@ -7453,7 +9058,7 @@ async function waitForGithubCredential(timeoutMs, pollIntervalMs) {
   const deadline = Date.now() + timeoutMs;
   const started = Date.now();
   let lastProgressAt = started;
-  const delay = (ms) => new Promise((resolve3) => setTimeout(resolve3, ms));
+  const delay = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
   while (Date.now() < deadline) {
     const result = readConfig();
     if (result.config?.scopedToken) return result.config;
@@ -7498,7 +9103,7 @@ async function ensureAttributionBackend(opts) {
 }
 async function awaitBootstrapViaClient(opts) {
   const timeoutMs = opts.timeoutMs ?? 10 * 60 * 1e3;
-  return new Promise((resolve3) => {
+  return new Promise((resolve4) => {
     let settled = false;
     let client = null;
     const settle = (result) => {
@@ -7509,7 +9114,7 @@ async function awaitBootstrapViaClient(opts) {
         client?.close();
       } catch {
       }
-      resolve3(result);
+      resolve4(result);
     };
     const timer = setTimeout(() => {
       settle({
@@ -7688,7 +9293,9 @@ async function runManagedFlow() {
       agentId: result.agentId,
       agentSecret: result.agentSecret,
       expiresAt: new Date(Date.now() + 1e3 * 60 * 60 * 24 * 365).toISOString(),
-      scopeSummary: { repos: [] },
+      // Identity-only: no GitHub credential yet, so no scope. Previously
+      // `{ repos: [] }` — indistinguishable from a real organization-wide
+      // grant. Omitted so "not connected" cannot be read as "everything".
       spellguardBaseUrl: result.spellguardBaseUrl,
       lastServerSeq: result.frame.seq,
       knownCredentials: [],

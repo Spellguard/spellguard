@@ -3,7 +3,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Upstream } from '../types';
+import { VERSION } from '../version';
+import { listAllTools } from './list-tools';
 
 export class RemoteUpstream implements Upstream {
   private client: Client | null = null;
@@ -16,7 +19,7 @@ export class RemoteUpstream implements Upstream {
   async connect(): Promise<void> {
     this.client = new Client({
       name: 'spellguard-mcp-guard',
-      version: '0.1.0',
+      version: VERSION,
     });
 
     const authOpts = this.token
@@ -35,17 +38,16 @@ export class RemoteUpstream implements Upstream {
       // left internal state inconsistent.
       this.client = new Client({
         name: 'spellguard-mcp-guard',
-        version: '0.1.0',
+        version: VERSION,
       });
       const transport = new SSEClientTransport(new URL(this.url), authOpts);
       await this.client.connect(transport);
     }
   }
 
-  async toolsList(): Promise<unknown> {
+  async toolsList(): Promise<Tool[]> {
     if (!this.client) throw new Error('Not connected');
-    const result = await this.client.listTools();
-    return result.tools;
+    return listAllTools(this.client);
   }
 
   async toolsCall(

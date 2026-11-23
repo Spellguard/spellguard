@@ -101,7 +101,7 @@ export async function detectAgentReferences(prompt: string): Promise<string[]> {
         model: intentDetectionModel,
         system: AGENT_DETECTION_SYSTEM_PROMPT,
         prompt: prompt,
-        maxTokens: 100,
+        maxOutputTokens: 100,
       });
 
       // (§6.1): the intent-detection call is a real (small)
@@ -149,7 +149,9 @@ function detectAgentReferencesPattern(prompt: string): string[] {
   }
 
   // Pattern: "the X-agent" or "X-agent"
-  const suffixPattern = /(?:the\s+)?([a-z0-9]+)-agent/gi;
+  // Bounded quantifiers throughout: an unbounded `[a-z0-9]+` retried from every
+  // offset is quadratic on long alphanumeric runs (CodeQL js/polynomial-redos).
+  const suffixPattern = /(?:the\s+)?([a-z0-9]{1,64})-agent/gi;
   for (const match of lowerPrompt.matchAll(suffixPattern)) {
     const agentName = `${match[1].toLowerCase()}-agent`;
     if (!agents.includes(agentName)) {
@@ -187,10 +189,14 @@ export function mightContainAgentReference(prompt: string): boolean {
   const lowerPrompt = prompt.toLowerCase();
 
   // Quick checks for common patterns
-  if (/@[a-z0-9]+-[a-z0-9]/i.test(lowerPrompt)) return true;
+  if (/@[a-z0-9]{1,64}-[a-z0-9]/i.test(lowerPrompt)) return true;
   if (/agent[\s-][a-z0-9]/i.test(lowerPrompt)) return true;
-  if (/[a-z0-9]+-agent/i.test(lowerPrompt)) return true;
-  if (/(?:from|to|ask|tell|consult)\s+@?[a-z0-9]+-[a-z0-9]/i.test(lowerPrompt))
+  if (/[a-z0-9]{1,64}-agent/i.test(lowerPrompt)) return true;
+  if (
+    /(?:from|to|ask|tell|consult)\s{1,20}@?[a-z0-9]{1,64}-[a-z0-9]/i.test(
+      lowerPrompt,
+    )
+  )
     return true;
 
   return false;

@@ -21,6 +21,7 @@ import type {
   AuditCommitment,
   SecureMessage,
 } from '../types';
+import { forgetArchiveDigest, recordArchiveDigest } from './archive-digests';
 
 /**
  * Read S3 configuration from process.env lazily.
@@ -151,6 +152,10 @@ export const s3Backend: ArchiveBackend = {
           };
 
       const body = JSON.stringify(payload);
+      // The hash a signed audit record carries for this message's archive
+      // object, recorded before the upload so a report made without waiting
+      // for it still has it (archive-digests.ts).
+      if (options?.encryptedEnvelope) recordArchiveDigest(message.id, body);
 
       const path = `/${bucket}/${archiveId}`;
 
@@ -172,9 +177,11 @@ export const s3Backend: ArchiveBackend = {
       }
 
       console.warn(`[AMP/S3] Failed to archive: ${response.status}`);
+      forgetArchiveDigest(message.id);
       return null;
     } catch (error) {
       console.error(`[AMP/S3] Error archiving message: ${error}`);
+      forgetArchiveDigest(message.id);
       return null;
     }
   },

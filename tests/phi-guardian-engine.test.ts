@@ -153,13 +153,11 @@ describe('BuiltinEngine - PHI Guardian', () => {
       expect(npiDetection).toBeDefined();
     });
 
-    it('should detect standalone 10-digit number (NPI pattern)', async () => {
-      const ctx = createContext(
-        'The number 1234567890 is the provider identifier.',
-      );
+    it('should not detect a standalone 10-digit coding literal as an NPI', async () => {
+      const ctx = createContext('const timeoutMs = 1000000000;');
       const detections = await engine.evaluate(ctx);
       const npiDetection = detections.find((d) => d.type === 'phi-npi');
-      expect(npiDetection).toBeDefined();
+      expect(npiDetection).toBeUndefined();
     });
   });
 
@@ -272,9 +270,9 @@ describe('BuiltinEngine - PHI Guardian', () => {
       expect(mrnDetection).toBeDefined();
     });
 
-    it('should use default minConfidence of 0.7 when not specified', async () => {
+    it('should detect a labelled patient record identifier at the default threshold', async () => {
       // medical-identifier has confidence 0.7, should be included by default
-      const ctx = createContext('Patient diagnosis record 12345678 updated.');
+      const ctx = createContext('Patient record #12345678 updated.');
       const detections = await engine.evaluate(ctx);
       const idDetection = detections.find(
         (d) => d.type === 'phi-medical-identifier',

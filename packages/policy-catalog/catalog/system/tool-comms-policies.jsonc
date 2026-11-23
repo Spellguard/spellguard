@@ -1,3 +1,8 @@
+// Comms TOOL policies — scoped `tools` ON PURPOSE (see tool-database-policies.jsonc
+// for the full rationale). "message-like content" below means an EMAIL/SLACK BODY
+// passed to a comms tool (the engine emits "Email body risk: …"), NOT the A2A
+// 'messages' leg; prompt injection on that leg is covered by the `injection-*`
+// policies, which stay unscoped.
 {
   "policies": [
     {
@@ -12,6 +17,7 @@
         "scanFor": ["injection", "commands"]
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 89
@@ -34,6 +40,7 @@
         "windowSeconds": 120
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 90

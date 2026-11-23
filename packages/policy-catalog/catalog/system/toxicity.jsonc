@@ -1,16 +1,19 @@
 {
   // Toxicity detection policy — uses BuiltinEngine with policyType: 'toxicity'.
-  // Config shape: categories, customPatterns, label
+  // Config shape: categories, customPatterns, label, semanticEnabled
   "policies": [
     {
       "slug": "toxicity-baseline",
       "name": "Toxic Content Detection",
-      "description": "Detects toxic and harmful content including threats, harassment, hate speech, and profanity via keyword pattern matching",
+      "description": "Detects toxic and harmful content including threats, harassment, hate speech, and profanity via keyword pattern matching only; semantic augmentation is opt-in",
       "type": "toxicity",
       "level": "system",
       "severity": "high",
       "failBehavior": "block",
       "config": {
+        // The shipping system policy is keyword-only. Semantic toxicity is
+        // opt-in for a separately configured binding and endpoint.
+        "semanticEnabled": false,
         "categories": ["threat", "harassment", "hate", "profanity"],
         "semanticThreshold": 0.6,
         "semanticSecondaryThreshold": 0.05,

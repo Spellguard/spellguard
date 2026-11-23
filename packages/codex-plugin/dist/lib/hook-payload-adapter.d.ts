@@ -1,4 +1,5 @@
 import { type SpellguardConfig, readConfig } from './config-store';
+import { type GithubCredentialState } from './github-grant-generation';
 export interface ClaudeCodeHookPayload {
     session_id?: string;
     cwd?: string;
@@ -21,6 +22,22 @@ export interface AdaptedHookInput {
     remoteUrl?: string;
     agentId: string;
     scopedTokenId: string;
+    /**
+     * @deprecated Derived from `githubCredentialState`; kept so callers that
+     * predate the five-state representation keep working. True for `available`
+     * AND `expired` — an expired grant still has a scoped token id, and the
+     * refresh that replaces it only happens if git is allowed to run.
+     */
+    localCredentialAvailable: boolean;
+    /** The authoritative credential answer for this command's GitHub targets. */
+    githubCredentialState: GithubCredentialState;
+    /**
+     * Why attribution failed, when `githubCredentialState` is `unattributed`.
+     * Surfaced verbatim in the hook's block message so the operator is told what
+     * could not be attributed instead of being sent after a phantom credential.
+     */
+    githubTargetReason?: string;
+    githubTargetContext: 'resolved' | 'execution-directory-missing';
     agentSecret: string;
     clientSessionId: string;
     /** Full `${spellguardBaseUrl}/v1/observations` URL. */
@@ -41,6 +58,8 @@ export interface AdaptHookPayloadOptions {
         cwd: string;
         encoding: 'utf8';
     }) => string;
+    /** Test seam: override the framework credential directory. */
+    configDir?: string;
 }
 /**
  * Returns the adapted input, or `null` if the plugin is unconfigured (no

@@ -23,7 +23,10 @@ import {
   type AuthSupersededCloseReason,
   createManagementClient,
 } from '@spellguard/agent-control';
-import { clearCodexCredentialHelper } from '../lib/codex-credential-helper-install';
+import {
+  clearCodexCredentialHelper,
+  installCodexCredentialHelper,
+} from '../lib/codex-credential-helper-install';
 import {
   type ReadConfigResult,
   clearConfig,
@@ -72,10 +75,12 @@ export interface SupersededWipeArgs {
   ghConfigDir?: string;
   /** Override `~/.codex` / CODEX_HOME (tests). */
   codexHome?: string;
+  /** Stable helper path supplied by the daemon. */
+  helperPath?: string;
   /** Override the credential-wipe core (tests). */
   markConfigSupersededImpl?: (message: string) => void;
-  /** Override the codex config.toml credential-helper clear (tests). */
-  clearCodexCredentialHelperImpl?: (args?: { codexHome?: string }) => void;
+  /** Override the fail-closed Codex helper install (tests). */
+  installCodexCredentialHelperImpl?: typeof installCodexCredentialHelper;
   /** Override the gh-session clear (tests). */
   clearGhSessionConfigImpl?: (dir: string) => void;
 }
@@ -89,12 +94,11 @@ export interface SupersededWipeArgs {
  * its own socket); it only clears the local credential surfaces the consuming
  * app reads and persists the cause message.
  *
- * Reuses the same wipe internals as the interactive reset
- * (`markConfigSuperseded` → `writeConfig`/`writeGitTokensFile`,
- * `clearCodexCredentialHelper` — the Codex `~/.codex/config.toml`
- * shell-env-policy block — and `clearGhSessionConfig`) rather than
- * re-implementing the wipe. Wipes ONLY this agent's credentials (identity is
- * preserved so `@spellguard-setup` can re-attach this machine).
+ * Wipes ONLY this agent's credentials while preserving both identity and the
+ * Codex-scoped helper/gh pin. Removing that policy here would let the next
+ * Codex process start with ambient machine credentials before SessionStart can
+ * rewrite config.toml. Explicit `$spellguard-reset` remains the only path that
+ * removes the managed policy.
  */
 export function wipeSupersededCredentials(args: SupersededWipeArgs): void {
   const message = supersededMessage(args.cause);
@@ -106,23 +110,25 @@ export function wipeSupersededCredentials(args: SupersededWipeArgs): void {
     args.markConfigSupersededImpl ??
     ((m: string) => markConfigSuperseded(m, configPath))
   )(message);
-  // 2. Clear the Codex git+gh credential-helper block in
-  //    `~/.codex/config.toml` so the next git op fails closed rather than
-  //    presenting a stale token. (Codex's analog of Claude Code's env-file.)
-  try {
-    (args.clearCodexCredentialHelperImpl ?? clearCodexCredentialHelper)({
-      codexHome: args.codexHome,
-    });
-  } catch {
-    /* best-effort — config.toml may already be clean */
-  }
-  // 3. Clear the per-agent gh session pin so `gh` stops presenting the token.
+  // 2. Clear the per-agent gh token while keeping its directory pinned.
   if (args.ghConfigDir) {
     try {
       (args.clearGhSessionConfigImpl ?? clearGhSessionConfig)(args.ghConfigDir);
     } catch {
       /* best-effort — dir may already be gone */
     }
+  }
+  // 3. Retain/reinstall the Codex-scoped empty helper boundary. The helper now
+  //    reads a revoked config and returns no credential; GH_CONFIG_DIR points
+  //    at the token-free per-agent directory.
+  try {
+    (args.installCodexCredentialHelperImpl ?? installCodexCredentialHelper)({
+      ghConfigDir: args.ghConfigDir,
+      helperPath: args.helperPath,
+      codexHome: args.codexHome,
+    });
+  } catch {
+    /* best-effort — the existing policy remains safer than clearing it */
   }
 }
 

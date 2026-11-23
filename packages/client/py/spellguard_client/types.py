@@ -33,10 +33,20 @@ class SpellguardConfig:
     self_url: str
     # SHA256 hash of this agent's code (for attestation)
     code_hash: str
-    # Expected SHA384 hash of Verifier Docker image (for bidirectional attestation)
-    expected_verifier_image_hash: str
+    # Expected SHA384 hash of the Verifier Docker image (for bidirectional
+    # attestation).
+    #
+    # OPTIONAL because the management server may not have recorded one yet. It
+    # is then left None rather than filled with a placeholder, and channel
+    # creation fails closed with `verifier_image_hash_unconfigured` -- absent
+    # attestation config must never read as "attestation passed".
+    expected_verifier_image_hash: str | None
     # Agent card for A2A discovery
     agent_card: AgentCard
+    # The Verifier session key management attested (#1259), from discovery's
+    # `verifierPublicKey`. When set, the attestation document and the
+    # registration response must both carry exactly this key.
+    expected_verifier_public_key: str | None = None
     # Agent secret for Verifier registration authentication (validated by management server)
     agent_secret: str | None = None
     # Ed25519 private key (hex) for signing evidence -- from management server
@@ -46,16 +56,67 @@ class SpellguardConfig:
     # Management server base URL (WITHOUT the /v1 suffix). Populated on the
     # managed/discovery path so the SDK can reach Management directly -- e.g.
     # the Tier-3 self-reported usage emit (POST /v1/agents/:id/usage, PRD
-    #  S6.5). Absent on direct-config agents that
+    # internal design notes). Absent on direct-config agents that
     # have no management endpoint (emit skips).
     management_url: str | None = None
+    # Opt OUT of the fail-closed default for tool policy checks
+    # (``check_tool_policy()``, and every ``spellguard_tool`` / LangChain /
+    # CrewAI wrapper built on it).
+    #
+    # Default (None / False) is fail CLOSED: when the check cannot complete --
+    # Verifier unreachable, request timed out, request refused, no channel
+    # established, or the client was never configured -- the check returns
+    # ``ToolCheckResult(effect="block")`` and the wrapped tool does not run.
+    #
+    # Setting this to True means the tool call RUNS UNCHECKED whenever the
+    # policy check cannot complete. Every policy bound to that tool is silently
+    # skipped for the duration of the outage; there is no other signal to the
+    # caller. Availability is being bought with enforcement.
+    #
+    # It does NOT overrule the Verifier. A response carrying an explicit
+    # ``effect`` is a decision and is honoured either way -- including the
+    # Verifier's own 503 {"effect": "block"} when it cannot load policy data.
+    #
+    # Consumers whose config the SDK never sees (``create_spellguard()``
+    # callers, or processes that wrap tools without calling ``configure()`` at
+    # all) can set SPELLGUARD_TOOL_POLICY_FAIL_OPEN=true instead. This field
+    # wins when both are set.
+    fail_open: bool | None = None
+
+
+# Platform identity providers the Verifier can attest an agent against.
+#
+# Mirrors management's ``AttestationProvider``
+# (closed source) and the
+# ``AttestationProviderSchema`` Zod enum it is validated by, member for member.
+# Every entry has a registered server-side verifier in
+# workers/services/identity-verifiers/, so a member missing here is an agent
+# that cannot declare an identity the control plane already knows how to check.
+# Add to both sides together.
+AttestationProvider = Literal[
+    "aws",
+    "azure",
+    "azure-maa",
+    "clerk",
+    "gcp",
+    "salesforce",
+    "spiffe",
+    "verifier",
+    "nitro-verifier",
+    "aws-agentcore",
+    "better-auth",
+    "jwk",
+    "oidc",
+    "vestauth",
+    "x509",
+]
 
 
 @dataclass
 class PlatformAttestationProvider:
     """A single platform attestation provider."""
 
-    provider: Literal["aws", "azure", "gcp", "spiffe", "verifier", "aws-agentcore"]
+    provider: AttestationProvider
     get_token: Callable[[], Awaitable[str]]
 
 
@@ -95,6 +156,10 @@ class SpellguardDiscoveryConfig:
     capabilities: list[str] | None = None
     # Platform attestation providers for platform/dual auth mode
     platform_attestation: PlatformAttestation | None = None
+    # Opt OUT of the fail-closed default for tool policy checks. Carried onto
+    # the resolved SpellguardConfig -- see SpellguardConfig.fail_open for what
+    # enabling it costs.
+    fail_open: bool | None = None
 
 
 # ===================================================================
@@ -185,6 +250,11 @@ class ManagedConfig:
     agent_secret: str | None = None
     # Platform attestation providers for platform/dual auth mode
     platform_attestation: PlatformAttestation | None = None
+    # Opt OUT of the fail-closed default for tool policy checks. Carried onto
+    # the resolved SpellguardConfig -- see SpellguardConfig.fail_open for what
+    # enabling it costs. This is the only opt-out an agent has when the runtime
+    # does not expose SPELLGUARD_TOOL_POLICY_FAIL_OPEN via os.environ.
+    fail_open: bool | None = None
 
 
 @dataclass
@@ -204,6 +274,11 @@ class DirectConfig:
     expected_verifier_image_hash: str
     # Optional agent secret
     agent_secret: str | None = None
+    # Opt OUT of the fail-closed default for tool policy checks. Carried onto
+    # the resolved SpellguardConfig -- see SpellguardConfig.fail_open for what
+    # enabling it costs. This is the only opt-out an agent has when the runtime
+    # does not expose SPELLGUARD_TOOL_POLICY_FAIL_OPEN via os.environ.
+    fail_open: bool | None = None
 
 
 # Discriminated union for Spellguard configuration mode.
@@ -252,3 +327,7 @@ class SpellguardOptions:
     intent_detection_model: Any | None = None
     # Optional hook called once after Spellguard initialises
     on_initialized: Callable[..., Any] | None = None
+    # Signed deliveries (#1244): the replay cache for /_spellguard/receive.
+    # Defaults to an in-process LRU (spellguard_ctls.delivery.DeliveryNonceCache);
+    # a deployment with several receivers passes a shared store.
+    delivery_nonce_store: Any | None = None

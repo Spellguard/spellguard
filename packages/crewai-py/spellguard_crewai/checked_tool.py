@@ -22,15 +22,12 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-import logging
 from typing import Any, Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel
 
 from spellguard_client.attestation import check_tool_policy
-
-logger = logging.getLogger("spellguard.crewai")
 
 
 class SpellguardCheckedTool(BaseTool):
@@ -64,27 +61,27 @@ class SpellguardCheckedTool(BaseTool):
             return asyncio.run(self._checked_execute(kwargs))
 
     async def _checked_execute(self, kwargs: dict[str, Any]) -> str:
-        """Run policy checks around _execute."""
-        # Input phase — fail open on errors
-        try:
-            inp = await check_tool_policy("input", self.name, kwargs)
-            if inp.effect == "block":
-                return inp.message or "[BLOCKED]"
-            if inp.effect == "redact":
-                return inp.message or "[BLOCKED]"
-        except Exception as exc:
-            logger.warning("[SpellguardCheckedTool] Input check failed, continuing: %s", exc)
+        """Run policy checks around _execute.
+
+        No ``except`` around the checks (#1418): ``check_tool_policy`` never
+        raises and fails closed unless ``fail_open`` is configured. One here
+        that "continued" ran the tool, or returned its output, with no policy
+        decision.
+        """
+        # Input phase
+        inp = await check_tool_policy("input", self.name, kwargs)
+        if inp.effect == "block":
+            return inp.message or "[BLOCKED]"
+        if inp.effect == "redact":
+            return inp.message or "[BLOCKED]"
 
         result = self._execute(**kwargs)
 
-        # Output phase — fail open on errors
-        try:
-            out = await check_tool_policy("output", self.name, kwargs, result)
-            if out.effect == "block":
-                return out.message or "[BLOCKED]"
-            if out.effect == "redact":
-                return str(out.data) if out.data is not None else ""
-        except Exception as exc:
-            logger.warning("[SpellguardCheckedTool] Output check failed, continuing: %s", exc)
+        # Output phase
+        out = await check_tool_policy("output", self.name, kwargs, result)
+        if out.effect == "block":
+            return out.message or "[BLOCKED]"
+        if out.effect == "redact":
+            return str(out.data) if out.data is not None else ""
 
         return result

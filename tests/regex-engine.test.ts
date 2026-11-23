@@ -261,7 +261,7 @@ describe('Regex Engine', () => {
 
       const results = await evaluatePolicies(
         bindings,
-        'Contact user@example.com, api_key = sk_123',
+        'Contact Priya Shah <priya.shah@customer-mail.org>, api_key = sk_123',
       );
       expect(results).toHaveLength(2);
       // Builtin PII detects email → flag (effect=permit)

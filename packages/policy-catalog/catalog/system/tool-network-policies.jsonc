@@ -1,3 +1,6 @@
+// Network TOOL policies — scoped `tools` ON PURPOSE (see
+// tool-database-policies.jsonc for the full rationale): these engines inspect URLs
+// and fetched web/API payloads from a tool call, not agent prose.
 {
   "policies": [
     {
@@ -14,6 +17,7 @@
         "blockPrivateIps": true
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 96
@@ -36,6 +40,7 @@
         "sensitivity": "medium"
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 91
@@ -58,6 +63,7 @@
         "windowSeconds": 120
       },
       "defaultBinding": {
+        "scope": "tools",
         "direction": "both",
         "effect": "block",
         "priority": 90

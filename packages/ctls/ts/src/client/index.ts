@@ -9,6 +9,9 @@
 export {
   verifyVerifierAttestation,
   fetchAndVerifyVerifier,
+  type VerifierVerifyFailureReason,
+  type VerifierVerifyOptions,
+  type VerifierVerifyResult,
 } from './verifier-verify';
 export {
   verifyNitroHardwareSignature,

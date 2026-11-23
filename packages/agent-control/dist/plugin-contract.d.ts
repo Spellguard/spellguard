@@ -11,7 +11,7 @@
  * so the freshness gate always reported `credential_not_delivered`).
  *
  * This object is the SINGLE SOURCE OF TRUTH for that contract. It is serialized
- * to `packages/spellguard-cli/internal/plugin/plugin-contract.json` (committed,
+ * to the Spellguard CLI's source (committed,
  * Go-embeddable) by `scripts/gen-plugin-contract.mjs`. Two tests pin everything:
  *   - TS (`tests/unit/plugin-contract/contract.test.ts`): the committed JSON
  *     equals this object AND this object matches the LIVE plugin constants
@@ -28,8 +28,20 @@ export interface FrameworkContract {
     readonly canonical: string;
     /** On-disk/CLI hyphen slug — the `~/.config/spellguard/<pathSlug>/` segment. */
     readonly pathSlug: string;
-    /** The framework CLI's home root that holds the installed plugin cache. */
+    /** Framework-owned home root (plugin cache for Node runtimes; runtime state for native runtimes). */
     readonly homeRoot: string;
+    /** Runtime capabilities; native runtimes deliberately expose no Node bins. */
+    readonly runtime: {
+        readonly kind: 'node-plugin' | 'native-python';
+        readonly launcher: string;
+        readonly pluginBins: boolean;
+        readonly gitHelper: 'plugin-bundled' | 'cli-owned';
+    };
+    /**
+     * Go-to-native-runtime credential snapshot, relative to this framework's
+     * config directory. Present only where a native runtime consumes one.
+     */
+    readonly credentialSnapshot?: string;
 }
 export interface PluginContract {
     readonly version: number;

@@ -139,6 +139,16 @@ export interface SetupArgs {
      */
     daemonConfigDir?: string;
     /**
+     * Stage 4 Gap B gate — positive managed-mode detection. Defaults to the real
+     * R3-1 marker reader (`isManagedBox()` from `@spellguard/agent-control`).
+     * TRUE ⇒ a genuinely Spellguard-provisioned managed box, where the Go
+     * box-daemon owns the agent-control socket + credential placement, so setup
+     * must NOT spawn the per-session Node credential daemon (two daemons contend
+     * on the DO's single socket). Injected so tests can pin a value without
+     * touching the real `~/.config/spellguard`.
+     */
+    isManagedBox?: () => boolean;
+    /**
      * How long to wait (ms) for the GitHub credential to land on disk after
      * the daemon is started. The dashboard wizard's "Connect GitHub" step
      * usually completes within a minute or two of bootstrap, so waiting lets

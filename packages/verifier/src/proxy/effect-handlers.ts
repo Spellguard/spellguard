@@ -29,6 +29,10 @@ export type ResponseLevel = (typeof RESPONSE_LEVEL_PRIORITY)[number];
 /**
  * Resolve an array of response levels to the single highest-priority level.
  *
+ * A level this list doesn't know (a verdict added elsewhere, or a malformed
+ * check) resolves to `'block'`, the highest: an unknown verdict never allows
+ * (#1455).
+ *
  * @param levels - Response levels from individual policy checks
  * @returns The highest-priority level, or `'allow'` if the array is empty
  */
@@ -39,12 +43,47 @@ export function resolveResponseLevel(levels: string[]): ResponseLevel {
 
   for (const level of levels) {
     const idx = RESPONSE_LEVEL_PRIORITY.indexOf(level as ResponseLevel);
-    if (idx !== -1 && idx < bestIndex) {
+    if (idx === -1) {
+      console.warn(`[Verifier] Unknown response level "${level}" — blocking`);
+      return 'block';
+    }
+    if (idx < bestIndex) {
       bestIndex = idx;
     }
   }
 
   return RESPONSE_LEVEL_PRIORITY[bestIndex];
+}
+
+/**
+ * Map the six response levels to the three results an evaluate-only caller
+ * acts on (`/v1/mcp/evaluate`, `/v1/content/evaluate`):
+ * block/quarantine/rate_limit -> 'block', flag/redact -> 'flag',
+ * allow -> 'allow'.
+ */
+export function mapResponseLevel(
+  level: ResponseLevel,
+): 'allow' | 'block' | 'flag' {
+  switch (level) {
+    case 'block':
+    case 'quarantine':
+    case 'rate_limit':
+      return 'block';
+    case 'flag':
+    case 'redact':
+      return 'flag';
+    case 'allow':
+      return 'allow';
+    default: {
+      // Exhaustive, as on /v1/tools/check: a level added without a case above
+      // fails to compile here, and at runtime blocks rather than allows (#1455).
+      const _exhaustive: never = level;
+      console.warn(
+        `[Verifier] Unknown evaluate response level "${_exhaustive as string}" — blocking`,
+      );
+      return 'block';
+    }
+  }
 }
 
 /**
@@ -83,7 +122,16 @@ export function effectToDecision(
 }
 
 /**
- * True iff any check in `checks` carries `responseLevel === 'quarantine'`.
+ * `policyId` of the synthetic check that refuses a message because its agent
+ * is ALREADY quarantined (built by `quarantinePrecheckResult`). It carries
+ * `responseLevel: 'quarantine'` so the message resolves as a quarantine
+ * refusal, but it records the existing quarantine, not a new violation.
+ */
+export const QUARANTINE_PRECHECK_POLICY_ID = '__quarantine_precheck';
+
+/**
+ * True iff a policy that actually ran calls for quarantine: any check with
+ * `responseLevel === 'quarantine'` other than the quarantine precheck.
  *
  * Quarantine is an agent-state concern, orthogonal to the message-level
  * response-level resolution done by {@link resolveResponseLevel}. A
@@ -93,11 +141,19 @@ export function effectToDecision(
  * still be quarantined in that case. Both the bilateral and unilateral
  * routers gate `handleQuarantine` on this predicate so the two enforcement
  * paths agree.
+ *
+ * The precheck is excluded (#1265): refusing an already-quarantined agent is
+ * not a new reason to quarantine it, and reporting it as one overwrote the
+ * reason and time of the policy that did.
  */
 export function shouldQuarantineFromChecks(
-  checks: ReadonlyArray<{ responseLevel: string }>,
+  checks: ReadonlyArray<{ responseLevel: string; policyId?: string }>,
 ): boolean {
-  return checks.some((c) => c.responseLevel === 'quarantine');
+  return checks.some(
+    (c) =>
+      c.responseLevel === 'quarantine' &&
+      c.policyId !== QUARANTINE_PRECHECK_POLICY_ID,
+  );
 }
 
 /**
@@ -126,17 +182,15 @@ export async function handleQuarantine(
       quarantine_reason: reason,
       quarantined_at: new Date().toISOString(),
     });
-    const headers = await signRequest(bodyStr);
+    const url = `${baseUrl}/v1/internal/agents/${encodeURIComponent(agentId)}/quarantine`;
+    const headers = await signRequest('PATCH', url, bodyStr);
 
-    const response = await fetch(
-      `${baseUrl}/v1/internal/agents/${encodeURIComponent(agentId)}/quarantine`,
-      {
-        method: 'PATCH',
-        headers,
-        body: bodyStr,
-        signal: AbortSignal.timeout(5000),
-      },
-    );
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: bodyStr,
+      signal: AbortSignal.timeout(5000),
+    });
 
     if (!response.ok) {
       console.error(

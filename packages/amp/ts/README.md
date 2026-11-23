@@ -51,13 +51,10 @@ if (result.warnings.length > 0) {
 ### Client-Side: Encrypt Messages
 
 ```typescript
-import { encryptForVerifier, verifyArchiveIntegrity } from '@spellguard/amp';
+import { encryptForVerifier } from '@spellguard/amp';
 
 // Encrypt payload for Verifier
 const encrypted = encryptForVerifier(JSON.stringify(payload), sessionPublicKey);
-
-// Verify archive matches commitment
-const isValid = await verifyArchiveIntegrity(commitment, archive);
 ```
 
 ## Configuration
@@ -66,7 +63,7 @@ Configure backends via environment variables:
 
 ```bash
 # Commitment Backend (tamper-evident audit trail)
-COMMITMENT_BACKEND=memory|rekor
+COMMITMENT_BACKEND=memory|rekor|none
 
 # Archive Backend (encrypted message storage)
 ARCHIVE_BACKEND=memory|s3
@@ -153,7 +150,7 @@ interface ArchiveBackend {
 - `logCommitment(commitment)` - Log commitment to backend
 - `archiveMessage(message, commitment)` - Archive message to backend
 - `logAndArchive(message, commitment)` - Log and archive in one operation
-- `verifyCommitmentExists(hash)` - Check if commitment exists in backend
+- `verifyCommitmentExists(hash)` - Check if commitment exists in backend (always `false` on the `none` backend, which stores nothing)
 
 ### Channel Functions
 
@@ -166,7 +163,8 @@ interface ArchiveBackend {
 - `encryptForVerifier(payload, sessionPublicKey)` - Encrypt for Verifier
 - `decryptFromVerifier(encrypted, sessionPublicKey)` - Decrypt from Verifier
 - `hashPayload(payload)` - Hash payload for commitment
-- `verifyArchiveIntegrity(commitment, archive)` - Verify archive integrity
+
+`verifyArchiveIntegrity` was removed (#1443), from this package and from `@spellguard/client` and `@spellguard/verifier`. It compared a commitment hash with the bare hash of an archived payload, so it could never match a commitment from `generateCommitment` (which also hashes sender, recipient and timestamp), and an archive stored as an encrypted envelope carries no `encryptedPayload` to hash. It reported every archive as tampered. No replacement is provided yet.
 
 ## Implementing Custom Backends
 

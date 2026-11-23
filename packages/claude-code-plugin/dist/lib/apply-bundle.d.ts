@@ -1,3 +1,25 @@
+/**
+ * OFFLINE credential-apply mode for the Spellguard CLI's "sub-5s setup".
+ *
+ * The Spellguard CLI now receives the agent identity + GitHub credential(s)
+ * directly in an HTTP response and hands the plugin a JSON "bundle" on STDIN
+ * (NOT argv — the agent secret + scoped token must never hit the process table).
+ * This module writes EXACTLY the same on-disk surfaces the managed-bootstrap
+ * frame handler writes — but with NO agent-control WebSocket and NO network
+ * call — by REUSING the canonical writers:
+ *
+ *   1. the base identity config (agentId / agentSecret / spellguardBaseUrl /
+ *      expiresAt) via `writeConfig` — mirroring `runManagedFlow`'s placeholder
+ *      shape so `readConfig` validates it; and
+ *   2. the GitHub credential surfaces (config.json `githubCredentials`, the
+ *      `git-tokens` TSV, the `CLAUDE_ENV_FILE` git-config exports, and the
+ *      per-agent `gh/<agentId>/hosts.yml`) via the EXISTING
+ *      `handleCredentialUpdate`, fed a synthesized `credential_delivered` frame.
+ *
+ * Nothing here is a reimplementation of a writer — every byte lands through the
+ * same code path a real `credential_delivered{cause:'bootstrap'}` frame drives.
+ */
+import type { GithubCredentialScope } from '@spellguard/agent-control';
 /** One GitHub credential as delivered in the CLI's HTTP-response bundle. */
 export interface BundleGithubCredential {
     provider: 'github';
@@ -8,9 +30,13 @@ export interface BundleGithubCredential {
     expires_at: string;
     github_org_login?: string;
     installation_id?: number;
-    scope_summary: {
-        repos: string[];
-    };
+    /**
+     * What the credential grants. REQUIRED and discriminated: the bundle is a
+     * delivery, and a box must never place a credential whose grant it cannot
+     * read. See {@link GithubCredentialScope} — the shape this replaced could not
+     * tell "the whole organization" from "no repositories".
+     */
+    scope_summary: GithubCredentialScope;
     /** Flat author identity — nested into `provider_data` below. */
     git_author_name: string;
     git_author_email: string;

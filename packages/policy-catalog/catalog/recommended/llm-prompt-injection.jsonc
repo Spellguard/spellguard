@@ -1,0 +1,69 @@
+{
+  // LLM-scope prompt-injection policy — governs the model-inference leg
+  // (scope:'llm'). Inspects the outbound PROMPT sent to the model and blocks
+  // direct instruction-override / jailbreak attempts. This is a check unique to
+  // the LLM gateway: the message and tool legs never see the raw model prompt.
+  //
+  // level:'org' + recommended → OPT-IN (applied via industry presets or an
+  // explicit binding), NOT auto-applied fleet-wide by applyDefaults (which only
+  // pulls level:'system'). scope:'llm' means the Verifier's filterByScope only
+  // applies it on the inference leg, never to messages/tools.
+  //
+  // Config mirrors InjectionEngine binding.config (sensitivity, normalizeUnicode,
+  // combinationThreshold, customPatterns).
+  //
+  // DELIBERATELY NO `categories` KEY. The engine checks ALL 10 injection
+  // categories when `categories` is unset (direct, roleplay, hypothetical,
+  // debug-mode, format-injection, obfuscation, social-engineering,
+  // multi-language, known-jailbreaks, fragmentation). This policy is the BROAD
+  // LLM-leg injection guard, so narrowing it to a hand-picked subset would be a
+  // false-negative machine — an attacker just picks a vector off the list. (It
+  // previously declared `["direct"]`, which was inert due to the dsl_source
+  // decode bug, so all 10 ran anyway; fixing that bug would have silently
+  // dropped 9 of 10. Per-vector enforcement is already available as the granular
+  // `injection-*` catalog policies.)
+  "policies": [
+    {
+      "slug": "llm-prompt-injection",
+      "name": "LLM Prompt Injection Block",
+      "description": "Blocks prompt-injection and jailbreak attempts in the prompt sent to the model (LLM-gateway leg): direct instruction overrides and system-prompt exfiltration.",
+      "type": "injection",
+      "level": "org",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "sensitivity": "medium",
+        "normalizeUnicode": true,
+        "combinationThreshold": 3,
+        "customPatterns": [
+          {
+            "pattern": "\\bignore\\s+(?:all\\s+)?(?:your\\s+|the\\s+)?(?:previous\\s+|prior\\s+|above\\s+)?instructions",
+            "label": "direct-override",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\bdisregard\\s+(?:all\\s+)?(?:your\\s+)?instructions",
+            "label": "direct-override",
+            "confidence": 0.9
+          },
+          {
+            "pattern": "\\breveal\\s+(?:your\\s+)?(?:system\\s+prompt|initial\\s+instructions|hidden\\s+instructions|the\\s+prompt\\s+above)",
+            "label": "prompt-leak",
+            "confidence": 0.85
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "block",
+        "priority": 80,
+        "scope": "llm"
+      },
+      "provenance": {
+        "source": "spellguard:llm-gateway",
+        "dateAdded": "2026-07-16",
+        "reference": "internal design notes"
+      }
+    }
+  ]
+}

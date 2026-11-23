@@ -1,7 +1,11 @@
 {
   "name": "@spellguard/mcp-guard",
   "version": "0.1.0",
+  "description": "Spellguard policy guard for MCP servers: wraps a local stdio MCP server or proxies a remote one, and checks every tool call against your Spellguard policies before it runs",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "mcp-guard": "./dist/cli.js"
   },
@@ -13,18 +17,36 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm run build:lib && pnpm run build:types",
+    "build:lib": "node build.mjs",
+    "build:types": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0"
+    "@modelcontextprotocol/sdk": "1.32.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.28.1",
     "typescript": "^5.7.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Spellguard/spellguard.git",
+    "directory": "packages/mcp-guard"
+  },
+  "homepage": "https://spellguard.ai",
+  "bugs": {
+    "url": "https://github.com/Spellguard/spellguard/issues"
+  },
+  "keywords": ["spellguard", "mcp", "model-context-protocol", "ai-security"],
+  "publishConfig": {
+    "access": "public"
   }
 }

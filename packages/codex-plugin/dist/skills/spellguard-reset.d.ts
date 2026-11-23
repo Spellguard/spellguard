@@ -17,6 +17,7 @@
  * no-op rather than failing the teardown.
  */
 import { type AuthSupersededCloseReason } from '@spellguard/agent-control';
+import { installCodexCredentialHelper } from '../lib/codex-credential-helper-install';
 import { type ReadConfigResult } from '../lib/config-store';
 /**
  * Cause-specific message persisted on a self-wipe (P2-T6 / FR-10). Selected
@@ -43,12 +44,12 @@ export interface SupersededWipeArgs {
     ghConfigDir?: string;
     /** Override `~/.codex` / CODEX_HOME (tests). */
     codexHome?: string;
+    /** Stable helper path supplied by the daemon. */
+    helperPath?: string;
     /** Override the credential-wipe core (tests). */
     markConfigSupersededImpl?: (message: string) => void;
-    /** Override the codex config.toml credential-helper clear (tests). */
-    clearCodexCredentialHelperImpl?: (args?: {
-        codexHome?: string;
-    }) => void;
+    /** Override the fail-closed Codex helper install (tests). */
+    installCodexCredentialHelperImpl?: typeof installCodexCredentialHelper;
     /** Override the gh-session clear (tests). */
     clearGhSessionConfigImpl?: (dir: string) => void;
 }
@@ -61,12 +62,11 @@ export interface SupersededWipeArgs {
  * its own socket); it only clears the local credential surfaces the consuming
  * app reads and persists the cause message.
  *
- * Reuses the same wipe internals as the interactive reset
- * (`markConfigSuperseded` → `writeConfig`/`writeGitTokensFile`,
- * `clearCodexCredentialHelper` — the Codex `~/.codex/config.toml`
- * shell-env-policy block — and `clearGhSessionConfig`) rather than
- * re-implementing the wipe. Wipes ONLY this agent's credentials (identity is
- * preserved so `@spellguard-setup` can re-attach this machine).
+ * Wipes ONLY this agent's credentials while preserving both identity and the
+ * Codex-scoped helper/gh pin. Removing that policy here would let the next
+ * Codex process start with ambient machine credentials before SessionStart can
+ * rewrite config.toml. Explicit `$spellguard-reset` remains the only path that
+ * removes the managed policy.
  */
 export declare function wipeSupersededCredentials(args: SupersededWipeArgs): void;
 export interface ResetArgs {

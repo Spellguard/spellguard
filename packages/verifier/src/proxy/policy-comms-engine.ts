@@ -30,7 +30,8 @@
  * message history within the configured window. This catches the classic
  * indirect injection → exfiltration chain without inspecting content.
  *
- * Uses ctx.recentMessages to inspect the recent message sequence.
+ * Uses ctx.recentMessages, which the tool legs fill with the agent's recent
+ * tool calls (`evaluateToolCallPolicies`).
  *
  * Config:
  *   readPatterns?: string[]   — additional regex patterns indicating a read
@@ -39,6 +40,7 @@
  *   label?: string            — default: 'sequence-blocked'
  */
 
+import { invokedCallText } from './message-buffer';
 import type {
   PolicyDetection,
   PolicyEngine,
@@ -225,7 +227,9 @@ function evaluateMessageSequenceGate(
     ...compilePatterns(extraSendPatterns),
   ];
 
-  const currentIsSend = allSendPatterns.some((re) => re.test(ctx.content));
+  const current = invokedCallText(ctx);
+  if (current === null) return [];
+  const currentIsSend = allSendPatterns.some((re) => re.test(current));
   if (!currentIsSend) return [];
 
   const recentMessages = ctx.recentMessages || [];

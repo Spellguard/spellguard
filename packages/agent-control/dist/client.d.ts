@@ -1,5 +1,14 @@
 import WebSocket from 'ws';
-import { type AuthSupersededCloseReason, type ConfigUpdatedFrame, type CredentialDeliveredFrame, type CredentialDescriptor, type CredentialRequestFrame, type CredentialRevokedFrame, type CredentialRotatedFrame, type LoginCodeFrame, type LoginRelayUpdateFrame, type LoginRestartFrame } from './protocol';
+import { type AuthSupersededCloseReason, type ConfigUpdatedFrame, type CredentialDeliveredFrame, type CredentialDescriptor, type CredentialRequestFrame, type CredentialRevokedFrame, type CredentialRotatedFrame, type GithubGrantsBundleFrame, type GithubGrantsCommitConfirmedFrame, type LoginCodeFrame, type LoginRelayUpdateFrame, type LoginRestartFrame, type SlackEventBlockedFrame, type SlackEventFrame, type TeamsActivityBlockedFrame, type TeamsActivityFrame } from './protocol';
+/**
+ * The transient relay frames (server → client). They ride the SAME
+ * agent-control socket as the reliable credential/lifecycle frames but carry NO
+ * `seq` (they extend `TransientServerFrameBase`): never sequenced, never
+ * ring-buffered, never replayed on resume, never acked. Consolidated agent
+ * socket (T7): the OpenClaw plugin routes these into its local Slack/Teams bot
+ * via `AgentControlClientOptions.onRelayEvent`.
+ */
+export type RelayServerFrame = SlackEventFrame | SlackEventBlockedFrame | TeamsActivityFrame | TeamsActivityBlockedFrame;
 export type StartCredentials = {
     /**
      * Steady-state mode used by the credential daemon after bootstrap.
@@ -9,6 +18,22 @@ export type StartCredentials = {
     mode: 'secret';
     agentId: string;
     agentSecret: string;
+    /**
+     * R2-10 — the daemon's OWN framework slug ('claude_code' | 'codex' | …),
+     * threaded onto the secret-mode connect so the control plane can attribute
+     * each `login_relay_update` (sent over this same secret-mode connection) to
+     * the matching per-framework `frameworks_installed` row. Additive + optional
+     * for back-compat: a legacy daemon that omits it is resolved by the DO's
+     * sole-managed-login-row fallback (NEG-3). It rides the URL query (a
+     * non-secret discriminator).
+     *
+     * T4.3 note: for a MULTIPLEXED box daemon that carries BOTH managed-login
+     * frameworks over ONE connection, this connection-level slug can no longer
+     * disambiguate — the per-frame `LoginRelayUpdateFrame.framework` field is
+     * the primary discriminator and this connection value is the back-compat
+     * fallback the DO uses only when the frame omits it.
+     */
+    framework?: string;
 } | {
     mode: 'nonce';
     nonce: string;
@@ -73,7 +98,39 @@ export interface AgentControlClientOptions {
     /** Frame handlers — see types below. */
     onCredentialDelivered: (frame: CredentialDeliveredFrame) => void | Promise<void>;
     onCredentialRotated?: (frame: CredentialRotatedFrame) => void | Promise<void>;
+    onGithubGrantsBundle?: (frame: GithubGrantsBundleFrame) => void | Promise<void>;
+    onGithubGrantsCommitConfirmed?: (frame: GithubGrantsCommitConfirmedFrame) => void | Promise<void>;
+    /**
+     * Apply a `credential_revoked` frame to local disk state.
+     *
+     * **This handler MUST NOT terminate the process** (no `process.exit`, no
+     * `shutdown()` that exits). It runs BEFORE the client persists the frame's
+     * seq and sends its Ack, so a handler that exits leaves the cursor stuck one
+     * frame behind forever: the server replays the identical revoke on every
+     * subsequent connect and the consumer kills itself again — a permanent,
+     * self-reinforcing brick with no in-product exit (observed on a live agent
+     * 2026-08-04; the daemon died in 1.9 s with `lastServerSeq` unchanged).
+     *
+     * A consumer that genuinely needs to stop after a revoke sets a flag here and
+     * exits from {@link AgentControlClientOptions.onCredentialRevokeSettled},
+     * which runs only AFTER apply → persist → ack. Never the other way round:
+     * acking before applying would trade the brick for a window where a
+     * server-revoked token stays live on disk.
+     */
     onCredentialRevoked?: (frame: CredentialRevokedFrame) => void | Promise<void>;
+    /**
+     * Called after a `credential_revoked` frame has been fully SETTLED: the
+     * revoke was applied to disk by {@link
+     * AgentControlClientOptions.onCredentialRevoked}, the cached
+     * `knownCredentials` projection was updated and persisted, the frame's seq
+     * was persisted via `onSeqAdvanced`, and the Ack was written to the socket.
+     *
+     * This is the ONLY sanctioned point at which a consumer may terminate the
+     * process in response to a revoke — by the time it runs, the durable cursor
+     * has already moved past the frame, so the next connect resumes AFTER the
+     * revoke instead of replaying it.
+     */
+    onCredentialRevokeSettled?: (frame: CredentialRevokedFrame) => void | Promise<void>;
     /** Called after every successfully-applied seq-counted frame. The
      *  caller persists `last_server_seq` to disk in this hook so a crash
      *  mid-handler is replayed on reconnect rather than skipped. */
@@ -110,6 +167,18 @@ export interface AgentControlClientOptions {
      */
     onCredentialSuperseded?: (cause: AuthSupersededCloseReason | undefined) => void;
     /**
+     * Called when the server closes with AGENT_SUSPENDED (4423, #1348): the
+     * agent is quarantined. The plugin drops every credential it placed and
+     * KEEPS its identity. The client keeps reconnecting on its own backoff (30 s,
+     * doubling to 5 min, `retryInMs` is the next wait), and the reconnect a
+     * release lets through resumes normally, so the server re-delivers what is
+     * still granted. Fires on every suspended close, never with `onFatalClose`.
+     */
+    onSuspended?: (event: {
+        reason: string;
+        retryInMs: number;
+    }) => void | Promise<void>;
+    /**
      * Called when the server pushes a `config_updated` frame.
      * The handler should persist the new descriptor to the local config-store.
      * If `frame.triggers_rotation === true`, a follow-up `credential_rotated`
@@ -131,6 +200,21 @@ export interface AgentControlClientOptions {
      * Optional — only wired by the Claude Code daemon.
      */
     onLoginRestart?: (frame: LoginRestartFrame) => void | Promise<void>;
+    /**
+     * Consolidated agent socket (T7) — called for each inbound transient relay
+     * frame (`slack_event`, `slack_event_blocked`, `teams_activity`,
+     * `teams_activity_blocked`) the control plane forwards down the SAME
+     * agent-control socket the box already holds for credentials.
+     *
+     * Invoked FIRE-AND-FORGET: the dispatcher never `await`s it (R5 — a slow
+     * local Slack/Teams forward must not head-of-line-block the reliable
+     * credential frames sharing this socket) and swallows+logs any throw/rejection
+     * so a faulty handler can never disturb the socket or the seq/ack cursor.
+     * Relay frames carry no `seq`, so handling one advances NO cursor and sends
+     * NO ack. Optional — only the OpenClaw plugin wires it; other plugins leave it
+     * undefined and relay frames are silently ignored.
+     */
+    onRelayEvent?: (frame: RelayServerFrame) => void | Promise<void>;
     /** Called on each non-fatal error. Logging hook. */
     onError?: (err: Error) => void;
     /**
@@ -172,6 +256,11 @@ export interface AgentControlClientOptions {
     upgradeHeaders?: Record<string, string>;
     /** Cap reconnect backoff (default 30 s). */
     maxReconnectionDelayMs?: number;
+    /** The suspended (4423) backoff. Default 30 s, doubling to 5 min. */
+    suspendedBackoffMs?: {
+        initial: number;
+        max: number;
+    };
     /**
      * FIND-DA24 — how long PartySocket waits for a connection to OPEN before it
      * aborts the attempt and retries. partysocket's default is 4000ms, which is
@@ -231,8 +320,9 @@ export declare class AgentControlClient {
     constructor(opts: AgentControlClientOptions);
     /** Open the socket. Subsequent reconnects are automatic. */
     start(): void;
-    /** Send a CredentialRequest and resolve to the delivered descriptors.
-     *  Times out if no `credential_delivered` arrives within `timeoutMs`. */
+    /** Send a CredentialRequest and resolve after the durable response apply.
+     *  V4 returns delivered descriptors; V5 resolves `[]` after its bundle hook
+     *  commits. Times out if no matching response arrives within `timeoutMs`. */
     requestRefresh(args: Pick<CredentialRequestFrame, 'reason' | 'provider' | 'superseded_scoped_token_id'>, opts?: {
         timeoutMs?: number;
     }): Promise<CredentialDescriptor[]>;
@@ -268,10 +358,33 @@ export declare class AgentControlClient {
      * `#refreshChain`, guarded on `#ps` + `!#closed` (silent no-op when the
      * socket is mid-reconnect).
      */
-    sendLoginRelayUpdate(update: Pick<LoginRelayUpdateFrame, 'state' | 'login_url' | 'message'>): void;
+    sendLoginRelayUpdate(update: Pick<LoginRelayUpdateFrame, 'state' | 'login_url' | 'message' | 'framework'>): void;
     /** Close the socket and stop reconnecting. */
     close(): void;
 }
+/**
+ * Does this transport error represent an HTTP 401 on the WebSocket UPGRADE?
+ *
+ * Three consecutive of these are treated as a terminal identity revocation, so a
+ * false positive costs the agent its identity until an operator re-issues one —
+ * fail-closed, but a real availability event. Hence:
+ *
+ *  1. A STRUCTURED status wins outright, in both directions. A transport that
+ *     reports `500` is NOT unauthorized even if the body it quotes happens to
+ *     contain "401", and there is no fall-through to the text for it.
+ *  2. Only when no status is exposed do we read the message, and then the digits
+ *     must sit in an HTTP-STATUS POSITION. A plain substring matched `…:8401`
+ *     (a port) and any byte count ending in 401; a word boundary alone still
+ *     matched `req-401-2f9c` (a request id). Three of those in a row — exactly
+ *     what a box that simply cannot reach its server produces — would have wiped
+ *     a healthy agent's identity.
+ *
+ * Kept in lockstep with `is_upgrade_unauthorized` in
+ * the Hermes plugin's Python client.
+ *
+ * Exported for the unit test; not part of the public client API.
+ */
+export declare function isUpgradeUnauthorized(err: unknown): boolean;
 /**
  * Wrap a WebSocket implementation so its constructor forwards
  * `headers` (and any future ClientOptions) as the third argument expected
@@ -290,4 +403,4 @@ export declare class AgentControlClient {
  * at TypeScript level — partysocket only calls `new WS(url, protocols)`,
  * which `wrapped(url, protocols)` satisfies.
  */
-export declare function makeErrorSafeWebSocket(Base: typeof WebSocket, headers?: Record<string, string>): typeof WebSocket;
+export declare function makeErrorSafeWebSocket(Base: typeof WebSocket, headers?: Record<string, string>, onUpgradeError?: (err: Error) => void): typeof WebSocket;

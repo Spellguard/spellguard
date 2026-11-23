@@ -29,6 +29,10 @@
  */
 
 import { safeRegex } from './builtin-engine';
+import {
+  appendUnicodeDetections,
+  prepareInjectionText,
+} from './injection-patterns';
 import type {
   PolicyDetection,
   PolicyEngine,
@@ -1000,9 +1004,10 @@ export class InjectionEngine implements PolicyEngine {
     }
 
     // Normalize content if enabled (for remaining checks)
+    const prepared = prepareInjectionText(ctx.content);
     const content = normalizeUnicode
-      ? normalizeHomoglyphs(ctx.content)
-      : ctx.content;
+      ? normalizeHomoglyphs(prepared.text)
+      : prepared.text;
 
     // Check remaining categories on normalized content
     for (const category of categories) {
@@ -1064,6 +1069,11 @@ export class InjectionEngine implements PolicyEngine {
         message: `Multiple weak injection signals detected: ${labels.join(', ')}`,
       });
     }
+
+    // Keep Unicode metadata after all ordinary and combination checks. A tag
+    // signal must not prevent the decoded attack from matching, and a bidi
+    // observation must not mask an ordinary injection detection.
+    appendUnicodeDetections(detections, prepared);
 
     return detections;
   }

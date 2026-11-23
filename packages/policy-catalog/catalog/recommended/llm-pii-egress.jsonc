@@ -1,0 +1,58 @@
+{
+  // LLM-scope PII-egress policy — governs the model-inference leg (scope:'llm').
+  // FLAGS model completions that contain personal identifiers the model should
+  // not be emitting (email, phone, IPv4, SSN). There is no dedicated PII detector
+  // engine, so this uses the generic `regex` engine (operator-supplied patterns,
+  // compiled via safeRegex — inline-safe, no model round-trip, emits spans).
+  //
+  // direction:'inbound' → the COMPLETION only (PII in a user's prompt is usually
+  // legitimate input; the concern is the model *returning* PII). effect:'flag' →
+  // log-only, non-blocking: PII in output is often benign, so the recommended
+  // default surfaces it without disrupting traffic; an org can escalate to block.
+  // level:'org' + recommended = opt-in.
+  //
+  // (SSN/credit-card also overlap the secrets engine; this policy adds the
+  // contact/identity PII the secrets categories don't cover.)
+  "policies": [
+    {
+      "slug": "llm-pii-egress",
+      "name": "LLM PII Egress Flag",
+      "description": "Flags model completions that contain personal identifiers (email addresses, phone numbers, IPv4 addresses, US SSNs) on the LLM-gateway leg.",
+      "type": "regex",
+      "level": "org",
+      "severity": "high",
+      "failBehavior": "allow",
+      "config": {
+        "patterns": [
+          {
+            "pattern": "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b",
+            "label": "email"
+          },
+          {
+            "pattern": "\\b(?:\\+?1[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}\\b",
+            "label": "phone"
+          },
+          {
+            "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
+            "label": "ipv4"
+          },
+          {
+            "pattern": "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+            "label": "ssn"
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "flag",
+        "priority": 70,
+        "scope": "llm"
+      },
+      "provenance": {
+        "source": "spellguard:llm-gateway",
+        "dateAdded": "2026-07-20",
+        "reference": "internal design notes"
+      }
+    }
+  ]
+}

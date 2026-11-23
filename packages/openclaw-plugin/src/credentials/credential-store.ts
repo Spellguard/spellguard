@@ -46,7 +46,58 @@ import {
 } from 'node:fs';
 import { platform } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import type { GithubCredentialScope } from '@spellguard/agent-control';
 import { credentialStorePath } from './credential-store-paths';
+
+/**
+ * Parse a stored `scopeSummary` into the discriminated union.
+ *
+ * THE single on-disk → in-memory boundary for credential scope. Above it,
+ * nothing meets the legacy `{ repos: [...] }` shape whose empty case meant BOTH
+ * "the whole organization" and "nothing", so that ambiguity cannot leak forward
+ * into new code.
+ *
+ * Returns `{ ok: false }` for a value that is CORRUPT — present but not a shape
+ * any writer of this file ever produced. That preserves CR-011's stance: a
+ * malformed store is rejected LOUDLY at load time rather than surfacing later as
+ * a crash or a silently wrong grant. What CR-011 no longer has to do is police
+ * element types to protect a downstream `.join`; callers now switch on `mode`.
+ *
+ * `{ ok: true, scope: undefined }` is the one benign unknown: a legacy store
+ * whose repo list is EMPTY. That value is unknowable after the fact — it may
+ * have meant either arm — so it is carried forward as "unknown" rather than
+ * guessed, and consumers fail closed on it.
+ */
+export function parseStoredScopeSummary(
+  value: unknown,
+): { ok: true; scope?: GithubCredentialScope } | { ok: false } {
+  if (typeof value !== 'object' || value === null) return { ok: false };
+  const mode = (value as { mode?: unknown }).mode;
+  const repos = (value as { repos?: unknown }).repos;
+  const names =
+    Array.isArray(repos) && repos.every((v) => typeof v === 'string')
+      ? (repos as string[])
+      : null;
+
+  if (mode === 'all') {
+    return { ok: true, scope: { mode: 'all' } };
+  }
+  if (mode === 'selected') {
+    // An empty `selected` is the ambiguous value this union exists to delete;
+    // a writer that produced one is broken, not legacy.
+    return names !== null && names.length > 0
+      ? { ok: true, scope: { mode: 'selected', repos: names } }
+      : { ok: false };
+  }
+  if (mode !== undefined) return { ok: false };
+
+  // Legacy (pre-union) store: no discriminator. It ALWAYS wrote a `repos`
+  // array, so a missing or non-string-array `repos` is corruption, not history.
+  if (names === null) return { ok: false };
+  return names.length > 0
+    ? { ok: true, scope: { mode: 'selected', repos: names } }
+    : { ok: true };
+}
 
 export interface ProviderCredEntry {
   kind: 'issued' | 'manual' | 'auto-created' | 'provisioned';
@@ -55,12 +106,28 @@ export interface ProviderCredEntry {
   scopedToken?: string;
   scopedTokenId?: string;
   expiresAt?: string;
-  scopeSummary?: { repos: string[] };
+  scopeSummary?: GithubCredentialScope;
   gitAuthorName?: string;
   gitAuthorEmail?: string;
   /** Phase C: the GitHub App installation id backing a github entry. */
   installationId?: number;
   revoked?: boolean;
+}
+
+export type TerminalCleanupManagedProvider =
+  | 'discord'
+  | 'openrouter'
+  | 'slack'
+  | 'teams';
+
+/**
+ * Content-free durable proof needed to finish terminal consuming-config
+ * cleanup after a process crash. Provider names are ownership provenance only;
+ * no credential bytes or fingerprints are retained in the tombstone.
+ */
+export interface TerminalCleanupIntent {
+  status: 'pending';
+  managedProviders: TerminalCleanupManagedProvider[];
 }
 
 export interface CredentialStore {
@@ -70,7 +137,7 @@ export interface CredentialStore {
   scopedToken?: string;
   scopedTokenId?: string;
   expiresAt?: string;
-  scopeSummary?: { repos: string[] };
+  scopeSummary?: GithubCredentialScope;
   spellguardBaseUrl: string;
   /** Bootstrap-frame author identity for git commit signing. */
   gitAuthorName?: string;
@@ -105,6 +172,30 @@ export interface CredentialStore {
    * provider name (`slack`, `discord`, `openrouter`, …).
    */
   providers?: Record<string, ProviderCredEntry>;
+  /** Cleared only after terminal consuming-config cleanup verifies clean. */
+  terminalCleanup?: TerminalCleanupIntent;
+  /** V5 authoritative, grant-keyed snapshot committed with the provider map. */
+  githubGrantSet?: {
+    protocolVersion: 5;
+    deliveryId: string;
+    grantSetRevision: string;
+    grants: Record<
+      string,
+      {
+        installationRecordId: string;
+        grantRevision: string;
+        owner: string;
+        displayName: string;
+        access: 'read' | 'write';
+        scope:
+          | { mode: 'all' }
+          | { mode: 'selected'; repositoryNames: string[] };
+        scopedTokenId: string;
+        scopedToken: string;
+        expiresAt: string;
+      }
+    >;
+  };
 }
 
 export interface ReadResult {
@@ -166,19 +257,22 @@ export function readCredentialStore(path = credentialStorePath()): ReadResult {
         return { store: null, reason: 'malformed' };
       }
 
-      // CR-011: validate `scopeSummary.repos` is an array of strings. Downstream
-      // code (credential-consumer → tools.ts, the setup CLI) calls `.join`/
-      // `.length` on this without a recovery path, so a partially-written or
-      // corrupted store with `scopeSummary: null` or `repos: [123, null]` would
-      // crash the agent at use time rather than be rejected at load time.
-      const scope = (parsed as { scopeSummary?: unknown }).scopeSummary;
-      if (typeof scope !== 'object' || scope === null) {
+      // CR-011: a legacy GitHub-shaped store must carry a scope object at all —
+      // a partially-written store with `scopeSummary: null` is corrupt and is
+      // rejected at LOAD time rather than crashing the agent at use time.
+      //
+      // What that check no longer has to do is police the repo list's element
+      // types: `normalizeStoredScopeSummary` is the single boundary where an
+      // on-disk value becomes a `GithubCredentialScope`, and it yields either a
+      // well-formed arm or `undefined`. Downstream code switches on `mode` and
+      // can no longer reach a `.join`/`.length` on an unvalidated array.
+      const scope = parseStoredScopeSummary(
+        (parsed as { scopeSummary?: unknown }).scopeSummary,
+      );
+      if (!scope.ok) {
         return { store: null, reason: 'malformed' };
       }
-      const repos = (scope as { repos?: unknown }).repos;
-      if (!Array.isArray(repos) || repos.some((v) => typeof v !== 'string')) {
-        return { store: null, reason: 'malformed' };
-      }
+      parsed.scopeSummary = scope.scope;
 
       // Back-compat shim: synthesise a `providers.github` entry from legacy fields
       // so callers can always use the provider-agnostic map going forward.
@@ -205,6 +299,42 @@ export function readCredentialStore(path = credentialStorePath()): ReadResult {
     }
 
     parsed.providers = parsed.providers ?? {};
+
+    if (parsed.terminalCleanup !== undefined) {
+      const intent = parsed.terminalCleanup as TerminalCleanupIntent;
+      const allowed = new Set<TerminalCleanupManagedProvider>([
+        'discord',
+        'openrouter',
+        'slack',
+        'teams',
+      ]);
+      if (
+        intent?.status !== 'pending' ||
+        !Array.isArray(intent.managedProviders) ||
+        intent.managedProviders.some(
+          (provider) =>
+            typeof provider !== 'string' ||
+            !allowed.has(provider as TerminalCleanupManagedProvider),
+        )
+      ) {
+        return { store: null, reason: 'malformed' };
+      }
+    }
+
+    // Every provider entry's `scopeSummary` crosses the SAME boundary as the
+    // legacy top-level field above, so no caller above this line ever meets the
+    // pre-union shape. A corrupt entry scope fails the whole read, exactly as a
+    // corrupt legacy one does.
+    for (const entry of Object.values(parsed.providers)) {
+      if (entry && typeof entry === 'object' && 'scopeSummary' in entry) {
+        if (entry.scopeSummary === undefined) continue;
+        const entryScope = parseStoredScopeSummary(entry.scopeSummary);
+        if (!entryScope.ok) {
+          return { store: null, reason: 'malformed' };
+        }
+        entry.scopeSummary = entryScope.scope;
+      }
+    }
 
     return { store: parsed };
   } catch {
@@ -248,10 +378,60 @@ export function readCredentialStore(path = credentialStorePath()): ReadResult {
  * On Windows we fall back to `writeFileSync` (POSIX bits don't apply; symlink
  * pre-placement requires elevated permissions in typical deployments).
  */
+/**
+ * A revoked credential keeps its identity (kind, ids, expiry, scope) for
+ * dedupe and resume, never its secret material (#1288): the secret fields and
+ * the scoped token are dropped.
+ */
+export function revokedProviderEntry(
+  entry: ProviderCredEntry,
+): ProviderCredEntry {
+  const { secrets: _secrets, scopedToken: _scopedToken, ...identity } = entry;
+  return { ...identity, secrets: {}, revoked: true };
+}
+
+const isGithubKey = (key: string) =>
+  key === 'github' || key.startsWith('github:');
+
+/**
+ * Every store write goes through this, so nothing revoked is ever persisted
+ * with its secret, whichever path revoked it: a revoked provider entry becomes
+ * a tombstone. A store is revoked only once GitHub is (the last per-org entry,
+ * or a legacy single-slot revoke), so a revoked store also drops its legacy
+ * top-level GitHub token and tombstones every GitHub entry.
+ */
+function withoutRevokedSecrets(store: CredentialStore): CredentialStore {
+  const providers = store.providers
+    ? Object.fromEntries(
+        Object.entries(store.providers).map(([key, entry]) => [
+          key,
+          entry.revoked || (store.revoked && isGithubKey(key))
+            ? revokedProviderEntry(entry)
+            : entry,
+        ]),
+      )
+    : undefined;
+  const { scopedToken: _legacyToken, ...withoutLegacyToken } = store;
+  return {
+    ...(store.revoked ? withoutLegacyToken : store),
+    ...(providers ? { providers } : {}),
+  };
+}
+
+export interface CredentialStoreDurabilityHooks {
+  onDurabilityStep?: (
+    step: 'file_fsync' | 'rename' | 'directory_fsync',
+  ) => void;
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: atomic write needs all steps in one function to maintain the lstat→open→fchmod→fsync→rename invariant
-function atomicWriteJsonStore(path: string, store: CredentialStore): void {
+function atomicWriteJsonStore(
+  path: string,
+  store: CredentialStore,
+  hooks: CredentialStoreDurabilityHooks = {},
+): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const content = JSON.stringify(store, null, 2);
+  const content = JSON.stringify(withoutRevokedSecrets(store), null, 2);
 
   if (platform() === 'win32') {
     // Windows: no POSIX bits; rely on directory ACLs. `O_NOFOLLOW` is not
@@ -293,6 +473,7 @@ function atomicWriteJsonStore(path: string, store: CredentialStore): void {
     fchmodSync(fd, 0o600);
     writeSync(fd, content, 0, 'utf-8');
     fsyncSync(fd);
+    hooks.onDurabilityStep?.('file_fsync');
   } catch (err) {
     if (fd !== null) {
       try {
@@ -317,6 +498,7 @@ function atomicWriteJsonStore(path: string, store: CredentialStore): void {
 
   try {
     renameSync(tmpPath, path);
+    hooks.onDurabilityStep?.('rename');
   } catch (err) {
     try {
       unlinkSync(tmpPath);
@@ -325,18 +507,133 @@ function atomicWriteJsonStore(path: string, store: CredentialStore): void {
     }
     throw err;
   }
+  // The file fsync makes the bytes durable; the parent-directory fsync makes
+  // the rename itself durable. V5 must not acknowledge before both complete.
+  const directoryFd = openSync(dirname(path), fsConstants.O_RDONLY);
+  try {
+    fsyncSync(directoryFd);
+    hooks.onDurabilityStep?.('directory_fsync');
+  } finally {
+    closeSync(directoryFd);
+  }
 }
 
 export function writeCredentialStore(
   store: CredentialStore,
   path = credentialStorePath(),
+  hooks: CredentialStoreDurabilityHooks = {},
 ): void {
-  atomicWriteJsonStore(path, store);
+  atomicWriteJsonStore(path, store, hooks);
 }
 
 export function markRevoked(path = credentialStorePath()): void {
   const r = readCredentialStore(path);
   if (r.store) atomicWriteJsonStore(path, { ...r.store, revoked: true });
+}
+
+/**
+ * #1348: the agent is quarantined (close 4423, AGENT_SUSPENDED). Keep the
+ * identity, the git author and the cursor; drop every provider credential and
+ * the known-credentials projection; and leave the store NOT revoked. A release
+ * brings the agent back, and the delivery that follows must be accepted
+ * (`applyDelivery` refuses a revoked store). Returns whether a Spellguard
+ * OpenRouter slot was live, for the openclaw.json cleanup, or null when there
+ * is no store.
+ */
+export function markSuspended(
+  path = credentialStorePath(),
+): { managedOpenrouter: boolean } | null {
+  const r = readCredentialStore(path);
+  if (!r.store) return null;
+  const {
+    agentId,
+    agentSecret,
+    spellguardBaseUrl,
+    agentName,
+    gitAuthorName,
+    gitAuthorEmail,
+    lastServerSeq,
+    providers,
+  } = r.store;
+  const managedOpenrouter = Object.entries(providers ?? {}).some(
+    ([provider, entry]) =>
+      provider.split(':', 1)[0] === 'openrouter' && entry.revoked !== true,
+  );
+  atomicWriteJsonStore(path, {
+    agentId,
+    agentSecret,
+    spellguardBaseUrl,
+    ...(agentName ? { agentName } : {}),
+    ...(gitAuthorName ? { gitAuthorName } : {}),
+    ...(gitAuthorEmail ? { gitAuthorEmail } : {}),
+    ...(lastServerSeq ? { lastServerSeq } : {}),
+    knownCredentials: [],
+    providers: {},
+  });
+  return { managedOpenrouter };
+}
+
+/**
+ * Persist terminal revocation of the agent identity, not a single provider.
+ *
+ * A 4401 means this identity can never authenticate again. Keep only the
+ * non-secret identity/server coordinates needed to render the revoked state;
+ * remove every managed credential so a later process restart cannot keep
+ * serving stale material from this file.
+ */
+export function markIdentityRevoked(path = credentialStorePath()): boolean {
+  const r = readCredentialStore(path);
+  if (!r.store) return false;
+  const {
+    agentId,
+    spellguardBaseUrl,
+    agentName,
+    lastServerSeq,
+    providers,
+    terminalCleanup,
+  } = r.store;
+  const managedProviders =
+    terminalCleanup?.managedProviders ??
+    [
+      ...new Set(
+        Object.entries(providers ?? {})
+          .filter(([, entry]) => entry.revoked !== true)
+          .map(([provider]) => provider.split(':', 1)[0])
+          .filter(
+            (provider): provider is TerminalCleanupManagedProvider =>
+              provider === 'discord' ||
+              provider === 'openrouter' ||
+              provider === 'slack' ||
+              provider === 'teams',
+          ),
+      ),
+    ].sort();
+  atomicWriteJsonStore(path, {
+    agentId,
+    agentSecret: '',
+    spellguardBaseUrl,
+    ...(agentName ? { agentName } : {}),
+    ...(lastServerSeq ? { lastServerSeq } : {}),
+    knownCredentials: [],
+    providers: {},
+    revoked: true,
+    terminalCleanup: {
+      status: 'pending',
+      managedProviders,
+    },
+  });
+  return true;
+}
+
+/** Clear durable cleanup authority only after the consuming config read-back. */
+export function clearTerminalCleanupIntent(
+  path = credentialStorePath(),
+): boolean {
+  const r = readCredentialStore(path);
+  if (!r.store?.terminalCleanup) return false;
+  const { terminalCleanup: _terminalCleanup, ...cleaned } = r.store;
+  atomicWriteJsonStore(path, cleaned);
+  return true;
 }
 
 export function updateLastServerSeq(

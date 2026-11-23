@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { join } from 'node:path';
 import {
   type GithubCredentialDescriptor,
+  type GithubCredentialScope,
   createManagementClient,
+  describeGithubCredentialScope,
   isAgentGoneStatus,
+  isManagedBox,
 } from '@spellguard/agent-control';
 import { probeCodexHooksFlag } from '../lib/codex-config-probe';
 import { installCodexCredentialHelper } from '../lib/codex-credential-helper-install';
@@ -13,12 +16,14 @@ import {
   type ReadConfigResult,
   type SpellguardConfig,
   defaultConfigDir,
+  defaultConfigPath,
   markConfigRevoked,
   readConfig,
 } from '../lib/config-store';
 import {
   type DaemonResult,
   ensureCredentialDaemonRunning,
+  readDaemonHealth,
 } from '../lib/daemon-spawn';
 import { ensureStableHelper } from '../lib/env-file-writer';
 import { ghConfigDirPath } from '../lib/gh-config-dir';
@@ -77,12 +82,31 @@ export interface SessionStartDeps {
    * Test callers supply a `vi.fn()` here; assertions check the argv and
    * config-dir args rather than the in-process client construction.
    */
-  spawnDaemon?: (execPath: string, args: string[], opts: SpawnOptions) => void;
+  spawnDaemon?: (
+    execPath: string,
+    args: string[],
+    opts: SpawnOptions,
+  ) => ChildProcess | undefined;
+  /** Test seam for daemon lifecycle outcomes and diagnostics. */
+  ensureDaemonRunning?: typeof ensureCredentialDaemonRunning;
   /**
    * Override the config directory used for PID file resolution. Defaults to
    * `defaultConfigDir()`. Tests pass an isolated temp dir.
    */
   configDir?: string;
+  /**
+   * R3-4/R3-5/R3-6: positive managed-mode gate. Defaults to the real R3-1 marker
+   * reader (`isManagedBox()` from `@spellguard/agent-control`, which reads the
+   * SHARED root's `.managed`). TRUE ⇒ a genuinely Spellguard-provisioned managed
+   * box: the global-gitconfig healer (R3-5) AND the per-session scoped
+   * config.toml credential injection (R3-4) stand down (the global placement is
+   * authoritative there). FALSE (the default everywhere — absent OR corrupt
+   * marker) ⇒ both stay active (fail-closed — R3-6). The SOLE signal is the
+   * marker file, NEVER ambient env (NEG-7). Injected so tests can pin a temp
+   * root (`() => isManagedBox(root)`) and never touch the real
+   * `~/.config/spellguard` / `~/.gitconfig`.
+   */
+  isManagedBox?: () => boolean;
   /**
    * Poll the local config file until it shows an `expiresAt` value newer than
    * `initialExpiresAt`, or until `timeoutMs` elapses.
@@ -114,6 +138,8 @@ export interface SessionStartResult {
 export async function runSessionStart(
   deps: SessionStartDeps = {},
 ): Promise<SessionStartResult> {
+  const ensureDaemonRunning =
+    deps.ensureDaemonRunning ?? ensureCredentialDaemonRunning;
   // One-shot banner: warn the user if Codex hooks are disabled. This hook
   // only fires if hooks are enabled, so emit() is only reached when the
   // feature flag is in fact on — but we still probe for the "unknown"
@@ -160,17 +186,34 @@ export async function runSessionStart(
     return { ok: false, reason: 'git_version_too_old' };
   }
 
+  // R3-1/R3-5/R3-6: the SOLE managed-mode signal is the marker file (never
+  // ambient env — NEG-7). Resolve it once, up front, since it gates both the
+  // healer (R3-5, immediately below) and the per-session scoped injection (R3-4,
+  // further down). Absent OR corrupt marker → non-managed → both stay active
+  // (fail-closed).
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+
   // One-time heal of the OLD global-gitconfig leak (pre-2026-06-15): a prior
   // Codex plugin version wrote a spellguard helper + a (Spellguard:)-suffixed
   // identity into the machine-global ~/.gitconfig, which bricked plain-shell git
   // on revoke. Runs before the config read (safe even when unconfigured — it
   // only removes entries unmistakably ours) and at most once (marker file).
-  healLeakedGlobalGitConfig(
-    join(
-      deps.configDir ?? defaultConfigDir(),
-      '.codex-global-gitconfig-healed',
-    ),
-  );
+  //
+  // R3-5 standdown: on a MANAGED box the global-gitconfig footprint is
+  // INTENTIONAL, so the healer is gated OFF. Note (spec review): on managed we
+  // place the git helper into `/etc/gitconfig`, NOT `~/.gitconfig`, so the healer
+  // (which strips `~/.gitconfig`) can never neutralize the managed placement —
+  // gating it here is a precautionary CONSISTENCY measure that keeps "global
+  // footprint is intentional on managed" a single, explicit marker-keyed rule.
+  // It stays fully active on every non-managed / self-hosted box.
+  if (!managed) {
+    healLeakedGlobalGitConfig(
+      join(
+        deps.configDir ?? defaultConfigDir(),
+        '.codex-global-gitconfig-healed',
+      ),
+    );
+  }
 
   // One-time legacy→framework config migration (B2): move a pre-isolation
   // `<root>/config.json` into this framework's subdir before the disk read, so
@@ -190,12 +233,32 @@ export async function runSessionStart(
       });
       return { ok: false, reason: 'malformed' };
     }
+    if (readResult.reason === 'wrong_permissions') {
+      // This machine IS configured — the file just could not be read at a safe
+      // mode, and `readConfig` could not tighten it (another uid owns it).
+      // Reporting that as "not configured" sent operators straight at the one
+      // destructive command while their agent identity sat intact on disk.
+      renderMessage({
+        level: 'error',
+        message: `Spellguard: ${defaultConfigPath()} has mode ${readResult.foundMode ?? 'other than 0600'} and is owned by another user, so it could not be read or repaired. Your agent identity is intact — fix the owner/mode (\`chown\` it back to you, then \`chmod 600\`) rather than re-running \`@spellguard-setup\`.`,
+      });
+      return { ok: false, reason: 'wrong_permissions' };
+    }
     renderMessage({
       level: 'info',
       message:
         'Spellguard not configured — run `@spellguard-setup` to provision a credential.',
     });
     return { ok: false, reason: readResult.reason ?? 'missing' };
+  }
+
+  if (readResult.permissionsHealed) {
+    // Loud but non-fatal: the config was readable after Spellguard tightened a
+    // drifted mode back to 0600 in place.
+    renderMessage({
+      level: 'warn',
+      message: `Spellguard: ${defaultConfigPath()} had unsafe permissions; Spellguard restored mode 0600 automatically.`,
+    });
   }
 
   // REQ-FI (reliable framework reconciliation): fire the plugin-sync the moment
@@ -214,6 +277,7 @@ export async function runSessionStart(
       agentId: readResult.config.agentId,
       managementUrl: readResult.config.spellguardBaseUrl,
       agentSecret: readResult.config.agentSecret,
+      fetchImpl: deps.fetchImpl,
     });
   }
 
@@ -292,6 +356,11 @@ export async function runSessionStart(
   const configDir = deps.configDir ?? defaultConfigDir();
   const ghConfigDir = ghConfigDirPath(configDir, readResult.config.agentId);
   const writeEnvFile = () => {
+    // R3-4 standdown: skip the per-session scoped config.toml credential-helper
+    // install on a managed box (the global placement is authoritative — a second
+    // scoped helper conflicts). NEVER a fallback path — on non-managed this
+    // always runs (R3-6 fail-closed helper pin).
+    if (managed) return;
     if (deps.writeEnvFileImpl) {
       deps.writeEnvFileImpl();
     } else {
@@ -310,16 +379,36 @@ export async function runSessionStart(
   writeEnvFile();
 
   if (readResult.config.revoked) {
+    // SPAWN THE DAEMON ANYWAY. `revoked` means the SERVER disowned this agent
+    // (a 4401 close → handleAuthFailedClose), or the config was latched by an
+    // older build that treated a credential revoke as terminal. Returning here
+    // without a daemon was the last link in a permanent brick: the only process
+    // that can receive a replacement credential and clear the flag never ran,
+    // so backend rotation — the lever every operator reaches for — could not
+    // reach the machine. A genuinely disowned agent's daemon exits on its own
+    // 4401 within seconds, so this costs nothing in the unrecoverable case and
+    // heals the recoverable one on the first session after upgrading.
+    //
     // A persisted `revokedMessage` (P2-T6 self-wipe — agent moved/reassigned)
     // is cause-specific; prefer it over the generic revoked banner so the next
     // SessionStart re-surfaces exactly why the credential was cleared.
+    const daemonResult: DaemonResult = managed
+      ? { daemon: 'skipped', reason: 'managed_box' }
+      : await ensureDaemonRunning({
+          config: readResult.config,
+          spawnDaemon: deps.spawnDaemon,
+          configDir: deps.configDir,
+          cwd,
+        });
     renderMessage({
       level: 'error',
       message: readResult.config.revokedMessage
         ? `Spellguard: ${readResult.config.revokedMessage}`
-        : 'Spellguard: this credential has been revoked. Run `@spellguard-setup` to provision a new one.',
+        : daemonResult.daemon === 'unavailable'
+          ? `Spellguard: this credential has been revoked, and the credential daemon is unavailable (${daemonResult.reason}). Inspect the daemon log and installed plugin version before requesting a replacement.`
+          : 'Spellguard: this credential has been revoked. Spellguard is waiting for a replacement credential; if git stays blocked, run `spellguard doctor --repair` (non-destructive) before re-running `@spellguard-setup`.',
     });
-    return { ok: false, reason: 'revoked' };
+    return { ok: false, reason: 'revoked', daemonResult };
   }
 
   // Identity-only configs (bootstrap completed, no GitHub credential
@@ -337,19 +426,32 @@ export async function runSessionStart(
     !readResult.config.expiresAt ||
     !readResult.config.scopeSummary
   ) {
-    const daemonResult = ensureCredentialDaemonRunning({
-      config: readResult.config,
-      spawnDaemon: deps.spawnDaemon,
-      configDir: deps.configDir,
-    });
+    // Stage 4 Gap B: on a genuinely MANAGED box a single Go box-daemon
+    // (`spellguard box-daemon`) owns the agent-control socket + credential
+    // placement, so the per-session Node credential daemon must NOT spawn —
+    // two daemons contend on the DO's single socket (4409/4429 churn). Reuse
+    // the SAME `managed` value the injection/healer standdown uses above (never
+    // a second detection path). NOTE: this Node daemon also carries observation,
+    // so standing it down drops observation on managed boxes too — ACCEPTED for
+    // the MVP and folded into the R3-7b attribution follow-up.
+    const daemonResult: DaemonResult = managed
+      ? { daemon: 'skipped', reason: 'managed_box' }
+      : await ensureDaemonRunning({
+          config: readResult.config,
+          spawnDaemon: deps.spawnDaemon,
+          configDir: deps.configDir,
+          cwd,
+        });
     renderMessage({
-      level: 'info',
+      level: daemonResult.daemon === 'unavailable' ? 'error' : 'info',
       message:
-        'Spellguard: agent identity present; GitHub not yet connected. ' +
-        'Open your Spellguard dashboard and complete the GitHub App install ' +
-        'on this agent — the credential daemon will pick up the token over ' +
-        'the channel and update your local config automatically. Git ' +
-        'operations remain unprotected until the credential lands.',
+        daemonResult.daemon === 'unavailable'
+          ? `Spellguard: agent identity is present, but GitHub is not connected and the credential daemon is unavailable (${daemonResult.reason}). Inspect the daemon log and installed plugin version. Do not request a new credential until the local process state is understood.`
+          : 'Spellguard: agent identity present; GitHub not yet connected. ' +
+            'Open your Spellguard dashboard and complete the GitHub App install ' +
+            'on this agent. The credential owner will write the token to your ' +
+            'local config when it arrives. Git operations remain unprotected ' +
+            'until the credential lands.',
     });
     return { ok: true, daemonResult, reason: 'identity_only' };
   }
@@ -360,11 +462,25 @@ export async function runSessionStart(
     scopedToken: string;
     scopedTokenId: string;
     expiresAt: string;
-    scopeSummary: { repos: string[] };
+    // The REAL union — an `{ repos: string[] }` annotation here would mask the
+    // `mode: 'all'` arm (which carries no repo list) from the compiler, which
+    // is exactly how the success-banner `.repos.length` crash shipped.
+    scopeSummary: GithubCredentialScope;
   };
   const initialConfig: GithubReadyConfig =
     readResult.config as GithubReadyConfig;
   const scopedTokenId = initialConfig.scopedTokenId;
+
+  // Reconcile before the remote status probe. A control-plane transport error
+  // must not short-circuit local daemon recovery during an active session.
+  const daemonResult: DaemonResult = managed
+    ? { daemon: 'skipped', reason: 'managed_box' }
+    : await ensureDaemonRunning({
+        config: initialConfig,
+        spawnDaemon: deps.spawnDaemon,
+        configDir: deps.configDir,
+        cwd,
+      });
 
   const baseUrl = readResult.config.spellguardBaseUrl;
   const agentId = readResult.config.agentId;
@@ -381,15 +497,23 @@ export async function runSessionStart(
     agentSecret,
     fetchImpl,
   });
-  const { data, error, response } = await api.GET(
-    '/credentials/github/status',
-    {
+  let statusResult: Awaited<ReturnType<(typeof api)['GET']>>;
+  try {
+    statusResult = await api.GET('/credentials/github/status', {
       params: { query: { scoped_token_id: scopedTokenId } },
       headers: scopedTokenForProbe
         ? { 'X-Spellguard-Scoped-Token': scopedTokenForProbe }
         : undefined,
-    },
-  );
+    });
+  } catch {
+    renderMessage({
+      level: 'error',
+      message:
+        'Spellguard: could not verify credential status because the control-plane transport failed. The local credential state is unchanged. Inspect the daemon and retry before requesting a new credential.',
+    });
+    return { ok: false, reason: 'status_failed', daemonResult };
+  }
+  const { data, error, response } = statusResult;
   if (error) {
     // A 401/403/404/410 means the server no longer recognizes this agent or
     // its credential — most often because the credential was revoked or the
@@ -402,9 +526,9 @@ export async function runSessionStart(
       level: 'error',
       message: needsReconnect
         ? `Spellguard: your agent is no longer recognized by the server (HTTP ${httpStatus}). This usually means the credential was revoked or the Spellguard environment was reset. Run \`@spellguard-setup\` to reconnect this agent.`
-        : `Spellguard: could not verify your credential with the server (${error.error?.code ?? error.error?.message ?? 'unknown error'}). This is usually transient — check your connection and restart the session. If it persists, run \`@spellguard-setup\`.`, // openapi-fetch error envelope: { error: { code, message } }
+        : `Spellguard: could not verify credential status with the server (${error.error?.code ?? error.error?.message ?? 'unknown error'}). The local credential state is unchanged. Inspect the daemon and retry before requesting a new credential.`, // openapi-fetch error envelope: { error: { code, message } }
     });
-    return { ok: false, reason: 'status_failed' };
+    return { ok: false, reason: 'status_failed', daemonResult };
   }
 
   const status = (data as StatusResponse).status;
@@ -416,7 +540,7 @@ export async function runSessionStart(
       message:
         'Spellguard: this credential has been revoked. Run `@spellguard-setup` to provision a new one.',
     });
-    return { ok: false, reason: 'revoked' };
+    return { ok: false, reason: 'revoked', daemonResult };
   }
 
   let activeConfig: GithubReadyConfig = initialConfig;
@@ -432,19 +556,6 @@ export async function runSessionStart(
     });
   }
 
-  // Spawn the daemon BEFORE the expired-credential wait. The daemon
-  // is the only thing that can issue `credential_request{reason:'expiry'}`
-  // over the persistent socket — without it, the wait below cannot succeed
-  // on a cold start (no daemon already alive). The daemon's main() runs an
-  // immediate `checkExpiryAndRefresh` after `client.start()`, so the refresh
-  // request lands ~1 RTT after spawn rather than waiting for the 60 s
-  // interval tick.
-  const daemonResult = ensureCredentialDaemonRunning({
-    config: activeConfig,
-    spawnDaemon: deps.spawnDaemon,
-    configDir: deps.configDir,
-  });
-
   // agents.framework reconciliation already fired early (right after the
   // identity was confirmed present, above) so it runs for every session
   // regardless of the GitHub-credential state below.
@@ -456,10 +567,16 @@ export async function runSessionStart(
     const pollFn = deps.pollForFreshCredential ?? defaultPollForFreshCredential;
     const fresh = await pollFn(activeConfig.expiresAt, 5000);
     if (!fresh) {
+      const daemonHealth = readDaemonHealth(configDir, activeConfig.agentId);
+      const daemonDetail =
+        daemonResult.daemon === 'unavailable'
+          ? `The credential daemon is unavailable (${daemonResult.reason}).`
+          : daemonHealth?.transportState === 'error'
+            ? 'The credential daemon is running, but its control-plane transport is failing.'
+            : 'The credential daemon is running and the refresh is still pending.';
       renderMessage({
         level: 'error',
-        message:
-          'Spellguard: credential has expired and the daemon could not obtain a fresh one within 5 s. Check your network connection and try again.',
+        message: `Spellguard: credential is expired. ${daemonDetail} No replacement arrived within 5 seconds. Inspect the daemon log and verify actual git or gh access before requesting a new credential.`,
       });
       return { ok: false, reason: 'expired_no_refresh', daemonResult };
     }
@@ -471,17 +588,19 @@ export async function runSessionStart(
   // Env-file injection.
   // Write with the current activeConfig (updated by daemon poll if expired).
   // Bash sources last-wins, so this block overrides the early fail-closed
-  // write done above.
-  if (deps.writeEnvFileImpl) {
-    deps.writeEnvFileImpl();
-  } else {
-    installCodexCredentialHelper({
-      gitAuthorName: activeConfig.gitAuthorName,
-      gitAuthorEmail: activeConfig.gitAuthorEmail,
-      ghConfigDir,
-      helperPath: ensureStableHelper(configDir),
-      sshRewriteRepo,
-    });
+  // write done above. R3-4 standdown: skipped entirely on a managed box.
+  if (!managed) {
+    if (deps.writeEnvFileImpl) {
+      deps.writeEnvFileImpl();
+    } else {
+      installCodexCredentialHelper({
+        gitAuthorName: activeConfig.gitAuthorName,
+        gitAuthorEmail: activeConfig.gitAuthorEmail,
+        ghConfigDir,
+        helperPath: ensureStableHelper(configDir),
+        sshRewriteRepo,
+      });
+    }
   }
 
   // Success banner
@@ -491,9 +610,15 @@ export async function runSessionStart(
       (new Date(activeConfig.expiresAt).getTime() - Date.now()) / 60000,
     ),
   );
+  // Render by scope mode: an org-wide (`mode:'all'`) grant carries no repo
+  // list, so `repos=<count>` only exists on the `selected` arm.
+  const scopeText =
+    activeConfig.scopeSummary.mode === 'all'
+      ? `scope=${describeGithubCredentialScope(activeConfig.scopeSummary)}`
+      : `repos=${activeConfig.scopeSummary.repos.length}`;
   renderMessage({
     level: 'info',
-    message: `Spellguard: agent credentials injected — agent=${activeConfig.agentId}, repos=${activeConfig.scopeSummary.repos.length}, expires in ${minutesLeft} minutes`,
+    message: `Spellguard: agent credentials injected — agent=${activeConfig.agentId}, ${scopeText}, expires in ${minutesLeft} minutes`,
   });
 
   // The commit filesystem watcher used to start here. It now lives in

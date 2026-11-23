@@ -24,7 +24,13 @@
  * instead of builtin 'prompt-injection' for new policies.
  */
 
-import { DEFAULT_PII_PATTERNS } from './policy';
+import { type ComputedResult, computeValues } from '@spellguard/amp';
+import {
+  bracketListAfterKey,
+  countAngleBracketUrls,
+  countMarkdownLinks,
+} from './linear-scan';
+import { findDefaultPiiMatches } from './pii-matcher';
 import type {
   DetectionSpan,
   PolicyDetection,
@@ -103,7 +109,51 @@ function getActionVerbRegexes(verbs: string[]): RegExp[] {
 /*  Code-detection constants                                          */
 /* ------------------------------------------------------------------ */
 
-const FENCED_BLOCK_PATTERN = /```(\w+)?[\s\S]*?```/g;
+/**
+ * Find `{ … "action": "x" … }` / `"function"` objects by brace matching instead
+ * of a lazy `[\s\S]*?` regex, which is quadratic on repeated `{` (CodeQL
+ * js/polynomial-redos) and could never span a nested object after the key.
+ */
+function extractActionObjects(content: string): string[] {
+  const out: string[] = [];
+  const keyRe = /"(?:action|function)"\s*:\s*"/g;
+  let m: RegExpExecArray | null = keyRe.exec(content);
+  while (m !== null) {
+    let depth = 0;
+    let start = -1;
+    for (let i = m.index - 1; i >= 0; i--) {
+      const ch = content[i];
+      if (ch === '}') depth++;
+      else if (ch === '{') {
+        if (depth === 0) {
+          start = i;
+          break;
+        }
+        depth--;
+      }
+    }
+    if (start >= 0) {
+      depth = 0;
+      for (let i = start; i < content.length; i++) {
+        const ch = content[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            out.push(content.slice(start, i + 1));
+            break;
+          }
+        }
+      }
+    }
+    m = keyRe.exec(content);
+  }
+  return out;
+}
+
+// Bounded language token: `(\w+)?` followed by `[\s\S]*?` is ambiguous on long
+// alphanumeric runs after a fence (CodeQL js/polynomial-redos).
+const FENCED_BLOCK_PATTERN = /```([\w+-]{0,32})[\s\S]*?```/g;
 
 const CODE_PATTERNS: Record<string, RegExp[]> = {
   sql: [
@@ -347,6 +397,98 @@ function findSubstringSpans(
 /*  BuiltinEngine                                                     */
 /* ================================================================== */
 
+/** The `actionConstraints` key that declares a tool's computed values. */
+export const COMPUTED_KEY = '$computed';
+
+/**
+ * The detections for one computed value's limit: none when it is within
+ * its rules, one when it can't be computed, one per broken rule otherwise.
+ */
+export function computedValueDetections(
+  action: string,
+  name: string,
+  result: ComputedResult,
+  constraint: unknown,
+  shadowsParameter: boolean,
+): PolicyDetection[] {
+  if (typeof constraint !== 'object' || constraint === null) return [];
+  if (shadowsParameter) {
+    return [
+      {
+        type: 'computed-value-unavailable',
+        confidence: 1.0,
+        message: `Action "${action}" value "${name}" is computed but is also a parameter of the call`,
+      },
+    ];
+  }
+  if (!result.ok) {
+    return [
+      {
+        type: 'computed-value-unavailable',
+        confidence: 1.0,
+        message: `Action "${action}" value "${name}" can't be computed: ${result.reason}`,
+      },
+    ];
+  }
+  return checkParameterValueConstraints(
+    result.value,
+    constraint as Record<string, unknown>,
+  ).map((violation) => ({
+    type: 'parameter-constraint-violation',
+    confidence: 1.0,
+    message: `Action "${action}" value "${name}" (${result.text} = ${result.value}) ${violation}`,
+  }));
+}
+
+/**
+ * Value rules for an action-allowlist parameter constraint (see the comment
+ * above `checkActionAllowlist`): `enum`, `min`, `max`, `maxLength` and
+ * `pattern`.  Returns one human-readable violation per failed rule; an empty
+ * array means the value satisfies every rule present.  A `pattern` that
+ * `safeRegex` refuses (oversized or catastrophic) counts as a violation, so
+ * a broken constraint fails closed rather than silently passing.
+ */
+export function checkParameterValueConstraints(
+  value: unknown,
+  rules: Record<string, unknown>,
+): string[] {
+  const violations: string[] = [];
+  if (Array.isArray(rules.enum)) {
+    const allowed = rules.enum as unknown[];
+    if (!allowed.some((candidate) => candidate === value)) {
+      violations.push(
+        `must be one of ${allowed.map((v) => JSON.stringify(v)).join(', ')}`,
+      );
+    }
+  }
+  if (typeof rules.min === 'number') {
+    if (typeof value !== 'number' || Number.isNaN(value) || value < rules.min) {
+      violations.push(`must be a number >= ${rules.min}`);
+    }
+  }
+  if (typeof rules.max === 'number') {
+    if (typeof value !== 'number' || Number.isNaN(value) || value > rules.max) {
+      violations.push(`must be a number <= ${rules.max}`);
+    }
+  }
+  if (typeof rules.maxLength === 'number') {
+    if (typeof value !== 'string' || value.length > rules.maxLength) {
+      violations.push(
+        `must be a string of at most ${rules.maxLength} characters`,
+      );
+    }
+  }
+  if (typeof rules.pattern === 'string') {
+    const regex = safeRegex(rules.pattern, '');
+    if (!regex) {
+      violations.push('has an unusable constraint pattern');
+    } else if (typeof value !== 'string' || !regex.test(value)) {
+      violations.push(`must match ${rules.pattern}`);
+    }
+  }
+  return violations;
+}
+
 export class BuiltinEngine implements PolicyEngine {
   readonly name = 'builtin';
   private rateLimiter?: RateLimiter;
@@ -433,31 +575,15 @@ export class BuiltinEngine implements PolicyEngine {
   }
 
   private checkPii(content: string): PolicyDetection[] {
-    const detections: PolicyDetection[] = [];
-    const labels = ['ssn', 'email', 'phone', 'credit-card'];
-
-    for (let i = 0; i < DEFAULT_PII_PATTERNS.length; i++) {
-      const pattern = DEFAULT_PII_PATTERNS[i];
-      const globalPattern = new RegExp(
-        pattern.source,
-        `${pattern.flags || ''}g`,
-      );
-      const spans: DetectionSpan[] = [];
-      for (const match of content.matchAll(globalPattern)) {
-        const idx = match.index ?? 0;
-        spans.push({ start: idx, end: idx + match[0].length });
-      }
-      if (spans.length > 0) {
-        detections.push({
-          type: labels[i] || 'pii',
-          confidence: 0.9,
-          message: `PII pattern detected: ${pattern.source}`,
-          spans,
-        });
-      }
-    }
-
-    return detections;
+    return findDefaultPiiMatches(content).map(({ label, rule, spans }) => ({
+      type: label,
+      confidence: 0.9,
+      message:
+        rule.kind === 'regex'
+          ? `PII pattern detected: ${rule.pattern.source}`
+          : 'PII pattern detected: credit-card (Luhn-validated)',
+      spans,
+    }));
   }
 
   private checkRateLimit(ctx: PolicyEvalContext): PolicyDetection[] {
@@ -1647,9 +1773,10 @@ export class BuiltinEngine implements PolicyEngine {
       mrn: /\b(?:MRN|Medical Record Number)[\s:#]*(\d{6,10})\b/gi,
       icd10: /\b[A-Z]\d{2}\.?\d{0,4}\b/g,
       cpt: /\b\d{5}\b/g,
-      npi: /\b(?:NPI[\s:#]*)?(\d{10})\b/gi,
+      npi: /\bNPI[\s:#]*(\d{10})\b/gi,
       date: /\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b/g,
-      identifier: /\b\d{6,10}\b/g,
+      identifier:
+        /\b(?:patient\s+(?:record|id|identifier)\s*[:#]|patient\s*[:#]|record(?:\s+id)?\s*[:#])\s*\d{6,10}\b/gi,
       dosage: /\b\d+\s*(?:mg|g|ml|cc|units?|tablets?|capsules?)\b/gi,
     };
 
@@ -1811,6 +1938,31 @@ export class BuiltinEngine implements PolicyEngine {
 
   /* ---- Action Allowlist engine ------------------------------------ */
 
+  // Parameter constraint rules an `actionConstraints` entry may carry, in
+  // addition to the `'required'` / `'forbidden'` shorthands and `type`:
+  //
+  //   { "enum": ["US", "CA"] }       value must be one of the listed values
+  //   { "min": 1, "max": 120 }       numeric bounds, inclusive
+  //   { "maxLength": 64 }            string length bound
+  //   { "pattern": "^Q-\\d{4}$" }    string must match the regex (anchored
+  //                                   only if the pattern says so)
+  //
+  // These let an org express a mandate on a tool leg ("create_order may ship
+  // to US/CA, at most 120 units, against a Q-#### quote") without a new
+  // engine.  Evaluated by `checkParameterValueConstraints` (module level, so
+  // the rules are unit-testable in isolation).
+  //
+  // An entry may also declare computed values from the call's numeric
+  // parameters and limit them like a parameter
+  // (internal design notes):
+  //
+  //   "$computed": { "order_total": "quantity * unit_price" },
+  //   "order_total": { "max": 50000 }
+  //
+  // A value that can't be computed (a missing or non-numeric parameter, a bad
+  // expression), or a computed name that is also a parameter of the call,
+  // counts as a violation: the limit fails closed.
+
   private checkActionAllowlist(ctx: PolicyEvalContext): PolicyDetection[] {
     const cfg = ctx.binding.config || {};
     const content = ctx.content;
@@ -1826,17 +1978,35 @@ export class BuiltinEngine implements PolicyEngine {
       return detections;
     }
 
-    // Parse for tool calls in multiple formats
     const toolCalls: {
       action: string;
       parameters?: Record<string, unknown>;
     }[] = [];
 
+    // #1413: on a tool leg the call under evaluation is known. Check that call
+    // by name, and do not guess further calls from text in its payload: an
+    // allowed `run_python` whose code holds `print(` is one call, not two.
+    //
+    // Parameter constraints apply to the invocation (the outbound phase). There
+    // a call that carries no parameter object has no parameters, so a
+    // `required` constraint fails rather than being skipped. On the inbound
+    // phase the payload is the tool's result, not its arguments, so only the
+    // name is checked.
+    if (ctx.toolName !== undefined) {
+      toolCalls.push({
+        action: ctx.toolName,
+        parameters:
+          ctx.direction === 'inbound' ? undefined : (ctx.toolParams ?? {}),
+      });
+    }
+    // On the message leg, parse the text for tool calls in multiple formats.
+    const text = ctx.toolName === undefined ? content : '';
+
     // OpenAI format: "tool_calls": [{"function": {"name": "...", "arguments": "..."}}]
-    const openaiMatch = content.match(/"tool_calls"\s*:\s*\[([\s\S]*?)\]/);
-    if (openaiMatch) {
+    const openaiList = bracketListAfterKey(text, 'tool_calls');
+    if (openaiList !== null) {
       try {
-        const calls = JSON.parse(`[${openaiMatch[1]}]`);
+        const calls = JSON.parse(`[${openaiList}]`);
         for (const call of calls) {
           if (call?.function?.name) {
             toolCalls.push({
@@ -1853,10 +2023,10 @@ export class BuiltinEngine implements PolicyEngine {
     }
 
     // Anthropic format: "tools": [{"name": "...", "input": {...}}]
-    const anthropicMatch = content.match(/"tools"\s*:\s*\[([\s\S]*?)\]/);
-    if (anthropicMatch) {
+    const anthropicList = bracketListAfterKey(text, 'tools');
+    if (anthropicList !== null) {
       try {
-        const calls = JSON.parse(`[${anthropicMatch[1]}]`);
+        const calls = JSON.parse(`[${anthropicList}]`);
         for (const call of calls) {
           if (call?.name) {
             toolCalls.push({
@@ -1871,10 +2041,11 @@ export class BuiltinEngine implements PolicyEngine {
     }
 
     // Generic function call format: function_name(...) or {"action": "...", "params": {...}}
-    const functionCallMatch = content.match(/\b(\w+)\s*\(/g);
+    const functionCallMatch = text.match(/\b(\w+)\s*\(/g);
     if (functionCallMatch && strictMode) {
       for (const match of functionCallMatch) {
-        const actionName = match.replace(/\s*\($/, '');
+        // Every match ends in '(' (see the pattern above); trim without a regex.
+        const actionName = match.slice(0, -1).trimEnd();
         if (
           actionName &&
           !['if', 'for', 'while', 'function', 'const', 'let', 'var'].includes(
@@ -1888,18 +2059,23 @@ export class BuiltinEngine implements PolicyEngine {
 
     // Check JSON objects with "action" or "function" keys
     try {
-      const jsonMatch = content.match(
-        /\{[\s\S]*?"(?:action|function)"\s*:\s*"([^"]+)"[\s\S]*?\}/g,
-      );
-      if (jsonMatch) {
-        for (const obj of jsonMatch) {
-          const parsed = JSON.parse(obj);
-          if (parsed.action || parsed.function) {
-            toolCalls.push({
-              action: parsed.action || parsed.function,
-              parameters: parsed.params || parsed.parameters || parsed.input,
-            });
-          }
+      for (const obj of extractActionObjects(text)) {
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(obj) as Record<string, unknown>;
+        } catch {
+          continue; // not a JSON object after all — skip just this candidate
+        }
+        const action = parsed.action || parsed.function;
+        if (typeof action === 'string' && action) {
+          const parameters = parsed.params || parsed.parameters || parsed.input;
+          toolCalls.push({
+            action,
+            parameters:
+              parameters && typeof parameters === 'object'
+                ? (parameters as Record<string, unknown>)
+                : undefined,
+          });
         }
       }
     } catch {
@@ -1922,8 +2098,24 @@ export class BuiltinEngine implements PolicyEngine {
       // Check parameter constraints if specified
       const constraints = actionConstraints[toolCall.action];
       if (constraints && toolCall.parameters) {
+        const parameters = toolCall.parameters;
+        const computed = computeValues(constraints[COMPUTED_KEY], parameters);
         for (const [param, constraint] of Object.entries(constraints)) {
-          const value = toolCall.parameters[param];
+          if (param === COMPUTED_KEY) continue;
+          const result = computed.get(param);
+          if (result) {
+            detections.push(
+              ...computedValueDetections(
+                toolCall.action,
+                param,
+                result,
+                constraint,
+                Object.hasOwn(parameters, param),
+              ),
+            );
+            continue;
+          }
+          const value = parameters[param];
 
           // Check required parameters
           if (constraint === 'required' && value === undefined) {
@@ -1943,10 +2135,10 @@ export class BuiltinEngine implements PolicyEngine {
             });
           }
 
-          // Check type constraints
+          // Check type and value constraints
           if (typeof constraint === 'object' && constraint !== null) {
-            const typeConstraint = (constraint as Record<string, unknown>)
-              .type as string | undefined;
+            const rules = constraint as Record<string, unknown>;
+            const typeConstraint = rules.type as string | undefined;
             if (typeConstraint && value !== undefined) {
               const actualType = typeof value;
               if (actualType !== typeConstraint) {
@@ -1955,7 +2147,21 @@ export class BuiltinEngine implements PolicyEngine {
                   confidence: 0.9,
                   message: `Action "${toolCall.action}" parameter "${param}" expected type "${typeConstraint}", got "${actualType}"`,
                 });
+                // A value of the wrong type cannot satisfy the value rules
+                // below; one detection per parameter is enough.
+                continue;
               }
+            }
+            if (value === undefined) continue;
+            for (const violation of checkParameterValueConstraints(
+              value,
+              rules,
+            )) {
+              detections.push({
+                type: 'parameter-constraint-violation',
+                confidence: 1.0,
+                message: `Action "${toolCall.action}" parameter "${param}" ${violation}`,
+              });
             }
           }
         }
@@ -2083,7 +2289,9 @@ export class BuiltinEngine implements PolicyEngine {
     const content = ctx.content;
     const detections: PolicyDetection[] = [];
 
-    // Citation patterns (declared early for reuse in custom patterns path)
+    // Citation patterns (declared early for reuse in custom patterns path).
+    // Markdown links and <url> autolinks are counted by linear scanners
+    // instead: as regexes they were quadratic on crafted content.
     const CITATION_PATTERNS = [
       /\[\d+\]/g, // [1], [2], etc.
       /\(\w+\s+et\s+al\.?,?\s+\d{4}\)/gi, // (Smith et al., 2020)
@@ -2092,12 +2300,17 @@ export class BuiltinEngine implements PolicyEngine {
       /\breference:\s*/i,
       /\bcitation:\s*/i,
       /https?:\/\/[^\s]+/g, // URLs
-      /\[.*?\]\(https?:\/\/[^\)]+\)/g, // Markdown links [text](url)
-      /<https?:\/\/[^>]+>/g, // <url>
       /\b[Aa]ccording to\s+(?:the\s+)?(?:[A-Z]\w+|most\s+\w+)/g, // Named-source attribution
       /\b[Pp]er\s+(?:the\s+)?[A-Z]\w+/g, // "Per the [Org]" attribution
       /\b[Aa]s\s+(?:noted|reported|stated)\s+by\s+(?:the\s+)?[A-Z]\w+/g, // "As noted by [Source]"
     ];
+    const countCitations = (text: string): number => {
+      let count = countMarkdownLinks(text) + countAngleBracketUrls(text);
+      for (const cp of CITATION_PATTERNS) {
+        count += text.match(new RegExp(cp.source, cp.flags))?.length ?? 0;
+      }
+      return count;
+    };
 
     // ── Custom patterns (additional claim detectors, independent of built-in) ──
     const customPatterns = (cfg.customPatterns as string[]) || [];
@@ -2106,13 +2319,7 @@ export class BuiltinEngine implements PolicyEngine {
         const regex = safeRegex(patternStr);
         if (regex?.test(content)) {
           // Custom pattern matched a claim — check if citations are present
-          let citationCount = 0;
-          for (const cp of CITATION_PATTERNS) {
-            const matches = content.match(new RegExp(cp.source, cp.flags));
-            if (matches) {
-              citationCount += matches.length;
-            }
-          }
+          const citationCount = countCitations(content);
           const minCit = (cfg.minCitations as number) ?? 1;
           if (citationCount < minCit) {
             detections.push({
@@ -2154,17 +2361,7 @@ export class BuiltinEngine implements PolicyEngine {
       return detections; // No factual claims, no citation needed
     }
 
-    // Count citations
-    let citationCount = 0;
-    const foundCitations: string[] = [];
-
-    for (const pattern of CITATION_PATTERNS) {
-      const matches = content.match(pattern);
-      if (matches) {
-        citationCount += matches.length;
-        foundCitations.push(...matches);
-      }
-    }
+    const citationCount = countCitations(content);
 
     // Check if URL citations are required
     if (requireUrls) {
@@ -2239,7 +2436,7 @@ export class BuiltinEngine implements PolicyEngine {
     // Tier 2: Concerning but less immediate patterns
     const TIER_2_CONCERNING = [
       /\bsuicidal\s+(?:thoughts?|ideation)\b/i,
-      /\bself\s*-?\s*harm\b/i,
+      /\bself[\s-]{0,5}harm\b/i, // `\s*-?\s*` splits a run of spaces two ways (quadratic)
       /\bcutting\s+myself\b/i,
       /\bi\s+hate\s+myself\b/i,
       /\bi\s+wish\s+i\s+was\s+dead\b/i,

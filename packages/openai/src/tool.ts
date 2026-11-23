@@ -75,28 +75,22 @@ export function spellguardTool<TArgs = unknown, TResult = unknown>(
         parameters: options.parameters,
       },
     },
+    // No catch around the checks (#1418): `checkToolPolicy` never throws and
+    // fails closed unless `failOpen` is configured. A catch here that carried
+    // on ran the tool, or returned its output, with no policy decision.
     execute: async (args: TArgs): Promise<TResult | string | null> => {
-      try {
-        const inp = await checkToolPolicy('input', options.name, args);
-        if (inp.effect === 'block')
-          return (inp.message ?? '[BLOCKED]') as TResult | string;
-        if (inp.effect === 'redact')
-          return (inp.message ?? '[BLOCKED]') as TResult | string;
-      } catch {
-        // Fail open
-      }
+      const inp = await checkToolPolicy('input', options.name, args);
+      if (inp.effect === 'block')
+        return (inp.message ?? '[BLOCKED]') as TResult | string;
+      if (inp.effect === 'redact')
+        return (inp.message ?? '[BLOCKED]') as TResult | string;
 
       const result = await options.execute(args);
 
-      try {
-        const out = await checkToolPolicy('output', options.name, args, result);
-        if (out.effect === 'block')
-          return (out.message ?? '[BLOCKED]') as TResult | string;
-        if (out.effect === 'redact')
-          return (out.data ?? null) as TResult | null;
-      } catch {
-        // Fail open
-      }
+      const out = await checkToolPolicy('output', options.name, args, result);
+      if (out.effect === 'block')
+        return (out.message ?? '[BLOCKED]') as TResult | string;
+      if (out.effect === 'redact') return (out.data ?? null) as TResult | null;
 
       return result;
     },

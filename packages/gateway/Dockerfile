@@ -10,6 +10,12 @@
 # was causing tsx to be missing at runtime.
 
 FROM node:22-slim
+
+# Reproducible builds (#1410): BuildKit stamps the image, and with
+# `rewrite-timestamp=true` every layer's files, with this time instead of the
+# build's. Pass the commit's: --build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+ARG SOURCE_DATE_EPOCH
+
 WORKDIR /app
 
 COPY packages/gateway/package.json packages/gateway/tsconfig.json ./

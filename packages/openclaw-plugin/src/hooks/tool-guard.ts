@@ -18,10 +18,11 @@ export function createToolGuard(config: HookConfig) {
     },
   ) => {
     const toolName = event.toolName ?? event.name ?? '';
+    // #1417: every call is evaluated, a no-argument one as `{}`. Policies that
+    // decide from the tool's name (allowlists, irreversible gates, rate and
+    // sequence policies) must see it.
     const params = event.params ?? event.arguments ?? {};
     const paramsStr = JSON.stringify(params);
-
-    if (!paramsStr || paramsStr === '{}') return {};
 
     // Resolve platform from stash (stashed by before_dispatch guard)
     let channel: string | undefined;

@@ -15,6 +15,7 @@
 
 import { getConfig } from './attestation';
 import type { SpellguardConfig } from './types';
+import { keepInvocationAlive } from './wait-until';
 
 /** One self-reported usage event (matches the management ingest contract). */
 export interface UsageEvent {
@@ -61,7 +62,9 @@ function envVar(name: string): string | undefined {
  * `managementUrl` (managed/discovery path), then `SPELLGUARD_MANAGEMENT_URL` /
  * `SPELLGUARD_BASE_URL`. Returns null when none is known (emit skips).
  */
-function resolveManagementBase(cfg: SpellguardConfig | null): string | null {
+export function resolveManagementBase(
+  cfg: SpellguardConfig | null,
+): string | null {
   const raw =
     cfg?.managementUrl ??
     envVar('SPELLGUARD_MANAGEMENT_URL') ??
@@ -124,9 +127,11 @@ export function reportUsageEvent(
   if (deps?.await) {
     return run().catch(() => undefined);
   }
-  // Fire-and-forget: swallow everything, including a synchronous throw.
+  // Fire-and-forget: swallow everything, including a synchronous throw. On
+  // Workers the pending POST is handed to the invocation's waitUntil, or
+  // workerd cancels it when the response returns (#1506).
   try {
-    void run().catch(() => undefined);
+    keepInvocationAlive(run().catch(() => undefined));
   } catch {
     /* fail-open */
   }
@@ -144,13 +149,17 @@ export function modelIdOf(model: unknown, fallback = 'unknown'): string {
 }
 
 /**
- * Build + emit a usage event from an ai-sdk result's `usage` field
- * (`{ promptTokens, completionTokens, totalTokens }` in ai-sdk v4). DRYs the
- * `generateText` + `intent` call sites. No-op when usage is absent.
+ * Build + emit a usage event from an ai-sdk result's `usage` field. ai-sdk 5+
+ * reports `{ inputTokens, outputTokens, totalTokens }`; v4 reported
+ * `{ promptTokens, completionTokens, totalTokens }` — both shapes are accepted so
+ * a consumer still on v4 keeps its telemetry. DRYs the `generateText` +
+ * `intent` call sites. No-op when usage is absent.
  */
 export function reportAiSdkUsage(
   usage:
     | {
+        inputTokens?: number;
+        outputTokens?: number;
         promptTokens?: number;
         completionTokens?: number;
         totalTokens?: number;
@@ -160,14 +169,14 @@ export function reportAiSdkUsage(
   deps?: ReportUsageDeps,
 ): void | Promise<void> {
   if (!usage) return;
+  const promptTokens = usage.inputTokens ?? usage.promptTokens ?? 0;
+  const completionTokens = usage.outputTokens ?? usage.completionTokens ?? 0;
   return reportUsageEvent(
     {
       model,
-      promptTokens: usage.promptTokens ?? 0,
-      completionTokens: usage.completionTokens ?? 0,
-      totalTokens:
-        usage.totalTokens ??
-        (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0),
+      promptTokens,
+      completionTokens,
+      totalTokens: usage.totalTokens ?? promptTokens + completionTokens,
     },
     deps,
   );

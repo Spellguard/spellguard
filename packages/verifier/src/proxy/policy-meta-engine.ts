@@ -40,7 +40,8 @@
  * same turn. This is the generalised form of the exfil-flow-detection pattern:
  * any untrusted → privileged transition is flagged, not just network writes.
  *
- * Uses ctx.recentMessages to track source signals.
+ * Uses ctx.recentMessages, which the tool legs fill with the agent's recent
+ * tool calls (`evaluateToolCallPolicies`).
  *
  * Config:
  *   untrustedSources?: string[]   — regex patterns identifying untrusted reads
@@ -49,6 +50,7 @@
  *   label?: string                — default: 'data-flow-taint'
  */
 
+import { invokedCallText } from './message-buffer';
 import type {
   PolicyDetection,
   PolicyEngine,
@@ -90,6 +92,15 @@ function evaluateToolCallRateLimit(ctx: PolicyEvalContext): PolicyDetection[] {
   const toolName = (cfg.toolName as string) || '*';
   const maxCalls = (cfg.maxCalls as number) || 10;
   const windowSeconds = (cfg.windowSeconds as number) || 60;
+
+  // A limit that names a tool counts calls to that tool only.
+  if (
+    toolName !== '*' &&
+    ctx.toolName !== undefined &&
+    ctx.toolName !== toolName
+  ) {
+    return [];
+  }
 
   const agentId = ctx.agentId || 'unknown';
   const bucketKey = `${agentId}:${toolName}`;
@@ -250,8 +261,10 @@ function evaluateCrossToolDataFlow(ctx: PolicyEvalContext): PolicyDetection[] {
     ...compilePatterns(extraPrivilegedPatterns),
   ];
 
+  const current = invokedCallText(ctx);
+  if (current === null) return [];
   const currentIsPrivileged = allPrivilegedPatterns.some((re) =>
-    re.test(ctx.content),
+    re.test(current),
   );
   if (!currentIsPrivileged) return [];
 

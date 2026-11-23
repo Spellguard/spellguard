@@ -116,43 +116,80 @@ async function discoverAgentUrl(agentName: string): Promise<string | null> {
   }
 
   // 2. Query management server for the agent's endpoint URL
-  const managementUrl = process.env.MANAGEMENT_URL?.replace(/\/v1\/?$/, '');
-  const verifierId = process.env.VERIFIER_ID || 'verifier-local-dev';
-
-  if (managementUrl) {
-    try {
-      // GET request — sign with empty body
-      const headers = await signRequest('');
-      const response = await fetch(
-        `${managementUrl}/v1/internal/agents/resolve/${encodeURIComponent(normalized)}`,
-        {
-          headers,
-          signal: AbortSignal.timeout(5000),
-        },
-      );
-
-      if (response.ok) {
-        const data = (await response.json()) as {
-          agentId: string;
-          name: string;
-          endpointUrl: string | null;
-        };
-        if (data.endpointUrl) {
-          const url = `${data.endpointUrl.replace(/\/$/, '')}/.well-known/agent.json`;
-          console.log(
-            `[Discovery] Management resolved ${normalized} to ${data.endpointUrl}`,
-          );
-          return url;
-        }
-      }
-    } catch (error) {
-      console.warn(
-        `[Discovery] Management resolution failed for ${normalized}: ${error}`,
-      );
-    }
+  const data = await resolveViaManagement(normalized);
+  if (data?.endpointUrl) {
+    const url = `${data.endpointUrl.replace(/\/$/, '')}/.well-known/agent.json`;
+    console.log(
+      `[Discovery] Management resolved ${normalized} to ${data.endpointUrl}`,
+    );
+    return url;
   }
 
   return null;
+}
+
+/** Management's `/v1/internal/agents/resolve/:agentId` response. */
+interface ManagementResolveResponse {
+  agentId: string;
+  name: string | null;
+  endpointUrl: string | null;
+  /** Absent from a management deploy that predates #1528. */
+  encryption?: { mode?: unknown; publicKey?: unknown };
+}
+
+async function resolveViaManagement(
+  normalized: string,
+): Promise<ManagementResolveResponse | null> {
+  const managementUrl = process.env.MANAGEMENT_URL?.replace(/\/v1\/?$/, '');
+  if (!managementUrl) return null;
+  try {
+    // GET request — sign with empty body
+    const url = `${managementUrl}/v1/internal/agents/resolve/${encodeURIComponent(normalized)}`;
+    const headers = await signRequest('GET', url, '');
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as ManagementResolveResponse;
+  } catch (error) {
+    console.warn(
+      `[Discovery] Management resolution failed for ${normalized}: ${error}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * How a delivery to an agent must be encrypted (#1528). `unknown` covers no
+ * management, a management outage, an agent with no key on record and an old
+ * management deploy: a missing key is never read as "send plaintext" here.
+ */
+export type RecipientEncryption =
+  | { mode: 'full'; publicKey: string }
+  | { mode: 'legacy' }
+  | { mode: 'unknown' };
+
+/**
+ * Ask management how to encrypt to an agent the Verifier's registry does not
+ * hold. The registry loses every agent's key on a session-key rotation or a
+ * restart, but the key is the agent's and has not changed, so management's copy
+ * (written from the agent's last registration) is the one to use.
+ */
+export async function resolveRecipientEncryption(
+  agentId: string,
+): Promise<RecipientEncryption> {
+  const normalized = agentId.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  const encryption = (await resolveViaManagement(normalized))?.encryption;
+  if (
+    encryption?.mode === 'full' &&
+    typeof encryption.publicKey === 'string' &&
+    /^[0-9a-f]{64}$/.test(encryption.publicKey)
+  ) {
+    return { mode: 'full', publicKey: encryption.publicKey };
+  }
+  if (encryption?.mode === 'legacy') return { mode: 'legacy' };
+  return { mode: 'unknown' };
 }
 
 /**

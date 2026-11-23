@@ -1,0 +1,14 @@
+{
+  "bucket": "spellguard-audit-checkpoints-test",
+  "versions": [
+    {
+      "key": "audit-checkpoints/keys/0d9073359ae9f4da.json",
+      "version_id": "k1-a",
+      "last_modified": "2026-11-09T22:17:00.000Z",
+      "lock_mode": "COMPLIANCE",
+      "retain_until": "2027-12-14T22:17:00.000Z",
+      "body": "{\"format\":1,\"kind\":\"verifier-audit-key\",\"algorithm\":\"ed25519\",\"key_id\":\"0d9073359ae9f4da\",\"public_key\":\"c59366398f7bc6f6a6950d684eac7480622afef37c3f0d80ac62c96273983e5f\"}\n"
+    }
+  ],
+  "delete_markers": []
+}

@@ -18,57 +18,45 @@ export function createDbAdapter(
     fetchExisting: async (): Promise<CatalogEntry[]> => {
       const rows = await sql`
         SELECT slug, name, description, type, level,
-               severity, fail_behavior, dsl_source
+               severity, fail_behavior, config, default_binding
         FROM policies
       `;
-      return rows.map((row) => {
-        const dslSource =
-          typeof row.dsl_source === 'string'
-            ? JSON.parse(row.dsl_source)
-            : (row.dsl_source ?? {});
-        return {
-          slug: row.slug,
-          name: row.name,
-          description: row.description ?? '',
-          type: row.type,
-          level:
-            row.level === 'system' ? ('system' as const) : ('org' as const),
-          severity: row.severity ?? undefined,
-          failBehavior: row.fail_behavior ?? undefined,
-          config: dslSource.config ?? dslSource,
-          defaultBinding: dslSource.defaultBinding ?? {
-            direction: 'inbound' as const,
-            effect: 'block' as const,
-            priority: 100,
-          },
-          provenance: { source: 'db', dateAdded: '' },
-        };
-      });
+      return rows
+        .filter((row) => row.type !== 'dsl')
+        .map((row) => {
+          return {
+            slug: row.slug,
+            name: row.name,
+            description: row.description ?? '',
+            type: row.type,
+            level:
+              row.level === 'system' ? ('system' as const) : ('org' as const),
+            severity: row.severity ?? undefined,
+            failBehavior: row.fail_behavior ?? undefined,
+            config: row.config ?? {},
+            defaultBinding: row.default_binding ?? undefined,
+            provenance: { source: 'db', dateAdded: '' },
+          };
+        });
     },
 
     insertPolicy: async (entry: CatalogEntry): Promise<void> => {
-      const dslSource = JSON.stringify({
-        config: entry.config,
-        defaultBinding: entry.defaultBinding,
-      });
       await sql`
         INSERT INTO policies (
           slug, name, description, type, level,
-          severity, fail_behavior, dsl_source, is_public, version
+          severity, fail_behavior, config, default_binding, is_public, version
         ) VALUES (
           ${entry.slug}, ${entry.name}, ${entry.description},
           ${entry.type}, ${entry.level},
-          ${entry.severity ?? 'medium'}, ${entry.failBehavior ?? 'block'}, ${dslSource}::jsonb,
+          ${entry.severity ?? 'medium'}, ${entry.failBehavior ?? 'block'},
+          ${sql.json(entry.config as unknown as postgres.JSONValue)}::jsonb,
+          ${entry.defaultBinding === undefined ? null : sql.json(entry.defaultBinding)}::jsonb,
           true, '1.0'
         )
       `;
     },
 
     updatePolicy: async (slug: string, entry: CatalogEntry): Promise<void> => {
-      const dslSource = JSON.stringify({
-        config: entry.config,
-        defaultBinding: entry.defaultBinding,
-      });
       await sql`
         UPDATE policies SET
           name = ${entry.name},
@@ -77,7 +65,9 @@ export function createDbAdapter(
           level = ${entry.level},
           severity = ${entry.severity ?? 'medium'},
           fail_behavior = ${entry.failBehavior ?? 'block'},
-          dsl_source = ${dslSource}::jsonb,
+          config = ${sql.json(entry.config as unknown as postgres.JSONValue)}::jsonb,
+          default_binding = ${entry.defaultBinding === undefined ? null : sql.json(entry.defaultBinding)}::jsonb,
+          dsl_source = NULL,
           updated_at = NOW()
         WHERE slug = ${slug}
       `;

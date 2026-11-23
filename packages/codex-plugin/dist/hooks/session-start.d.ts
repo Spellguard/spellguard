@@ -1,7 +1,7 @@
-import type { SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { type GithubCredentialDescriptor } from '@spellguard/agent-control';
 import { type ReadConfigResult, type SpellguardConfig } from '../lib/config-store';
-import { type DaemonResult } from '../lib/daemon-spawn';
+import { type DaemonResult, ensureCredentialDaemonRunning } from '../lib/daemon-spawn';
 import { type GitVersion } from '../lib/git-version-check';
 import { type PlatformInfo } from '../lib/platform-check';
 import { type SshDetectionResult } from '../lib/ssh-remote-detect';
@@ -32,12 +32,27 @@ export interface SessionStartDeps {
      * Test callers supply a `vi.fn()` here; assertions check the argv and
      * config-dir args rather than the in-process client construction.
      */
-    spawnDaemon?: (execPath: string, args: string[], opts: SpawnOptions) => void;
+    spawnDaemon?: (execPath: string, args: string[], opts: SpawnOptions) => ChildProcess | undefined;
+    /** Test seam for daemon lifecycle outcomes and diagnostics. */
+    ensureDaemonRunning?: typeof ensureCredentialDaemonRunning;
     /**
      * Override the config directory used for PID file resolution. Defaults to
      * `defaultConfigDir()`. Tests pass an isolated temp dir.
      */
     configDir?: string;
+    /**
+     * R3-4/R3-5/R3-6: positive managed-mode gate. Defaults to the real R3-1 marker
+     * reader (`isManagedBox()` from `@spellguard/agent-control`, which reads the
+     * SHARED root's `.managed`). TRUE ⇒ a genuinely Spellguard-provisioned managed
+     * box: the global-gitconfig healer (R3-5) AND the per-session scoped
+     * config.toml credential injection (R3-4) stand down (the global placement is
+     * authoritative there). FALSE (the default everywhere — absent OR corrupt
+     * marker) ⇒ both stay active (fail-closed — R3-6). The SOLE signal is the
+     * marker file, NEVER ambient env (NEG-7). Injected so tests can pin a temp
+     * root (`() => isManagedBox(root)`) and never touch the real
+     * `~/.config/spellguard` / `~/.gitconfig`.
+     */
+    isManagedBox?: () => boolean;
     /**
      * Poll the local config file until it shows an `expiresAt` value newer than
      * `initialExpiresAt`, or until `timeoutMs` elapses.

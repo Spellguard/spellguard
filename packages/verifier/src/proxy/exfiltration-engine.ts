@@ -134,7 +134,9 @@ const CORPORATE_EDUCATIONAL_CONTEXT =
   /\b(?:law|legal\s+(?:compliance|training|framework|standard|requirement|obligation|guide|regulation)|compliance|training|best\s+practices?|overview|tutorial|course|soc\s*2|gdpr|hipaa)\b/i;
 
 const CORPORATE_TARGET_OWNERSHIP =
-  /(?:\b(?:their|its)\b|[A-Z][A-Za-z0-9&.-]*'s)/i;
+  // Bounded proper-noun run: an unbounded `[A-Za-z0-9&.-]*` retried from every
+  // offset is quadratic on long words (CodeQL js/polynomial-redos).
+  /(?:\b(?:their|its)\b|\b[A-Z][A-Za-z0-9&.-]{0,64}'s)/i;
 
 function shouldSuppressCorporateSolicitation(content: string): boolean {
   return (
@@ -261,9 +263,11 @@ function detectCsvDumps(content: string, threshold: number): PolicyDetection[] {
 function detectRepeatedRecords(content: string): PolicyDetection[] {
   // Look for repeated patterns like "Name: ..., Email: ..., Phone: ..."
   const recordPatterns = [
-    /(?:name|user|account):\s*\S+.*?(?:email|mail):\s*\S+/gi,
-    /(?:id|user_id|account_id):\s*\d+.*?(?:name|username):\s*\S+/gi,
-    /\{[^}]*"(?:id|name|email|user)"[^}]*\}/gi,
+    // Bounded spans: `\S+.*?` / `[^}]*…[^}]*` are quadratic when the text
+    // repeats the key without the closer (CodeQL js/polynomial-redos).
+    /(?:name|user|account):\s*\S{1,200}[^\n]{0,500}?(?:email|mail):\s*\S{1,200}/gi,
+    /(?:id|user_id|account_id):\s*\d{1,32}[^\n]{0,500}?(?:name|username):\s*\S{1,200}/gi,
+    /\{[^}]{0,500}"(?:id|name|email|user)"[^}]{0,500}\}/gi,
   ];
 
   for (const pattern of recordPatterns) {

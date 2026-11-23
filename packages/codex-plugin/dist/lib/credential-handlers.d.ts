@@ -33,6 +33,11 @@ export interface CredentialHandlerDeps {
     writeConfigImpl: (cfg: SpellguardConfig) => void;
     /** Mark the stored config as revoked. */
     markConfigRevokedImpl: () => void;
+    /**
+     * #1348: drop every placed credential but keep the identity (a 4423
+     * suspension). Optional: only the daemon handles a suspension.
+     */
+    markConfigSuspendedImpl?: () => void;
     /** Read current config (re-read on each call to avoid clobbering concurrent updates). */
     readConfigImpl: () => ReadConfigResult;
     /**
@@ -46,6 +51,16 @@ export interface CredentialHandlerDeps {
      * remote. See `git-insteadof-rules.ts`.
      */
     sshRewriteRepo?: RepoIdentity;
+    /**
+     * R3-4: positive managed-mode gate. Defaults to the real R3-1 marker reader
+     * (`isManagedBox()` from `@spellguard/agent-control`). TRUE ⇒ the daemon's
+     * per-session SCOPED config.toml credential-helper install stands down (the
+     * global placement is authoritative; double-writing conflicts); the on-disk
+     * credential state is still persisted. FALSE (the default — absent OR corrupt
+     * marker) ⇒ the scoped install runs as before (fail-closed — R3-6). Signal is
+     * the marker, never ambient env (NEG-7). Injected so tests can pin a temp root.
+     */
+    isManagedBox?: () => boolean;
 }
 /**
  * Handle a `credential_delivered` or `credential_rotated` frame.
@@ -65,7 +80,7 @@ export interface CredentialHandlerDeps {
  * helper + `useHttpPath=true`) rather than the env-file Claude Code uses; the
  * per-org token selection itself lives in the git-tokens file.
  */
-export declare function handleCredentialUpdate(frame: CredentialDeliveredFrame | CredentialRotatedFrame, deps: CredentialHandlerDeps): void;
+export declare function handleCredentialUpdate(frame: CredentialDeliveredFrame | CredentialRotatedFrame, deps: CredentialHandlerDeps): boolean;
 /**
  * Handle a `config_updated` frame by persisting the new provider
  * configuration descriptor to the local config-store under `providerConfig`.
@@ -81,12 +96,12 @@ export declare function handleConfigUpdate(frame: ConfigUpdatedFrame, deps: Cred
  * Phase C: revocation is PER ENTRY. The frame's `scoped_token_id` selects the
  * one org entry to mark revoked; the `git-tokens` file is regenerated (via the
  * config write) so only that org's line disappears while sibling orgs keep
- * pushing. The credential helper is cleared and the WHOLE config marked revoked
- * ONLY when no unrevoked github entry remains.
+ * pushing. When no unrevoked github entry remains, the local token consumers
+ * are emptied but the agent identity and pinned Codex helper remain so the
+ * daemon can consume a different-ID replacement.
  *
- * @returns `anyRemaining` — `true` if at least one unrevoked github entry
- *   survives (the daemon stays alive); `false` when the last entry died (the
- *   daemon's `onCredentialRevoked` then calls `shutdown()`).
+ * @returns `recoverable` — `true` when the identity remains capable of
+ *   receiving a replacement; `false` only when no readable config exists.
  */
 export declare function handleCredentialRevoked(frame: CredentialRevokedFrame, deps: CredentialHandlerDeps): boolean;
 /**
@@ -104,6 +119,18 @@ export declare function handleCredentialRevoked(frame: CredentialRevokedFrame, d
  * process exit policy).
  */
 export declare function handleAuthFailedClose(code: number, deps: CredentialHandlerDeps): boolean;
+/**
+ * Handle an AGENT_SUSPENDED (4423) close (#1348): the agent is quarantined.
+ *
+ * Unlike a 4401, the agent is not gone: a release brings it back. Drop every
+ * GitHub credential this plugin placed (config, `git-tokens`, the V5
+ * authority, the gh session config) and keep the identity and the helper
+ * wiring, so git keeps routing through the helper (which now serves nothing)
+ * and the daemon, which stays running, picks up whatever the server delivers
+ * after the release. Returns false when there is nothing wired to drop the
+ * config with.
+ */
+export declare function handleSuspended(deps: CredentialHandlerDeps): boolean;
 /**
  * Recognize a WebSocket UPGRADE-time auth rejection (leg-B finding from the
  * 2026-06-11 deployed acceptance run): a DELETED agent's reconnect is

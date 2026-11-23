@@ -10,6 +10,8 @@ import {
   type CredentialDeliveredFrame,
   type CredentialDescriptor,
   type GithubCredentialDescriptor,
+  describeGithubCredentialScope,
+  isManagedBox,
 } from '@spellguard/agent-control';
 import {
   type SpellguardConfig,
@@ -412,6 +414,16 @@ export interface SetupArgs {
    */
   daemonConfigDir?: string;
   /**
+   * Stage 4 Gap B gate — positive managed-mode detection. Defaults to the real
+   * R3-1 marker reader (`isManagedBox()` from `@spellguard/agent-control`).
+   * TRUE ⇒ a genuinely Spellguard-provisioned managed box, where the Go
+   * box-daemon owns the agent-control socket + credential placement, so setup
+   * must NOT spawn the per-session Node credential daemon (two daemons contend
+   * on the DO's single socket). Injected so tests can pin a value without
+   * touching the real `~/.config/spellguard`.
+   */
+  isManagedBox?: () => boolean;
+  /**
    * How long to wait (ms) for the GitHub credential to land on disk after
    * the daemon is started. The dashboard wizard's "Connect GitHub" step
    * usually completes within a minute or two of bootstrap, so waiting lets
@@ -509,7 +521,9 @@ export async function runSpellguardSetup(
         lines.push(`  expires_at=${existing.config.expiresAt}`);
       }
       if (existing.config.scopeSummary) {
-        lines.push(`  repos=${existing.config.scopeSummary.repos.join(', ')}`);
+        lines.push(
+          `  scope=${describeGithubCredentialScope(existing.config.scopeSummary)}`,
+        );
       } else {
         lines.push(
           '  github=not connected (complete the dashboard GitHub-App install to grant repo access)',
@@ -768,13 +782,22 @@ export async function runSpellguardSetup(
   // CLAUDE_ENV_FILE is hook-only and typically absent here; the daemon
   // tolerates that by skipping env-file updates (the next SessionStart hook
   // injects the git-credential env for its session).
-  const daemonResult = ensureCredentialDaemonRunning({
-    config: writtenConfig,
-    cwd: process.cwd(),
-    envFilePath: process.env.CLAUDE_ENV_FILE,
-    spawnDaemon: args.spawnDaemon,
-    configDir: args.daemonConfigDir,
-  });
+  // Stage 4 Gap B: on a genuinely MANAGED box the Go box-daemon owns the
+  // agent-control socket + credential placement, so setup must NOT spawn the
+  // per-session Node credential daemon (two daemons contend on the DO's single
+  // socket). Consistent with the session-start standdown: the managed
+  // provisioning path runs the managed-bootstrap dispatcher, not this browser
+  // flow, but we gate here too so no setup surface self-spawns on managed.
+  const managed = (args.isManagedBox ?? isManagedBox)();
+  const daemonResult: DaemonResult = managed
+    ? { daemon: 'skipped', reason: 'managed_box' }
+    : ensureCredentialDaemonRunning({
+        config: writtenConfig,
+        cwd: process.cwd(),
+        envFilePath: process.env.CLAUDE_ENV_FILE,
+        spawnDaemon: args.spawnDaemon,
+        configDir: args.daemonConfigDir,
+      });
 
   // Ensure the local code-attribution store has a usable SQLite backend.
   // On a marketplace install (bare clone of the committed dist/, no
@@ -845,7 +868,7 @@ export async function runSpellguardSetup(
         : '';
     renderMessage({
       level: 'info',
-      message: `Spellguard: GitHub credential received — repos=[${delivered.scopeSummary.repos.join(', ')}].${author}\n  Git-credential protection for this session finishes wiring at the next session start (restart or /clear).`,
+      message: `Spellguard: GitHub credential received — scope=${describeGithubCredentialScope(delivered.scopeSummary)}.${author}\n  Git-credential protection for this session finishes wiring at the next session start (restart or /clear).`,
     });
     return { ok: true, daemon: daemonResult, githubCredential: 'delivered' };
   }

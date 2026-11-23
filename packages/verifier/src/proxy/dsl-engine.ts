@@ -840,7 +840,7 @@ export class DslEngine implements PolicyEngine {
   }
 
   private handleError(ctx: PolicyEvalContext, err: unknown): PolicyDetection[] {
-    const failBehavior = ctx.binding.failBehavior ?? 'allow';
+    const failBehavior = ctx.binding.failBehavior ?? 'block';
     if (failBehavior === 'block') {
       const message =
         err instanceof Error

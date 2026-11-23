@@ -98,3 +98,45 @@ export function encryptResponseForRequester(
     ),
   };
 }
+
+/**
+ * #1528: the reasons a recipient gives for refusing a delivery because of how
+ * it was encrypted: plaintext to an agent that registered a key, or ciphertext
+ * for a key it no longer holds. The agent refuses before running its handler,
+ * and has registered with the Verifier by then, so the Verifier can deliver
+ * once more to the key it just registered.
+ */
+const KEY_REFUSAL_REASONS = new Set(['plaintext_refused', 'decrypt_failed']);
+
+/**
+ * A delivery the recipient (or its gateway) answered with an error status. It
+ * keeps the default `name`, so the sender's error still reads
+ * "Error: Recipient returned …" as it did before this class existed.
+ */
+export class RecipientDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** The machine `reason` from the recipient's JSON error body, if any. */
+    readonly reason?: string,
+  ) {
+    super(message);
+  }
+
+  /** True when the recipient refused the delivery over its encryption. */
+  get isKeyRefusal(): boolean {
+    return this.reason !== undefined && KEY_REFUSAL_REASONS.has(this.reason);
+  }
+}
+
+/** The `reason` field of a recipient's JSON error body, when it has one. */
+export function refusalReason(bodyText: string): string | undefined {
+  try {
+    const parsed = JSON.parse(bodyText) as { reason?: unknown };
+    return typeof parsed?.reason === 'string' && parsed.reason
+      ? parsed.reason
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}

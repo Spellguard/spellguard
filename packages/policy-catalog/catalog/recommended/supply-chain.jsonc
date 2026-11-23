@@ -1,0 +1,193 @@
+{
+  // Supply-chain preset policies (internal design notes).
+  //
+  // Bound to every org created with the `supply-chain` industry preset
+  // (closed source), alongside
+  // the generic secrets-baseline, pii-detection, injection-direct-override,
+  // injection-debug-mode and regex-token-leak entries.  The tool names and
+  // the mandate values match the demo fleet's corpus
+  // (closed source); a real tenant edits the
+  // config to its own deal registrations.
+  "policies": [
+    {
+      "slug": "supply-chain-mandate-conformance",
+      "name": "Supply-Chain Mandate Conformance",
+      "description": "On the tool leg, allows only the supply-chain actions (quote, order, screening, matching, booking, customs, RMA, appointment) and constrains their parameters to the principal's mandate: registered deal and quote id formats, quantity caps, discount band, ship-to country allowlist, currency, and a required idempotency key on orders",
+      "type": "action-allowlist",
+      "level": "org",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "allowedActions": [
+          "create_quote",
+          "create_order",
+          "create_rma",
+          "get_appointment_record",
+          "screen_party",
+          "match_invoice",
+          "book_shipment",
+          "file_customs_entry"
+        ],
+        "actionConstraints": {
+          "create_quote": {
+            "deal_id": { "type": "string", "pattern": "^DR-\\d{5}$" },
+            "sku": { "type": "string", "pattern": "^NW-[A-Z0-9-]{2,24}$" },
+            "quantity": { "type": "number", "min": 1, "max": 300 },
+            "discount_pct": { "type": "number", "min": 0, "max": 22 }
+          },
+          "create_order": {
+            "quote_id": { "type": "string", "pattern": "^Q-\\d{4}$" },
+            "deal_id": { "type": "string", "pattern": "^DR-\\d{5}$" },
+            "quantity": { "type": "number", "min": 1, "max": 300 },
+            "unit_price": { "type": "number", "min": 1 },
+            "ship_to_country": {
+              "type": "string",
+              "enum": ["US", "CA", "MX", "DE", "GB"]
+            },
+            "idempotency_key": "required"
+          },
+          "create_rma": {
+            "order_id": { "type": "string", "pattern": "^SO-\\d{4}$" },
+            "quantity": { "type": "number", "min": 1, "max": 300 }
+          },
+          "screen_party": {
+            "party_name": { "type": "string", "maxLength": 120 },
+            "country": { "type": "string", "pattern": "^[A-Z]{2}$" }
+          },
+          "match_invoice": {
+            "invoice_id": { "type": "string", "pattern": "^INV-\\d{4}$" },
+            "order_id": { "type": "string", "pattern": "^SO-\\d{4}$" },
+            "load_id": { "type": "string", "pattern": "^LD-\\d{4}$" },
+            "amount": { "type": "number", "min": 0 },
+            "currency": { "type": "string", "enum": ["USD"] }
+          },
+          "book_shipment": {
+            "order_id": { "type": "string", "pattern": "^SO-\\d{4}$" },
+            "carrier_id": { "type": "string", "pattern": "^CR-\\d{2}$" }
+          },
+          "file_customs_entry": {
+            "load_id": { "type": "string", "pattern": "^LD-\\d{4}$" },
+            "destination_country": {
+              "type": "string",
+              "enum": ["US", "CA", "MX", "DE", "GB"]
+            },
+            "declared_value": { "type": "number", "min": 1 }
+          }
+        },
+        "strictMode": true
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 90,
+        "scope": "tools"
+      },
+      "provenance": {
+        "source": "design:supply-chain-demo",
+        "dateAdded": "2026-10-15",
+        "reference": "internal design notes"
+      }
+    },
+    {
+      "slug": "supply-chain-denied-parties",
+      "name": "Supply-Chain Denied Parties",
+      "description": "Blocks cross-company messages that name a party on the denied-party list, so a release, booking or quote cannot be addressed to a listed consignee",
+      "type": "keyword",
+      "level": "org",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "keywords": [
+          "Orion Minerals Export",
+          "Zenith Avionics Trading",
+          "Baltic Meridian Shipping",
+          "Corvus Data Systems",
+          "Helios Petrochemical"
+        ],
+        "matchWholeWord": false,
+        "caseSensitive": false,
+        "label": "denied-party"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95,
+        "scope": "messages"
+      },
+      "provenance": {
+        "source": "design:supply-chain-demo",
+        "dateAdded": "2026-10-15",
+        "reference": "the demo fleet"
+      }
+    },
+    {
+      "slug": "supply-chain-embargoed-destinations",
+      "name": "Supply-Chain Embargoed Destinations",
+      "description": "Blocks cross-company messages that route goods to an embargoed destination, matched on the destination line and on the country name",
+      "type": "contains",
+      "level": "org",
+      "severity": "critical",
+      "failBehavior": "block",
+      "config": {
+        "phrases": [
+          "Destination country: IR",
+          "Destination country: KP",
+          "Destination country: SY",
+          "Destination country: CU",
+          "Ship-to country: IR",
+          "Ship-to country: KP",
+          "Ship-to country: SY",
+          "Ship-to country: CU",
+          "Bandar Abbas, IR",
+          "North Korea",
+          "Iran",
+          "Syria",
+          "Cuba"
+        ],
+        "caseSensitive": false,
+        "matchAll": false,
+        "label": "embargoed-destination"
+      },
+      "defaultBinding": {
+        "direction": "both",
+        "effect": "block",
+        "priority": 95,
+        "scope": "messages"
+      },
+      "provenance": {
+        "source": "design:supply-chain-demo",
+        "dateAdded": "2026-10-15",
+        "reference": "the demo fleet"
+      }
+    },
+    {
+      "slug": "supply-chain-release-requires-screening",
+      "name": "Supply-Chain Release Requires Screening",
+      "description": "Blocks any message that speaks of a release unless it cites a screening reference (SCR-####) with a clear marker (clear or cleared, not preceded by not) within 80 characters of it, in either order and across lines, so evidence of a clear screening must precede the release however it is worded. The screening request itself (a message that asks to screen a party) is exempt because it is how that reference gets produced. A reference reported as a hit, or cited without a clear marker, is blocked. Like any text pattern this is forgeable by a sender that knows the format; the denied-party and embargoed-destination policies and the distributor's order checks are the other layers.",
+      "type": "regex",
+      "level": "org",
+      "severity": "high",
+      "failBehavior": "block",
+      "config": {
+        "patterns": [
+          {
+            "pattern": "^(?![\\s\\S]*\\b(screening request|please screen)\\b)(?![\\s\\S]*(?:\\bSCR-\\d{4}\\b[\\s\\S]{0,80}(?<!\\bnot\\s)\\bclear(ed)?\\b|(?<!\\bnot\\s)\\bclear(ed)?\\b[\\s\\S]{0,80}\\bSCR-\\d{4}\\b))[\\s\\S]*\\brelease\\b",
+            "flags": "i",
+            "label": "release-without-screening"
+          }
+        ]
+      },
+      "defaultBinding": {
+        "direction": "outbound",
+        "effect": "block",
+        "priority": 90,
+        "scope": "messages"
+      },
+      "provenance": {
+        "source": "design:supply-chain-demo",
+        "dateAdded": "2026-10-15",
+        "reference": "the demo fleet"
+      }
+    }
+  ]
+}

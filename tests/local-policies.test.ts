@@ -8,6 +8,7 @@ import {
   getLocalAgentPolicies,
   resetLocalPoliciesForTesting,
 } from '../packages/verifier/src/management/local-policies';
+import { evaluatePolicies } from '../packages/verifier/src/proxy/policy-evaluator';
 
 const SAVED_ENV = process.env.VERIFIER_LOCAL_POLICIES;
 const SAVED_CWD = process.cwd();
@@ -228,6 +229,37 @@ describe('local-policies loader', () => {
     });
     process.chdir(scratchDir);
     expect(getLocalAgentPolicies('agent-a')?.outbound[0].level).toBe('org');
+  });
+
+  it('denies an unavailable engine loaded from local bindings with omitted failBehavior', async () => {
+    writeBindings({
+      agents: {
+        'agent-a': {
+          outbound: [
+            {
+              policyId: 'missing-local-engine',
+              policySlug: 'missing-local-engine',
+              policyType: 'unavailable-local-engine',
+              effect: 'block',
+            },
+          ],
+        },
+      },
+    });
+    process.chdir(scratchDir);
+    const config = getLocalAgentPolicies('agent-a');
+    expect(config).not.toBeNull();
+    expect(config?.outbound[0].failBehavior).toBeUndefined();
+    const results = await evaluatePolicies(
+      config?.outbound ?? [],
+      'ordinary code',
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].decision).toBe('deny');
+    expect(results[0].responseLevel).toBe('block');
+    expect(results[0].detections).toEqual([
+      expect.objectContaining({ type: 'engine-missing' }),
+    ]);
   });
 
   it('synthesizes server-side fields (version is content-stable)', () => {

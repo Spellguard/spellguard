@@ -8,6 +8,7 @@
  */
 
 export {
+  attestationKeySigningString,
   generateAttestationDocument,
   getExpectedImageHash,
   computeImageHash,

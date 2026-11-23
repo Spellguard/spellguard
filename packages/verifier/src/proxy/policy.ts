@@ -10,6 +10,9 @@
  */
 
 import type { A2AResponse } from '@spellguard/amp';
+import { type PiiRule, findDefaultPiiMatches } from './pii-matcher';
+
+export { DEFAULT_PII_RULES } from './pii-matcher';
 
 /**
  * Result of a policy check.
@@ -42,20 +45,6 @@ export interface InboundPolicy {
   /** Whether to detect prompt injection attempts */
   detectInjection?: boolean;
 }
-
-/**
- * Default PII patterns to detect in responses.
- */
-export const DEFAULT_PII_PATTERNS: RegExp[] = [
-  // US Social Security Number (SSN)
-  /\b\d{3}-\d{2}-\d{4}\b/,
-  // Email address
-  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
-  // US Phone number (various formats)
-  /\b(?:\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/,
-  // Credit card number (basic pattern)
-  /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/,
-];
 
 /**
  * Default prompt injection patterns to detect.
@@ -138,15 +127,7 @@ export function enforceInboundPolicy(
 ): PolicyResult {
   // Extract text content from response
   const textContent = extractTextFromResponse(response);
-  const detections: string[] = [];
-
-  // Check for PII
-  const piiPatterns = policy.piiPatterns || DEFAULT_PII_PATTERNS;
-  for (const pattern of piiPatterns) {
-    if (pattern.test(textContent)) {
-      detections.push(`PII pattern detected: ${pattern.source}`);
-    }
-  }
+  const detections = detectInboundPii(textContent, policy.piiPatterns);
 
   // Check for prompt injection
   if (policy.detectInjection !== false) {
@@ -203,7 +184,29 @@ export function createDefaultOutboundPolicy(): OutboundPolicy {
  */
 export function createDefaultInboundPolicy(): InboundPolicy {
   return {
-    piiPatterns: DEFAULT_PII_PATTERNS,
     detectInjection: true,
   };
+}
+
+function describeDefaultPiiRule(rule: PiiRule): string {
+  return rule.kind === 'regex'
+    ? rule.pattern.source
+    : 'credit-card (Luhn-validated)';
+}
+
+function detectInboundPii(
+  textContent: string,
+  piiPatterns: RegExp[] | undefined,
+): string[] {
+  if (piiPatterns) {
+    return piiPatterns.flatMap((pattern) =>
+      pattern.test(textContent)
+        ? [`PII pattern detected: ${pattern.source}`]
+        : [],
+    );
+  }
+
+  return findDefaultPiiMatches(textContent).map(
+    (match) => `PII pattern detected: ${describeDefaultPiiRule(match.rule)}`,
+  );
 }

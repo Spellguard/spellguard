@@ -67,6 +67,36 @@ that rewritten `[shell_environment_policy]`.
 
 ## Setup
 
+### Target GitHub operations explicitly
+
+For a push from Codex, put the absolute worktree path in the command:
+
+```bash
+git -C /absolute/path/to/worktree push origin HEAD:feat/example
+gh pr create --repo OWNER/REPO
+```
+
+Codex can send hooks the session directory without the execution `workdir`
+passed to `exec_command`. Those directories can belong to different
+repositories. The plugin must not use the session repository to decide
+whether the intended target has a credential.
+
+When an execution `workdir` or `cwd` is present in the tool input, the adapter
+uses it. Otherwise, directory-dependent pushes and PR creation require an
+explicit target. A missing-directory denial asks the agent to restate the
+same target with `git -C` or `gh --repo`. It does not ask for credential repair.
+This also applies to same-repository commands when Codex omits the directory.
+Relative `git -C` paths are insufficient without an execution directory.
+
+The explicit target still requires an available, in-scope credential and
+passes the existing revocation check. No hook is disabled and no fallback
+credential is introduced. The plugin does not rewrite or execute the command.
+
+This contract covers GitHub push and PR-creation preflight. It does not claim
+to recover missing execution directories for unrelated file observations.
+
+### Connect the agent
+
 In a Codex session, invoke the setup skill:
 
 ```
@@ -101,10 +131,11 @@ export SPELLGUARD_BASE_URL=https://your-spellguard-console.example.com
 
 | File | Purpose |
 |---|---|
-| `~/.config/spellguard/config.json` | Local credential + agent metadata (mode 0600) |
-| `~/.config/spellguard/agents/<agentId>.pid` | Daemon PID file |
-| `~/.config/spellguard/agents/<agentId>.log` | Daemon log file |
-| `~/.config/spellguard/gh/<agentId>/hosts.yml` | Session `gh` CLI token (`GH_CONFIG_DIR` points here; daemon refreshes it on rotation) |
+| `~/.config/spellguard/codex/config.json` | Local credential + agent metadata (mode 0600) |
+| `~/.config/spellguard/codex/agents/<agentId>.pid` | Daemon PID file |
+| `~/.config/spellguard/codex/agents/<agentId>.health.json` | Daemon identity, installed-artifact fingerprint, heartbeat, transport state, and credential state. Contains no credential values. |
+| `~/.config/spellguard/codex/agents/<agentId>.log` | Daemon log file |
+| `~/.config/spellguard/codex/gh/<agentId>/hosts.yml` | Session `gh` CLI token (`GH_CONFIG_DIR` points here; daemon refreshes it on rotation) |
 | `~/.codex/config.toml` | Codex-scoped `[shell_environment_policy]` block: `GIT_CONFIG_*`→helper + `GH_CONFIG_DIR`. **Your machine-global `~/.gitconfig` is never touched.** |
 
 ## What happens in a session
@@ -112,31 +143,50 @@ export SPELLGUARD_BASE_URL=https://your-spellguard-console.example.com
 | Hook | Action |
 |---|---|
 | `SessionStart` | Validates the local credential, injects the git + `gh` credential helpers via the Codex-scoped `~/.codex/config.toml` `[shell_environment_policy]` block (takes effect on the next Codex start), spawns the persistent agent-control daemon. |
-| `PreToolUse` (Bash) | On every `git push` / branch-create / `gh pr create`: probes the credential's revocation state and emits a Codex `permissionDecision: 'deny'` if revoked. Also emits a scope-filtered observation to the Spellguard backend. |
-| `PostToolUse` (Bash) | On `git commit`: captures the new SHA + branch + message and emits a commit observation. |
+| `PreToolUse` (Bash, `apply_patch`) | On every `git push` / branch-create / `gh pr create`: probes the credential's revocation state and emits a Codex `permissionDecision: 'deny'` if revoked. Also stamps Bash and `apply_patch` start times for attribution capture, and emits a scope-filtered observation to the Spellguard backend for git operations. |
+| `PostToolUse` (Bash, `apply_patch`) | Captures Bash- and `apply_patch`-authored file changes for line attribution. On `git commit`, captures the new SHA + branch + message and emits a commit observation. |
 
 The agent-control daemon runs detached and maintains a WebSocket to the
 Spellguard broker. It receives push events for credential rotations,
 revocations, and admin config updates without polling.
 
+## Diagnose daemon and authentication failures
+
+Follow the shipped
+[Codex daemon and authentication diagnostic procedure](skills/spellguard-cli/references/codex-authentication.md).
+It works from the installed plugin and does not require GitHub access.
+
 ## Using SSH git remotes
 
 The plugin injects an **HTTPS** credential (a scoped token), so your git
-operations must transport over HTTPS — it refuses raw SSH remotes
-(`git@github.com:…`). You don't have to abandon your SSH keys. Add a one-time,
-**org-scoped** URL rewrite so only your work org goes over HTTPS, leaving
-personal SSH untouched:
+operations must transport over HTTPS. **You do not have to do anything** — an
+SSH GitHub remote (`git@github.com:…` or `ssh://git@github.com/…`) is rewritten
+to HTTPS automatically. SessionStart writes `insteadOf` / `pushInsteadOf` rules
+into the Codex-scoped `~/.codex/config.toml`
+`[shell_environment_policy]` block alongside the credential helper (so, like the
+helper itself, they take effect on the next Codex start). git then transparently
+transports over HTTPS for the agent's git operations; your stored remote, your
+`~/.gitconfig`, and your own shell's git are untouched. The rules also
+out-specify a global force-SSH rule for the repo you are in, so fetch AND push
+stay on HTTPS.
 
-```bash
-git config --global url."https://github.com/<org>/".insteadOf "git@github.com:<org>/"
-```
+The session then continues normally and prints an info line naming the remote it
+rewrote. Two cases still hard-stop with
+*"Spellguard requires HTTPS git remotes"*:
 
-Git then transports those repos over HTTPS (so `git remote -v` shows the HTTPS
-URL and the plugin's SSH check passes) and the Spellguard credential helper
-serves the scoped token. Alternatives: rewrite all of github.com
-(`url."https://github.com/".insteadOf "git@github.com:"` — also affects personal
-repos), or switch a single repo with
-`git remote set-url origin https://github.com/<owner>/<repo>.git`.
+- the rewrite is disabled (`SPELLGUARD_SSH_REWRITE=0|off|false|no`), or
+- the remote is still SSH after the rewrite — an SSH host alias like
+  `git@github-work:` that does not map to `github.com`, or a same-specificity
+  force-SSH rule that the rewrite cannot out-specify.
+
+In either case switch the remote:
+`git remote set-url origin https://github.com/<owner>/<repo>.git`. A permanent
+org-scoped rewrite
+(`git config --global url."https://github.com/<org>/".insteadOf "git@github.com:<org>/"`)
+also works and leaves personal SSH untouched.
+
+See `src/lib/git-insteadof-rules.ts` for the exact four rules and the git
+arbitration semantics they rely on.
 
 ## When the dashboard terminates or revokes your agent
 

@@ -3,7 +3,7 @@
 /**
  * @spellguard/amp - Client-side utilities
  *
- * Message encryption and integrity verification.
+ * Message encryption.
  */
 
 export {
@@ -13,7 +13,6 @@ export {
   generateAgentKeyPair,
   hashPayload,
 } from './encrypt';
-export { verifyArchiveIntegrity } from './verify';
 
 // Re-export types needed by clients
 export type {

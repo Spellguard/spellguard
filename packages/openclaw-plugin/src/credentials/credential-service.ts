@@ -31,9 +31,9 @@ export interface CredentialService {
   stop(): void;
   /**
    * Feature #10: the real service emits a channel-ready frame to the broker
-   * when a platform relay socket connects. The OSS stub has no agent-control
-   * client, so this is a no-op that only preserves the public surface
-   * consumed by `index.ts` (`onRelayReady` -> `signalChannelReady`).
+   * when the agent-control socket (re)connects with a usable messaging
+   * credential on disk. The OSS stub has no agent-control client, so this is a
+   * no-op that only preserves the public surface consumed by `index.ts`.
    */
   signalChannelReady(args: {
     reason?: string;

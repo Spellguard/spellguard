@@ -7,8 +7,8 @@
 #
 # Used by deploys that bake the env file into the image
 # (scripts/deploy-internal.sh via the ENV_FILE_CONTENT build arg).
-# For deploys that inject env vars at runtime (Phala), /app/.env is
-# an empty file left over from the build — sourcing it is a no-op.
+# For deploys that inject env vars at runtime (Phala), there is no
+# /app/.env, so nothing is sourced.
 # ═══════════════════════════════════════════════════════════════════
 set -e
 

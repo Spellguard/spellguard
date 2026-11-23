@@ -1,0 +1,51 @@
+{
+  // LLM-scope toxicity-egress policy — governs the model-inference leg
+  // (scope:'llm'). FLAGS toxic model output (threats, harassment, hate, profanity)
+  // on the completion returned from the model.
+  //
+  // CRITICAL — `semanticEnabled: false`: the toxicity engine (BuiltinEngine
+  // type:'toxicity') runs fast built-in CATEGORY_PATTERNS regex first, but on a
+  // heuristic MISS it otherwise does a per-completion fetch to a semantic/model
+  // endpoint (an out-of-band round-trip, ~3s timeout) — unacceptable on the
+  // inference hot path. Pinning semanticEnabled:false (and restricting
+  // `categories`) forces the deterministic inline regex path. See
+  // builtin-engine.ts checkToxicitySemantic (skips when cfg.semanticEnabled===false).
+  //
+  // direction:'inbound' → the COMPLETION only (toxic *output* is the concern; the
+  // system toxicity-baseline already covers input on the message legs).
+  // effect:'flag' → log-only: the regex heuristics can false-positive, so the
+  // recommended default surfaces rather than blocks; an org can escalate to block.
+  // level:'org' + recommended = opt-in.
+  "policies": [
+    {
+      "slug": "llm-toxicity-egress",
+      "name": "LLM Toxicity Egress Flag",
+      "description": "Flags toxic model output (threats, harassment, hate speech, profanity) on the LLM-gateway leg using fast inline regex heuristics (no semantic model call).",
+      "type": "toxicity",
+      "level": "org",
+      "severity": "high",
+      "failBehavior": "allow",
+      "config": {
+        // NO `categories` key → every built-in toxicity category is checked
+        // (listing all 4 explicitly is identical today but silently excludes any
+        // category the engine gains later). `semanticEnabled:false` is what keeps
+        // the ~3s out-of-band model call off the hot path — it short-circuits in
+        // checkToxicitySemantic independently of the category restriction, so
+        // dropping `categories` does NOT re-enable the semantic call.
+        "semanticEnabled": false,
+        "label": "llm-toxic-output"
+      },
+      "defaultBinding": {
+        "direction": "inbound",
+        "effect": "flag",
+        "priority": 70,
+        "scope": "llm"
+      },
+      "provenance": {
+        "source": "spellguard:llm-gateway",
+        "dateAdded": "2026-07-20",
+        "reference": "internal design notes"
+      }
+    }
+  ]
+}

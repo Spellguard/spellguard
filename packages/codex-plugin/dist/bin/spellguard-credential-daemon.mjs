@@ -12,7 +12,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -44,10 +48,10 @@ var require_constants = __commonJS({
       EMPTY_BUFFER: Buffer.alloc(0),
       GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
       hasBlob,
-      kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
-      kListener: Symbol("kListener"),
-      kStatusCode: Symbol("status-code"),
-      kWebSocket: Symbol("websocket"),
+      kForOnEventAttribute: /* @__PURE__ */ Symbol("kIsForOnEventAttribute"),
+      kListener: /* @__PURE__ */ Symbol("kListener"),
+      kStatusCode: /* @__PURE__ */ Symbol("status-code"),
+      kWebSocket: /* @__PURE__ */ Symbol("websocket"),
       NOOP: () => {
       }
     };
@@ -66,8 +70,8 @@ var require_node_gyp_build = __commonJS({
     var abi = process.versions.modules;
     var runtime = isElectron() ? "electron" : isNwjs() ? "node-webkit" : "node";
     var arch = process.env.npm_config_arch || os.arch();
-    var platform2 = process.env.npm_config_platform || os.platform();
-    var libc = process.env.LIBC || (isAlpine(platform2) ? "musl" : "glibc");
+    var platform3 = process.env.npm_config_platform || os.platform();
+    var libc = process.env.LIBC || (isAlpine(platform3) ? "musl" : "glibc");
     var armv = process.env.ARM_VERSION || (arch === "arm64" ? "8" : vars.arm_version) || "";
     var uv = (process.versions.uv || "").split(".")[0];
     module.exports = load;
@@ -87,12 +91,12 @@ var require_node_gyp_build = __commonJS({
         var debug = getFirst(path.join(dir, "build/Debug"), matchBuild);
         if (debug) return debug;
       }
-      var prebuild = resolve3(dir);
+      var prebuild = resolve4(dir);
       if (prebuild) return prebuild;
-      var nearby = resolve3(path.dirname(process.execPath));
+      var nearby = resolve4(path.dirname(process.execPath));
       if (nearby) return nearby;
       var target = [
-        "platform=" + platform2,
+        "platform=" + platform3,
         "arch=" + arch,
         "runtime=" + runtime,
         "abi=" + abi,
@@ -105,18 +109,18 @@ var require_node_gyp_build = __commonJS({
         // eslint-disable-line
       ].filter(Boolean).join(" ");
       throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
-      function resolve3(dir2) {
-        var tuples = readdirSync(path.join(dir2, "prebuilds")).map(parseTuple);
-        var tuple = tuples.filter(matchTuple(platform2, arch)).sort(compareTuples)[0];
+      function resolve4(dir2) {
+        var tuples = readdirSync2(path.join(dir2, "prebuilds")).map(parseTuple);
+        var tuple = tuples.filter(matchTuple(platform3, arch)).sort(compareTuples)[0];
         if (!tuple) return;
         var prebuilds = path.join(dir2, "prebuilds", tuple.name);
-        var parsed = readdirSync(prebuilds).map(parseTags);
+        var parsed = readdirSync2(prebuilds).map(parseTags);
         var candidates = parsed.filter(matchTags(runtime, abi));
         var winner = candidates.sort(compareTags(runtime))[0];
         if (winner) return path.join(prebuilds, winner.file);
       }
     };
-    function readdirSync(dir) {
+    function readdirSync2(dir) {
       try {
         return fs.readdirSync(dir);
       } catch (err) {
@@ -124,7 +128,7 @@ var require_node_gyp_build = __commonJS({
       }
     }
     function getFirst(dir, filter) {
-      var files = readdirSync(dir).filter(filter);
+      var files = readdirSync2(dir).filter(filter);
       return files[0] && path.join(dir, files[0]);
     }
     function matchBuild(name) {
@@ -133,17 +137,17 @@ var require_node_gyp_build = __commonJS({
     function parseTuple(name) {
       var arr = name.split("-");
       if (arr.length !== 2) return;
-      var platform3 = arr[0];
+      var platform4 = arr[0];
       var architectures = arr[1].split("+");
-      if (!platform3) return;
+      if (!platform4) return;
       if (!architectures.length) return;
       if (!architectures.every(Boolean)) return;
-      return { name, platform: platform3, architectures };
+      return { name, platform: platform4, architectures };
     }
-    function matchTuple(platform3, arch2) {
+    function matchTuple(platform4, arch2) {
       return function(tuple) {
         if (tuple == null) return false;
-        if (tuple.platform !== platform3) return false;
+        if (tuple.platform !== platform4) return false;
         return tuple.architectures.includes(arch2);
       };
     }
@@ -152,9 +156,9 @@ var require_node_gyp_build = __commonJS({
     }
     function parseTags(file) {
       var arr = file.split(".");
-      var extension = arr.pop();
+      var extension2 = arr.pop();
       var tags = { file, specificity: 0 };
-      if (extension !== "node") return;
+      if (extension2 !== "node") return;
       for (var i = 0; i < arr.length; i++) {
         var tag = arr[i];
         if (tag === "node" || tag === "electron" || tag === "node-webkit") {
@@ -211,8 +215,8 @@ var require_node_gyp_build = __commonJS({
       if (process.env.ELECTRON_RUN_AS_NODE) return true;
       return typeof window !== "undefined" && window.process && window.process.type === "renderer";
     }
-    function isAlpine(platform3) {
-      return platform3 === "linux" && fs.existsSync("/etc/alpine-release");
+    function isAlpine(platform4) {
+      return platform4 === "linux" && fs.existsSync("/etc/alpine-release");
     }
     load.parseTags = parseTags;
     load.matchTags = matchTags;
@@ -345,8 +349,8 @@ var require_buffer_util = __commonJS({
 var require_limiter = __commonJS({
   "../../node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
-    var kDone = Symbol("kDone");
-    var kRun = Symbol("kRun");
+    var kDone = /* @__PURE__ */ Symbol("kDone");
+    var kRun = /* @__PURE__ */ Symbol("kRun");
     var Limiter = class {
       /**
        * Creates a new `Limiter`.
@@ -401,13 +405,13 @@ var require_permessage_deflate = __commonJS({
     var { kStatusCode } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
     var TRAILER = Buffer.from([0, 0, 255, 255]);
-    var kPerMessageDeflate = Symbol("permessage-deflate");
-    var kTotalLength = Symbol("total-length");
-    var kCallback = Symbol("callback");
-    var kBuffers = Symbol("buffers");
-    var kError = Symbol("error");
+    var kPerMessageDeflate = /* @__PURE__ */ Symbol("permessage-deflate");
+    var kTotalLength = /* @__PURE__ */ Symbol("total-length");
+    var kCallback = /* @__PURE__ */ Symbol("callback");
+    var kBuffers = /* @__PURE__ */ Symbol("buffers");
+    var kError = /* @__PURE__ */ Symbol("error");
     var zlibLimiter;
-    var PerMessageDeflate = class {
+    var PerMessageDeflate2 = class {
       /**
        * Creates a PerMessageDeflate instance.
        *
@@ -418,6 +422,9 @@ var require_permessage_deflate = __commonJS({
        *     acknowledge disabling of client context takeover
        * @param {Number} [options.concurrencyLimit=10] The number of concurrent
        *     calls to zlib
+       * @param {Boolean} [options.isServer=false] Create the instance in either
+       *     server or client mode
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
        *     use of a custom server window size
        * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
@@ -428,15 +435,12 @@ var require_permessage_deflate = __commonJS({
        *     deflate
        * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
        *     inflate
-       * @param {Boolean} [isServer=false] Create the instance in either server or
-       *     client mode
-       * @param {Number} [maxPayload=0] The maximum allowed message length
        */
-      constructor(options, isServer, maxPayload) {
-        this._maxPayload = maxPayload | 0;
+      constructor(options) {
         this._options = options || {};
         this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
-        this._isServer = !!isServer;
+        this._maxPayload = this._options.maxPayload | 0;
+        this._isServer = !!this._options.isServer;
         this._deflate = null;
         this._inflate = null;
         this.params = null;
@@ -745,7 +749,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module.exports = PerMessageDeflate;
+    module.exports = PerMessageDeflate2;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -1029,7 +1033,7 @@ var require_receiver = __commonJS({
   "../../node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
       EMPTY_BUFFER,
@@ -1059,6 +1063,10 @@ var require_receiver = __commonJS({
        *     extensions
        * @param {Boolean} [options.isServer=false] Specifies whether to operate in
        *     client or server mode
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -1069,6 +1077,8 @@ var require_receiver = __commonJS({
         this._binaryType = options.binaryType || BINARY_TYPES[0];
         this._extensions = options.extensions || {};
         this._isServer = !!options.isServer;
+        this._maxBufferedChunks = options.maxBufferedChunks | 0;
+        this._maxFragments = options.maxFragments | 0;
         this._maxPayload = options.maxPayload | 0;
         this._skipUTF8Validation = !!options.skipUTF8Validation;
         this[kWebSocket] = void 0;
@@ -1098,6 +1108,18 @@ var require_receiver = __commonJS({
        */
       _write(chunk, encoding, cb) {
         if (this._opcode === 8 && this._state == GET_INFO) return cb();
+        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
+          cb(
+            this.createError(
+              RangeError,
+              "Too many buffered chunks",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            )
+          );
+          return;
+        }
         this._bufferedBytes += chunk.length;
         this._buffers.push(chunk);
         this.startLoop(cb);
@@ -1196,7 +1218,7 @@ var require_receiver = __commonJS({
           return;
         }
         const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
           const error = this.createError(
             RangeError,
             "RSV1 must be clear",
@@ -1427,6 +1449,17 @@ var require_receiver = __commonJS({
           return;
         }
         if (data.length) {
+          if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+            const error = this.createError(
+              RangeError,
+              "Too many message fragments",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            );
+            cb(error);
+            return;
+          }
           this._messageLength = this._totalPayloadLength;
           this._fragments.push(data);
         }
@@ -1440,7 +1473,7 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
@@ -1452,6 +1485,17 @@ var require_receiver = __commonJS({
                 false,
                 1009,
                 "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              );
+              cb(error);
+              return;
+            }
+            if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+              const error = this.createError(
+                RangeError,
+                "Too many message fragments",
+                false,
+                1008,
+                "WS_ERR_TOO_MANY_BUFFERED_PARTS"
               );
               cb(error);
               return;
@@ -1622,11 +1666,14 @@ var require_sender = __commonJS({
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
-    var PerMessageDeflate = require_permessage_deflate();
+    var {
+      types: { isUint8Array }
+    } = __require("util");
+    var PerMessageDeflate2 = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
-    var kByteLength = Symbol("kByteLength");
+    var kByteLength = /* @__PURE__ */ Symbol("kByteLength");
     var maskBuffer = Buffer.alloc(4);
     var RANDOM_POOL_SIZE = 8 * 1024;
     var randomPool;
@@ -1775,8 +1822,10 @@ var require_sender = __commonJS({
           buf.writeUInt16BE(code, 0);
           if (typeof data === "string") {
             buf.write(data, 2);
-          } else {
+          } else if (isUint8Array(data)) {
             buf.set(data, 2);
+          } else {
+            throw new TypeError("Second argument must be a string or a Uint8Array");
           }
         }
         const options = {
@@ -1906,7 +1955,7 @@ var require_sender = __commonJS({
        * @public
        */
       send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
@@ -2030,7 +2079,7 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         this._bufferedBytes += options[kByteLength];
         this._state = DEFLATING;
         perMessageDeflate.compress(data, options.fin, (_, buf) => {
@@ -2109,14 +2158,14 @@ var require_event_target = __commonJS({
   "../../node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
-    var kCode = Symbol("kCode");
-    var kData = Symbol("kData");
-    var kError = Symbol("kError");
-    var kMessage = Symbol("kMessage");
-    var kReason = Symbol("kReason");
-    var kTarget = Symbol("kTarget");
-    var kType = Symbol("kType");
-    var kWasClean = Symbol("kWasClean");
+    var kCode = /* @__PURE__ */ Symbol("kCode");
+    var kData = /* @__PURE__ */ Symbol("kData");
+    var kError = /* @__PURE__ */ Symbol("kError");
+    var kMessage = /* @__PURE__ */ Symbol("kMessage");
+    var kReason = /* @__PURE__ */ Symbol("kReason");
+    var kTarget = /* @__PURE__ */ Symbol("kTarget");
+    var kType = /* @__PURE__ */ Symbol("kType");
+    var kWasClean = /* @__PURE__ */ Symbol("kWasClean");
     var Event2 = class {
       /**
        * Create a new `Event`.
@@ -2468,11 +2517,11 @@ var require_extension = __commonJS({
       return offers;
     }
     function format(extensions) {
-      return Object.keys(extensions).map((extension) => {
-        let configurations = extensions[extension];
+      return Object.keys(extensions).map((extension2) => {
+        let configurations = extensions[extension2];
         if (!Array.isArray(configurations)) configurations = [configurations];
         return configurations.map((params) => {
-          return [extension].concat(
+          return [extension2].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
               if (!Array.isArray(values)) values = [values];
@@ -2495,10 +2544,10 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
     var { isBlob } = require_validation();
@@ -2518,7 +2567,7 @@ var require_websocket = __commonJS({
     } = require_event_target();
     var { format, parse: parse2 } = require_extension();
     var { toBuffer } = require_buffer_util();
-    var kAborted = Symbol("kAborted");
+    var kAborted = /* @__PURE__ */ Symbol("kAborted");
     var protocolVersions = [8, 13];
     var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
@@ -2657,6 +2706,10 @@ var require_websocket = __commonJS({
        *     multiple times in the same tick
        * @param {Function} [options.generateMask] The function used to generate the
        *     masking key
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message size
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -2668,6 +2721,8 @@ var require_websocket = __commonJS({
           binaryType: this.binaryType,
           extensions: this._extensions,
           isServer: this._isServer,
+          maxBufferedChunks: options.maxBufferedChunks,
+          maxFragments: options.maxFragments,
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
@@ -2706,8 +2761,8 @@ var require_websocket = __commonJS({
           this.emit("close", this._closeCode, this._closeMessage);
           return;
         }
-        if (this._extensions[PerMessageDeflate.extensionName]) {
-          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        if (this._extensions[PerMessageDeflate2.extensionName]) {
+          this._extensions[PerMessageDeflate2.extensionName].cleanup();
         }
         this._receiver.removeAllListeners();
         this._readyState = _WebSocket.CLOSED;
@@ -2869,7 +2924,7 @@ var require_websocket = __commonJS({
           fin: true,
           ...options
         };
-        if (!this._extensions[PerMessageDeflate.extensionName]) {
+        if (!this._extensions[PerMessageDeflate2.extensionName]) {
           opts.compress = false;
         }
         this._sender.send(data || EMPTY_BUFFER, opts, cb);
@@ -2967,6 +3022,8 @@ var require_websocket = __commonJS({
         autoPong: true,
         closeTimeout: CLOSE_TIMEOUT,
         protocolVersion: protocolVersions[1],
+        maxBufferedChunks: 1024 * 1024,
+        maxFragments: 128 * 1024,
         maxPayload: 100 * 1024 * 1024,
         skipUTF8Validation: false,
         perMessageDeflate: true,
@@ -2995,7 +3052,7 @@ var require_websocket = __commonJS({
       } else {
         try {
           parsedUrl = new URL2(address);
-        } catch (e) {
+        } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
@@ -3043,13 +3100,13 @@ var require_websocket = __commonJS({
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
       if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate(
-          opts.perMessageDeflate !== true ? opts.perMessageDeflate : {},
-          false,
-          opts.maxPayload
-        );
+        perMessageDeflate = new PerMessageDeflate2({
+          ...opts.perMessageDeflate,
+          isServer: false,
+          maxPayload: opts.maxPayload
+        });
         opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
         });
       }
       if (protocols.length) {
@@ -3155,7 +3212,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3192,23 +3249,25 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
             const message = "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
+          maxBufferedChunks: opts.maxBufferedChunks,
+          maxFragments: opts.maxFragments,
           maxPayload: opts.maxPayload,
           skipUTF8Validation: opts.skipUTF8Validation
         });
@@ -3434,7 +3493,7 @@ var require_stream = __commonJS({
       };
       duplex._final = function(callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open() {
+          ws.once("open", function open2() {
             duplex._final(callback);
           });
           return;
@@ -3455,7 +3514,7 @@ var require_stream = __commonJS({
       };
       duplex._write = function(chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open() {
+          ws.once("open", function open2() {
             duplex._write(chunk, encoding, callback);
           });
           return;
@@ -3522,10 +3581,10 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
-    var extension = require_extension();
-    var PerMessageDeflate = require_permessage_deflate();
-    var subprotocol = require_subprotocol();
+    var { createHash: createHash2 } = __require("crypto");
+    var extension2 = require_extension();
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var subprotocol2 = require_subprotocol();
     var WebSocket3 = require_websocket();
     var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
     var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
@@ -3551,6 +3610,10 @@ var require_websocket_server = __commonJS({
        *     called
        * @param {Function} [options.handleProtocols] A hook to handle protocols
        * @param {String} [options.host] The hostname where to bind the server
+       * @param {Number} [options.maxBufferedChunks=1048576] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=131072] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=104857600] The maximum allowed message
        *     size
        * @param {Boolean} [options.noServer=false] Enable no server mode
@@ -3572,6 +3635,8 @@ var require_websocket_server = __commonJS({
         options = {
           allowSynchronousEvents: true,
           autoPong: true,
+          maxBufferedChunks: 1024 * 1024,
+          maxFragments: 128 * 1024,
           maxPayload: 100 * 1024 * 1024,
           skipUTF8Validation: false,
           perMessageDeflate: false,
@@ -3748,7 +3813,7 @@ var require_websocket_server = __commonJS({
         let protocols = /* @__PURE__ */ new Set();
         if (secWebSocketProtocol !== void 0) {
           try {
-            protocols = subprotocol.parse(secWebSocketProtocol);
+            protocols = subprotocol2.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
@@ -3758,16 +3823,16 @@ var require_websocket_server = __commonJS({
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
         if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate(
-            this.options.perMessageDeflate,
-            true,
-            this.options.maxPayload
-          );
+          const perMessageDeflate = new PerMessageDeflate2({
+            ...this.options.perMessageDeflate,
+            isServer: true,
+            maxPayload: this.options.maxPayload
+          });
           try {
-            const offers = extension.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
-              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            const offers = extension2.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate2.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
+              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
@@ -3823,7 +3888,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -3838,10 +3903,10 @@ var require_websocket_server = __commonJS({
             ws._protocol = protocol;
           }
         }
-        if (extensions[PerMessageDeflate.extensionName]) {
-          const params = extensions[PerMessageDeflate.extensionName].params;
-          const value = extension.format({
-            [PerMessageDeflate.extensionName]: [params]
+        if (extensions[PerMessageDeflate2.extensionName]) {
+          const params = extensions[PerMessageDeflate2.extensionName].params;
+          const value = extension2.format({
+            [PerMessageDeflate2.extensionName]: [params]
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
@@ -3851,6 +3916,8 @@ var require_websocket_server = __commonJS({
         socket.removeListener("error", socketOnError);
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
+          maxBufferedChunks: this.options.maxBufferedChunks,
+          maxFragments: this.options.maxFragments,
           maxPayload: this.options.maxPayload,
           skipUTF8Validation: this.options.skipUTF8Validation
         });
@@ -3909,22 +3976,22 @@ var require_websocket_server = __commonJS({
 });
 
 // bin/spellguard-credential-daemon.ts
-import { execFileSync as execFileSync5, execSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { execFileSync as execFileSync6, execSync } from "node:child_process";
+import { randomUUID as randomUUID4 } from "node:crypto";
 import {
   appendFileSync as appendFileSync3,
-  chmodSync as chmodSync5,
-  closeSync as closeSync3,
-  existsSync as existsSync8,
-  mkdirSync as mkdirSync7,
-  openSync as openSync3,
-  readFileSync as readFileSync3,
-  unlinkSync,
-  writeFileSync as writeFileSync6,
+  chmodSync as chmodSync6,
+  closeSync as closeSync4,
+  existsSync as existsSync9,
+  mkdirSync as mkdirSync8,
+  openSync as openSync4,
+  readFileSync as readFileSync5,
+  unlinkSync as unlinkSync2,
+  writeFileSync as writeFileSync7,
   writeSync as writeSync2
 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { join as join8 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { dirname as dirname7, join as join11 } from "node:path";
 
 // ../agent-control/dist/index.mjs
 import { mkdir, writeFile } from "node:fs/promises";
@@ -4184,8 +4251,8 @@ var ReconnectingWebSocket = class ReconnectingWebSocket2 extends EventTarget {
     return delay;
   }
   _wait() {
-    return new Promise((resolve3) => {
-      setTimeout(resolve3, this._getNextDelay());
+    return new Promise((resolve4) => {
+      setTimeout(resolve4, this._getNextDelay());
     });
   }
   _getNextProtocols(protocolsProvider) {
@@ -4505,8 +4572,11 @@ function getWSOptions(partySocketOptions) {
 
 // ../../node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
+var import_extension = __toESM(require_extension(), 1);
+var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
 var import_receiver = __toESM(require_receiver(), 1);
 var import_sender = __toESM(require_sender(), 1);
+var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
@@ -4988,17 +5058,841 @@ function removeTrailingSlash(url) {
 }
 
 // ../agent-control/dist/index.mjs
+import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+var A2A_TASK_STATES = [
+  "SUBMITTED",
+  "WORKING",
+  "INPUT_REQUIRED",
+  "COMPLETED",
+  "CANCELED",
+  "FAILED",
+  "REJECTED",
+  "AUTH_REQUIRED"
+];
+var A2A_ROLES = ["USER", "AGENT"];
+var TASK_STATE_SET = new Set(A2A_TASK_STATES);
+var ROLE_SET = new Set(A2A_ROLES);
+var PART_CONTENT_KEYS = ["text", "raw", "url", "data"];
+var PART_KEYS = /* @__PURE__ */ new Set([
+  ...PART_CONTENT_KEYS,
+  "metadata",
+  "filename",
+  "mediaType"
+]);
+var MESSAGE_KEYS = /* @__PURE__ */ new Set([
+  "messageId",
+  "role",
+  "parts",
+  "contextId",
+  "taskId",
+  "metadata",
+  "extensions",
+  "referenceTaskIds"
+]);
+var ARTIFACT_KEYS = /* @__PURE__ */ new Set([
+  "artifactId",
+  "parts",
+  "name",
+  "description",
+  "metadata",
+  "extensions"
+]);
+var STATUS_KEYS = /* @__PURE__ */ new Set(["state", "message", "timestamp"]);
+var TASK_KEYS = /* @__PURE__ */ new Set([
+  "id",
+  "status",
+  "contextId",
+  "artifacts",
+  "history",
+  "metadata"
+]);
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function rejectUnknownKeys(obj, allowed, path, errors) {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) {
+      errors.push(`${path}: unknown field '${key}' is not permitted`);
+    }
+  }
+}
+function checkOptionalString(obj, key, path, errors) {
+  if (key in obj && typeof obj[key] !== "string") {
+    errors.push(`${path}.${key}: expected string`);
+  }
+}
+function checkOptionalStringArray(obj, key, path, errors) {
+  if (!(key in obj)) return;
+  const arr = obj[key];
+  if (!Array.isArray(arr)) {
+    errors.push(`${path}.${key}: expected array of string`);
+    return;
+  }
+  arr.forEach((el, i) => {
+    if (typeof el !== "string") {
+      errors.push(`${path}.${key}[${i}]: expected string`);
+    }
+  });
+}
+function checkOptionalObject(obj, key, path, errors) {
+  if (key in obj && !isPlainObject(obj[key])) {
+    errors.push(`${path}.${key}: expected object`);
+  }
+}
+function validatePart(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, PART_KEYS, path, errors);
+  const contentPresent = PART_CONTENT_KEYS.filter((k) => k in input);
+  if (contentPresent.length !== 1) {
+    errors.push(
+      `${path}: exactly one content field (text|raw|url|data) required, found ${contentPresent.length}`
+    );
+  }
+  if ("text" in input && typeof input.text !== "string") {
+    errors.push(`${path}.text: expected string`);
+  }
+  if ("raw" in input && typeof input.raw !== "string") {
+    errors.push(`${path}.raw: expected string`);
+  }
+  if ("url" in input && typeof input.url !== "string") {
+    errors.push(`${path}.url: expected string`);
+  }
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalString(input, "filename", path, errors);
+  checkOptionalString(input, "mediaType", path, errors);
+}
+function validateParts(input, path, errors) {
+  if (!Array.isArray(input)) {
+    errors.push(`${path}: expected array of parts`);
+    return;
+  }
+  if (input.length < 1) {
+    errors.push(`${path}: at least one part required`);
+  }
+  input.forEach((p, i) => validatePart(p, `${path}[${i}]`, errors));
+}
+function validateMessageInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, MESSAGE_KEYS, path, errors);
+  if (typeof input.messageId !== "string" || input.messageId.length === 0) {
+    errors.push(`${path}.messageId: required non-empty string`);
+  }
+  if (typeof input.role !== "string" || !ROLE_SET.has(input.role)) {
+    errors.push(
+      `${path}.role: required, must be one of ${A2A_ROLES.join(" | ")}`
+    );
+  }
+  if (!("parts" in input)) {
+    errors.push(`${path}.parts: required`);
+  } else {
+    validateParts(input.parts, `${path}.parts`, errors);
+  }
+  checkOptionalString(input, "contextId", path, errors);
+  checkOptionalString(input, "taskId", path, errors);
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalStringArray(input, "extensions", path, errors);
+  checkOptionalStringArray(input, "referenceTaskIds", path, errors);
+}
+function validateArtifactInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, ARTIFACT_KEYS, path, errors);
+  if (typeof input.artifactId !== "string" || input.artifactId.length === 0) {
+    errors.push(`${path}.artifactId: required non-empty string`);
+  }
+  if (!("parts" in input)) {
+    errors.push(`${path}.parts: required`);
+  } else {
+    validateParts(input.parts, `${path}.parts`, errors);
+  }
+  checkOptionalString(input, "name", path, errors);
+  checkOptionalString(input, "description", path, errors);
+  checkOptionalObject(input, "metadata", path, errors);
+  checkOptionalStringArray(input, "extensions", path, errors);
+}
+function validateStatusInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, STATUS_KEYS, path, errors);
+  if (typeof input.state !== "string" || !TASK_STATE_SET.has(input.state)) {
+    errors.push(
+      `${path}.state: required, must be one of ${A2A_TASK_STATES.join(" | ")}`
+    );
+  }
+  if ("message" in input) {
+    validateMessageInto(input.message, `${path}.message`, errors);
+  }
+  checkOptionalString(input, "timestamp", path, errors);
+}
+function validateTaskInto(input, path, errors) {
+  if (!isPlainObject(input)) {
+    errors.push(`${path}: expected object`);
+    return;
+  }
+  rejectUnknownKeys(input, TASK_KEYS, path, errors);
+  if (typeof input.id !== "string" || input.id.length === 0) {
+    errors.push(`${path}.id: required non-empty string`);
+  }
+  if (!("status" in input)) {
+    errors.push(`${path}.status: required`);
+  } else {
+    validateStatusInto(input.status, `${path}.status`, errors);
+  }
+  checkOptionalString(input, "contextId", path, errors);
+  if ("artifacts" in input) {
+    if (!Array.isArray(input.artifacts)) {
+      errors.push(`${path}.artifacts: expected array`);
+    } else {
+      input.artifacts.forEach(
+        (a, i) => validateArtifactInto(a, `${path}.artifacts[${i}]`, errors)
+      );
+    }
+  }
+  if ("history" in input) {
+    if (!Array.isArray(input.history)) {
+      errors.push(`${path}.history: expected array`);
+    } else {
+      input.history.forEach(
+        (m, i) => validateMessageInto(m, `${path}.history[${i}]`, errors)
+      );
+    }
+  }
+  checkOptionalObject(input, "metadata", path, errors);
+}
+function validateA2aMessage(input) {
+  const errors = [];
+  validateMessageInto(input, "message", errors);
+  return errors.length === 0 ? { valid: true, value: input, errors: [] } : { valid: false, value: null, errors };
+}
+function validateA2aTask(input) {
+  const errors = [];
+  validateTaskInto(input, "task", errors);
+  return errors.length === 0 ? { valid: true, value: input, errors: [] } : { valid: false, value: null, errors };
+}
+var A2A_PROTOCOL_LIMITS = {
+  ordinaryFrameBytes: 65536,
+  taskCreateOuterFrameBytes: 327680,
+  taskUpdateOuterFrameBytes: 1572864,
+  taskCreateInputBytes: 262144,
+  taskCreateEnvelopeBytes: 65536,
+  identifierBytes: 256,
+  messageTextBytes: 16384,
+  messagePartsBytes: 65536,
+  artifactsPerUpdate: 50,
+  artifactLabelBytes: 256,
+  artifactValueBytes: 2048,
+  taskUpdateResultBytes: 1048576,
+  diagnosticsPerUpdate: 16,
+  diagnosticsBytesPerUpdate: 8192
+};
+var A2A_TASK_TYPE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+var DECIMAL_REVISION_RE = /^[1-9][0-9]*$/;
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+var CANONICAL_FRAMEWORKS = /* @__PURE__ */ new Set([
+  "claude_code",
+  "codex",
+  "openclaw",
+  "hermes"
+]);
+var HANDLER_STATES = /* @__PURE__ */ new Set([
+  "current",
+  "outdated_unedited",
+  "owner_modified",
+  "example_scaffold",
+  "not_installed_apply_pending",
+  "not_installed_custom",
+  "missing_deleted",
+  "custom_no_reference",
+  "not_reported"
+]);
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function hasOnlyKeys(value, allowed) {
+  const keySet = new Set(allowed);
+  return Object.keys(value).every((key) => keySet.has(key));
+}
+function isNonEmptyString(value, maxBytes = Number.MAX_SAFE_INTEGER) {
+  if (typeof value !== "string" || value.length === 0) return false;
+  const size = utf8ByteLength(value);
+  return size !== null && size <= maxBytes;
+}
+function utf8ByteLength(value) {
+  let size = 0;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint >= 55296 && codePoint <= 57343) return null;
+    if (codePoint <= 127) size += 1;
+    else if (codePoint <= 2047) size += 2;
+    else if (codePoint <= 65535) size += 3;
+    else size += 4;
+  }
+  return size;
+}
+function unicodeScalarCompare(left, right) {
+  const a = [...left].map((char) => char.codePointAt(0));
+  const b = [...right].map((char) => char.codePointAt(0));
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    if (a[index] !== b[index])
+      return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+function conservativeJsonStringBudget(value) {
+  let size = 2;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint >= 55296 && codePoint <= 57343) return null;
+    if (codePoint <= 31) size += 6;
+    else if (codePoint === 34 || codePoint === 92) size += 2;
+    else {
+      const bytes = utf8ByteLength(char);
+      if (bytes === null) return null;
+      size += bytes;
+    }
+  }
+  return size;
+}
+function conservativeJsonSizeBudget(value) {
+  const ancestors = /* @__PURE__ */ new WeakSet();
+  const visit = (current) => {
+    if (current === null) return 4;
+    if (typeof current === "boolean") return current ? 4 : 5;
+    if (typeof current === "number")
+      return Number.isFinite(current) ? 24 : null;
+    if (typeof current === "string")
+      return conservativeJsonStringBudget(current);
+    if (typeof current !== "object") return null;
+    if (ancestors.has(current)) return null;
+    ancestors.add(current);
+    try {
+      if (Array.isArray(current)) {
+        let size2 = 2 + Math.max(0, current.length - 1);
+        for (const item of current) {
+          const itemSize = visit(item);
+          if (itemSize === null) return null;
+          size2 += itemSize;
+        }
+        return size2;
+      }
+      const prototype = Object.getPrototypeOf(current);
+      if (prototype !== Object.prototype && prototype !== null || Object.getOwnPropertySymbols(current).length > 0) {
+        return null;
+      }
+      const object = current;
+      const keys = Object.keys(object).sort(unicodeScalarCompare);
+      let size = 2 + Math.max(0, keys.length - 1);
+      for (const key of keys) {
+        const keySize = conservativeJsonStringBudget(key);
+        const itemSize = visit(object[key]);
+        if (keySize === null || itemSize === null) return null;
+        size += keySize + 1 + itemSize;
+      }
+      return size;
+    } catch {
+      return null;
+    } finally {
+      ancestors.delete(current);
+    }
+  };
+  return visit(value);
+}
+function serializedJsonByteLength(value) {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === void 0 ? null : utf8ByteLength(serialized);
+  } catch {
+    return null;
+  }
+}
+function a2aMessageTextWithinLimit(value) {
+  return value.parts.every((part) => {
+    if (part.text === void 0) return true;
+    const size = utf8ByteLength(part.text);
+    return size !== null && size <= A2A_PROTOCOL_LIMITS.messageTextBytes;
+  });
+}
+function a2aArtifactWithinLimits(value) {
+  if (value.name !== void 0 && (utf8ByteLength(value.name) === null || utf8ByteLength(value.name) > A2A_PROTOCOL_LIMITS.artifactLabelBytes)) {
+    return false;
+  }
+  return value.parts.every((part) => {
+    if (part.text !== void 0 && (utf8ByteLength(part.text) === null || utf8ByteLength(part.text) > A2A_PROTOCOL_LIMITS.artifactValueBytes)) {
+      return false;
+    }
+    if (part.url !== void 0 && (utf8ByteLength(part.url) === null || utf8ByteLength(part.url) > A2A_PROTOCOL_LIMITS.artifactValueBytes)) {
+      return false;
+    }
+    if (part.data !== void 0) {
+      const size = typeof part.data === "string" ? utf8ByteLength(part.data) : conservativeJsonSizeBudget(part.data);
+      if (size === null || size > A2A_PROTOCOL_LIMITS.artifactValueBytes) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+function validA2aMessage(value, textLimit = false, partsLimit = false) {
+  const result = validateA2aMessage(value);
+  const partsBudget = result.valid ? serializedJsonByteLength(result.value.parts) : null;
+  return result.valid && conservativeJsonSizeBudget(value) !== null && (!partsLimit || partsBudget !== null && partsBudget <= A2A_PROTOCOL_LIMITS.messagePartsBytes) && (!textLimit || a2aMessageTextWithinLimit(result.value));
+}
+function validA2aArtifact(value) {
+  const task = validateA2aTask({
+    id: "contract-validation",
+    status: { state: "SUBMITTED" },
+    artifacts: [value]
+  });
+  return task.valid && conservativeJsonSizeBudget(value) !== null && a2aArtifactWithinLimits(task.value.artifacts?.[0]);
+}
+function validTaskUpdateDiagnostics(value) {
+  if (!Array.isArray(value) || value.length > A2A_PROTOCOL_LIMITS.diagnosticsPerUpdate)
+    return false;
+  let aggregate = 0;
+  for (const item of value) {
+    if (!isPlainObject2(item) || !hasOnlyKeys(item, ["kind", "reasonCode", "message", "details"]) || typeof item.kind !== "string" || !A2A_TASK_TYPE_PATTERN.test(item.kind) || item.reasonCode !== void 0 && typeof item.reasonCode !== "string" || item.message !== void 0 && typeof item.message !== "string" || item.details !== void 0 && !isPlainObject2(item.details))
+      return false;
+    const reasonBytes = item.reasonCode === void 0 ? 0 : utf8ByteLength(item.reasonCode);
+    const messageBytes = item.message === void 0 ? 0 : utf8ByteLength(item.message);
+    const detailsBytes = item.details === void 0 || Object.keys(item.details).length === 0 ? 0 : utf8ByteLength(JSON.stringify(item.details));
+    if (reasonBytes === null || messageBytes === null || detailsBytes === null)
+      return false;
+    aggregate += reasonBytes + messageBytes + detailsBytes;
+  }
+  return aggregate <= A2A_PROTOCOL_LIMITS.diagnosticsBytesPerUpdate;
+}
+function isRevision(value) {
+  return typeof value === "string" && DECIMAL_REVISION_RE.test(value);
+}
+function isTaskType(value) {
+  return typeof value === "string" && A2A_TASK_TYPE_PATTERN.test(value);
+}
+function isDispatchEventContext(value) {
+  if (!isPlainObject2(value) || !hasOnlyKeys(value, ["origin", "sender", "provider", "delivery_id"]) || !isPlainObject2(value.sender) || !hasOnlyKeys(value.sender, ["kind", "identity"]))
+    return false;
+  const sender = value.sender;
+  if (value.origin === "send") {
+    return (sender.kind === "user" || sender.kind === "agent") && typeof sender.identity === "string" && UUID_RE.test(sender.identity) && value.provider === void 0 && value.delivery_id === void 0;
+  }
+  return value.origin === "webhook" && sender.kind === "coordinator" && sender.identity === "spellguard" && isNonEmptyString(value.provider, A2A_PROTOCOL_LIMITS.identifierBytes) && isNonEmptyString(value.delivery_id, A2A_PROTOCOL_LIMITS.identifierBytes);
+}
+var DELIVERY_OUTCOMES = /* @__PURE__ */ new Set([
+  "injected",
+  "resumed",
+  "ledger_only",
+  "delivery_failed"
+]);
+function isDeliveryOutcome(value) {
+  return typeof value === "string" && DELIVERY_OUTCOMES.has(value);
+}
+function isTaskTypeList(value) {
+  return Array.isArray(value) && value.every(isTaskType);
+}
+function isBlockedTaskTypes(value) {
+  return Array.isArray(value) && value.every(
+    (entry) => isPlainObject2(entry) && hasOnlyKeys(entry, ["task_type", "cause"]) && isTaskType(entry.task_type) && isNonEmptyString(entry.cause, 500)
+  );
+}
+function isHandlerInventory(value) {
+  return Array.isArray(value) && value.every(
+    (entry) => isPlainObject2(entry) && hasOnlyKeys(entry, [
+      "task_type",
+      "state",
+      "path",
+      "installed_hash",
+      "current_hash",
+      "dist_hash",
+      "blocking_cause"
+    ]) && isTaskType(entry.task_type) && typeof entry.state === "string" && HANDLER_STATES.has(entry.state) && isNonEmptyString(entry.path, 4096) && (entry.installed_hash === void 0 || isNonEmptyString(entry.installed_hash, 256)) && (entry.current_hash === void 0 || isNonEmptyString(entry.current_hash, 256)) && (entry.dist_hash === void 0 || isNonEmptyString(entry.dist_hash, 256)) && (entry.blocking_cause === void 0 || isNonEmptyString(entry.blocking_cause, 500))
+  );
+}
+function isConfigApplication(value) {
+  return isRevision(value.config_revision) && isTaskTypeList(value.applied_task_types) && isBlockedTaskTypes(value.blocked_task_types) && (value.superseded === void 0 || typeof value.superseded === "boolean");
+}
+function isMaintenanceApplication(value) {
+  return isNonEmptyString(value.operation_id, 256) && (value.status === "applied" || value.status === "blocked") && isRevision(value.config_revision) && (value.reason === void 0 || isNonEmptyString(value.reason, 500));
+}
+var PUBLIC_TASK_RESPONSE_KEYS = [
+  "id",
+  "contextId",
+  "organizationId",
+  "senderKind",
+  "senderAgentId",
+  "senderUserId",
+  "recipientAgentId",
+  "originatingAgentId",
+  "originatingAgentIdentity",
+  "originatingSessionId",
+  "framework",
+  "type",
+  "state",
+  "artifactUrl",
+  "metadata",
+  "resultPayload",
+  "deferred",
+  "lastProgressAt",
+  "lastSupervisionKeepaliveAt",
+  "effectiveDeadlineAt",
+  "workingTimeoutSeconds",
+  "hasUnansweredWorkerMessage",
+  "threadRecordCount",
+  "threadWriteAttemptCount",
+  "suppressedMessageCount",
+  "suppressedProgressCount",
+  "artifactCount",
+  "terminalAt",
+  "createdAt",
+  "updatedAt"
+];
+var TASK_SUMMARY_RESPONSE_KEYS = [
+  ...PUBLIC_TASK_RESPONSE_KEYS.filter(
+    (key) => key !== "originatingAgentId" && key !== "originatingAgentIdentity" && key !== "originatingSessionId"
+  ),
+  "typeLabel",
+  "stateLabel"
+];
+function nullableString(value) {
+  return value === null || typeof value === "string";
+}
+function exactKeys(value, keys) {
+  return Object.keys(value).length === keys.length && hasOnlyKeys(value, keys);
+}
+function validTaskResponseBase(value, summary) {
+  const keys = summary ? TASK_SUMMARY_RESPONSE_KEYS : PUBLIC_TASK_RESPONSE_KEYS;
+  return exactKeys(value, keys) && isNonEmptyString(value.id) && isNonEmptyString(value.contextId) && isNonEmptyString(value.organizationId) && (value.senderKind === "agent" || value.senderKind === "coordinator" || value.senderKind === "user") && nullableString(value.senderAgentId) && nullableString(value.senderUserId) && isNonEmptyString(value.recipientAgentId) && (summary || nullableString(value.originatingAgentId) && nullableString(value.originatingAgentIdentity) && nullableString(value.originatingSessionId)) && nullableString(value.framework) && isNonEmptyString(value.type) && A2A_TASK_STATES.includes(value.state) && nullableString(value.artifactUrl) && isPlainObject2(value.metadata) && typeof value.deferred === "boolean" && nullableString(value.lastProgressAt) && nullableString(value.lastSupervisionKeepaliveAt) && nullableString(value.effectiveDeadlineAt) && (value.workingTimeoutSeconds === null || typeof value.workingTimeoutSeconds === "number") && typeof value.hasUnansweredWorkerMessage === "boolean" && typeof value.threadRecordCount === "number" && typeof value.threadWriteAttemptCount === "number" && typeof value.suppressedMessageCount === "number" && typeof value.suppressedProgressCount === "number" && typeof value.artifactCount === "number" && nullableString(value.terminalAt) && isNonEmptyString(value.createdAt) && isNonEmptyString(value.updatedAt) && (!summary || isNonEmptyString(value.typeLabel) && isNonEmptyString(value.stateLabel));
+}
+function validatePublicTaskResponse(value) {
+  return isPlainObject2(value) && validTaskResponseBase(value, false);
+}
+function validateTaskDetailResponse(value) {
+  if (!isPlainObject2(value)) return false;
+  const { thread, artifacts, diagnostics, ...summary } = value;
+  return validTaskResponseBase(summary, true) && Array.isArray(thread) && Array.isArray(artifacts) && Array.isArray(diagnostics) && thread.every(validateTaskThreadResponse) && artifacts.every(validateTaskArtifactResponse) && diagnostics.every(validateTaskDiagnosticResponse);
+}
+function nonnegativeInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+function validateTaskThreadResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "sequence",
+    "recordKind",
+    "messageId",
+    "senderRole",
+    "senderKind",
+    "senderAgentId",
+    "senderAgentIdentity",
+    "senderUserId",
+    "senderUserIdentity",
+    "senderDisplayName",
+    "text",
+    "parts",
+    "postTerminal",
+    "deliveryState",
+    "deliveryReason",
+    "terminalState",
+    "terminalCause",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && nonnegativeInteger(value.sequence) && (value.recordKind === "progress" || value.recordKind === "message" || value.recordKind === "terminal") && nullableString(value.messageId) && (value.senderRole === null || value.senderRole === "USER" || value.senderRole === "AGENT") && (value.senderKind === null || value.senderKind === "agent" || value.senderKind === "user" || value.senderKind === "coordinator" || value.senderKind === "handler" || value.senderKind === "daemon") && nullableString(value.senderAgentId) && nullableString(value.senderAgentIdentity) && nullableString(value.senderUserId) && nullableString(value.senderUserIdentity) && nullableString(value.senderDisplayName) && nullableString(value.text) && typeof value.postTerminal === "boolean" && nullableString(value.deliveryState) && nullableString(value.deliveryReason) && (value.terminalState === null || A2A_TASK_STATES.includes(value.terminalState)) && (value.terminalCause === null || isPlainObject2(value.terminalCause)) && isNonEmptyString(value.createdAt);
+}
+function validateTaskArtifactResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "artifactId",
+    "sequence",
+    "type",
+    "value",
+    "displayLabel",
+    "metadata",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && isNonEmptyString(value.artifactId) && nonnegativeInteger(value.sequence) && isNonEmptyString(value.type) && typeof value.value === "string" && nullableString(value.displayLabel) && isPlainObject2(value.metadata) && isNonEmptyString(value.createdAt);
+}
+function validateTaskDiagnosticResponse(value) {
+  return isPlainObject2(value) && exactKeys(value, [
+    "id",
+    "sequence",
+    "kind",
+    "reasonCode",
+    "message",
+    "details",
+    "createdAt"
+  ]) && isNonEmptyString(value.id) && nonnegativeInteger(value.sequence) && isNonEmptyString(value.kind) && nullableString(value.reasonCode) && nullableString(value.message) && isPlainObject2(value.details) && isNonEmptyString(value.createdAt);
+}
+function validateA2aAckResult(value) {
+  if (!isPlainObject2(value) || typeof value.kind !== "string") return false;
+  switch (value.kind) {
+    case "task_update":
+      return hasOnlyKeys(value, ["kind", "outcome", "response"]) && (value.outcome === "persisted" || value.outcome === "already_terminal" || value.outcome === "thread_bound_reached") && (value.response === void 0 || validatePublicTaskResponse(value.response));
+    case "message":
+      return hasOnlyKeys(value, ["kind", "outcome", "message_id", "response"]) && value.outcome === "persisted" && isNonEmptyString(value.message_id) && (value.response === void 0 || isPlainObject2(value.response) && exactKeys(value.response, ["messageId", "postTerminal"]) && isNonEmptyString(value.response.messageId) && typeof value.response.postTerminal === "boolean");
+    case "task_create":
+      return hasOnlyKeys(value, ["kind", "task", "outcome", "response"]) && validateA2aTask(value.task).valid && conservativeJsonSizeBudget(value.task) !== null && (value.outcome === void 0 || value.outcome === "created" || value.outcome === "duplicate" || value.outcome === "delivery_failed" || // Acceptance, not failure: the recipient box was asleep, the task is
+      // durably parked and a wake was requested. The server emits this for
+      // task_create; rejecting it drops the entire ack frame (see the
+      // declared `A2aAckResult` union and the Go daemon's mirror).
+      value.outcome === "pending_wake") && (value.response === void 0 || validatePublicTaskResponse(value.response));
+    case "task_read":
+      return hasOnlyKeys(value, ["kind", "task", "response"]) && validateA2aTask(value.task).valid && conservativeJsonSizeBudget(value.task) !== null && (value.response === void 0 || validateTaskDetailResponse(value.response));
+    case "config_applied":
+      return hasOnlyKeys(value, [
+        "kind",
+        "config_revision",
+        "applied_task_types",
+        "blocked_task_types",
+        "superseded"
+      ]) && isConfigApplication(value);
+    case "maintenance":
+      return hasOnlyKeys(value, [
+        "kind",
+        "operation_id",
+        "status",
+        "config_revision",
+        "reason"
+      ]) && isMaintenanceApplication(value);
+    default:
+      return false;
+  }
+}
+function validateA2aContractFrame(value, direction) {
+  if (!isPlainObject2(value) || typeof value.type !== "string") return false;
+  const serverBase = direction === "server" && isNonEmptyString(value.seq) && isNonEmptyString(value.ts);
+  const clientBase = direction === "client" && isNonEmptyString(value.client_msg_id, A2A_PROTOCOL_LIMITS.identifierBytes);
+  switch (value.type) {
+    case "a2a_task_dispatch":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "task",
+        "message",
+        "framework",
+        "recipient_agent_id",
+        "sender_agent_id",
+        "org_id",
+        "event_context"
+      ]) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && (value.sender_agent_id === void 0 || isNonEmptyString(
+        value.sender_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.org_id === void 0 || isNonEmptyString(
+        value.org_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework)) && (value.event_context === void 0 || isDispatchEventContext(value.event_context)) && validateA2aTask(value.task).valid && validateA2aMessage(value.message).valid;
+    case "config_updated":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "config",
+        "triggers_rotation",
+        "config_revision"
+      ]) && isPlainObject2(value.config) && typeof value.triggers_rotation === "boolean" && isRevision(value.config_revision);
+    case "a2a_maintenance":
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "operation_id",
+        "action",
+        "config_revision"
+      ]) && isNonEmptyString(value.operation_id, 256) && value.action === "backfill" && isRevision(value.config_revision);
+    case "a2a_config_applied":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "config_revision",
+        "applied_task_types",
+        "blocked_task_types",
+        "superseded"
+      ]) && isConfigApplication(value);
+    case "a2a_handler_inventory":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "config_revision",
+        "handlers"
+      ]) && isRevision(value.config_revision) && isHandlerInventory(value.handlers);
+    case "a2a_maintenance_result":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "operation_id",
+        "status",
+        "config_revision",
+        "reason"
+      ]) && isMaintenanceApplication(value);
+    case "a2a_supervision_keepalive":
+    case "a2a_task_read":
+    case "a2a_deferred_accepted":
+      return clientBase && hasOnlyKeys(value, ["type", "client_msg_id", "taskId"]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes);
+    case "a2a_message_delivery":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "taskId",
+        "messageId",
+        "reason",
+        "outcome"
+      ]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes) && isNonEmptyString(
+        value.messageId,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && isDeliveryOutcome(value.outcome) && // A clean injection needs no explanation; every other terminal state
+      // must name why, so no message ends as an unexplained failure.
+      (value.outcome === "injected" ? value.reason === void 0 : isNonEmptyString(value.reason, A2A_PROTOCOL_LIMITS.identifierBytes));
+    case "a2a_session_register":
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "session_id",
+        "framework",
+        "working_directory",
+        "taskId"
+      ]) && isNonEmptyString(value.session_id, 256) && typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework) && isNonEmptyString(value.working_directory, 4096) && (value.taskId === void 0 || isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes));
+    case "a2a_task_create": {
+      const messageBudget = conservativeJsonSizeBudget(value.message);
+      const frameBudget = conservativeJsonSizeBudget(value);
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "recipient_agent_id",
+        "task_type",
+        "idempotency_key",
+        "message",
+        "originating_session_id"
+      ]) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && isTaskType(value.task_type) && isNonEmptyString(value.idempotency_key, 256) && validA2aMessage(value.message, true) && messageBudget !== null && messageBudget <= A2A_PROTOCOL_LIMITS.taskCreateInputBytes && frameBudget !== null && frameBudget - messageBudget <= A2A_PROTOCOL_LIMITS.taskCreateEnvelopeBytes && (value.originating_session_id === void 0 || isNonEmptyString(value.originating_session_id, 256));
+    }
+    case "a2a_task_update": {
+      const artifacts = value.artifacts;
+      const artifact = value.artifact;
+      const artifactsValid = artifacts === void 0 || Array.isArray(artifacts) && artifacts.every(validA2aArtifact);
+      const artifactValid = artifact === void 0 || validA2aArtifact(artifact);
+      const artifactCount = (artifact === void 0 ? 0 : 1) + (Array.isArray(artifacts) ? artifacts.length : 0);
+      const resultBudget = value.result === void 0 ? 0 : conservativeJsonSizeBudget(value.result);
+      return clientBase && hasOnlyKeys(value, [
+        "type",
+        "client_msg_id",
+        "taskId",
+        "state",
+        "message",
+        "artifact",
+        "artifacts",
+        "result",
+        "diagnostics",
+        "reasonSource",
+        "deferred",
+        "framework"
+      ]) && isNonEmptyString(value.taskId, A2A_PROTOCOL_LIMITS.identifierBytes) && typeof value.state === "string" && A2A_TASK_STATES.includes(value.state) && (value.message === void 0 || validA2aMessage(value.message, true)) && artifactValid && artifactsValid && artifactCount <= A2A_PROTOCOL_LIMITS.artifactsPerUpdate && resultBudget !== null && resultBudget <= A2A_PROTOCOL_LIMITS.taskUpdateResultBytes && (value.diagnostics === void 0 || validTaskUpdateDiagnostics(value.diagnostics)) && // Present-or-absent, and 'handler' is the ONLY admissible value: a
+      // daemon-authored reason is the default, so there is no positive daemon
+      // marker to accept — anything else is drift and fails the whole frame.
+      (value.reasonSource === void 0 || value.reasonSource === "handler") && (value.deferred === void 0 || value.deferred === true && value.state === "WORKING") && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework));
+    }
+    case "a2a_message": {
+      const common = validA2aMessage(value.message, true, true) && isNonEmptyString(
+        value.recipient_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      ) && (value.sender_agent_id === void 0 || isNonEmptyString(
+        value.sender_agent_id,
+        A2A_PROTOCOL_LIMITS.identifierBytes
+      )) && (value.framework === void 0 || typeof value.framework === "string" && CANONICAL_FRAMEWORKS.has(value.framework)) && (value.target_session_id === void 0 || isNonEmptyString(value.target_session_id, 256));
+      if (direction === "client") {
+        return clientBase && hasOnlyKeys(value, [
+          "type",
+          "client_msg_id",
+          "message",
+          "recipient_agent_id",
+          "sender_agent_id",
+          "framework",
+          "target_session_id"
+        ]) && common;
+      }
+      return serverBase && hasOnlyKeys(value, [
+        "type",
+        "seq",
+        "ts",
+        "message",
+        "recipient_agent_id",
+        "sender_agent_id",
+        "framework",
+        "org_id",
+        "target_session_id"
+      ]) && common && (value.org_id === void 0 || isNonEmptyString(value.org_id, A2A_PROTOCOL_LIMITS.identifierBytes));
+    }
+    default:
+      return false;
+  }
+}
+function isGeneralizedServerEnvelopeValid(obj) {
+  if (obj.type === "ack" && obj.result !== void 0) {
+    return validateA2aAckResult(obj.result);
+  }
+  if (obj.type === "config_updated" && obj.config_revision !== void 0) {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_maintenance") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_task_dispatch") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  if (obj.type === "a2a_message") {
+    return validateA2aContractFrame(obj, "server");
+  }
+  return true;
+}
 var KNOWN_SERVER_FRAME_TYPES = /* @__PURE__ */ new Set([
   "hello",
   "credential_delivered",
   "credential_rotated",
   "credential_revoked",
+  "github_grants_bundle",
+  "github_grants_commit_confirmed",
   "config_updated",
   "ack",
   "error",
   "resume_window_exceeded",
   "login_code",
-  "login_restart"
+  "login_restart",
+  "slack_event",
+  "slack_event_blocked",
+  "teams_activity",
+  "teams_activity_blocked",
+  // A2A collaboration-plane down frames (Task T2). `a2a_message` is
+  // bidirectional; this is its server→box direction.
+  "a2a_task_dispatch",
+  "a2a_message",
+  "a2a_maintenance"
+]);
+var A2A_FRAME_TYPES = /* @__PURE__ */ new Set([
+  "a2a_config_applied",
+  "a2a_deferred_accepted",
+  "a2a_message_delivery",
+  "a2a_handler_inventory",
+  "a2a_maintenance",
+  "a2a_maintenance_result",
+  "a2a_task_dispatch",
+  "a2a_task_update",
+  "a2a_message",
+  "a2a_session_register",
+  "a2a_supervision_keepalive",
+  "a2a_task_create",
+  "a2a_task_read"
 ]);
 function parseServerFrame(text) {
   if (typeof text !== "string" || text.length === 0) return null;
@@ -5012,10 +5906,123 @@ function parseServerFrame(text) {
   const obj = raw;
   if (typeof obj.type !== "string") return null;
   if (!KNOWN_SERVER_FRAME_TYPES.has(obj.type)) return null;
+  if (obj.type === "github_grants_bundle") {
+    if (!isGithubGrantsBundle(obj)) return null;
+    return obj;
+  }
+  if (obj.type === "github_grants_commit_confirmed") {
+    if (!hasOnlyKeys(obj, [
+      "type",
+      "protocol_version",
+      "seq",
+      "ts",
+      "delivery_id",
+      "grant_set_revision"
+    ]) || obj.protocol_version !== "5" || typeof obj.seq !== "string" || typeof obj.ts !== "string" || typeof obj.delivery_id !== "string" || !UUID_RE.test(obj.delivery_id) || !isRevision(obj.grant_set_revision))
+      return null;
+    return obj;
+  }
+  if (A2A_FRAME_TYPES.has(obj.type) && conservativeJsonSizeBudget(obj) === null)
+    return null;
   if (obj.type === "login_code") {
     if (typeof obj.code !== "string" || obj.code.length === 0) return null;
   }
+  if (!isGeneralizedServerEnvelopeValid(obj)) return null;
+  if (!isA2aServerPayloadValid(obj)) return null;
   return obj;
+}
+function isGithubGrantsBundle(value) {
+  if (!hasOnlyKeys(value, [
+    "type",
+    "protocol_version",
+    "seq",
+    "ts",
+    "delivery_id",
+    "grant_set_revision",
+    "credentials"
+  ]) || value.protocol_version !== "5" || typeof value.seq !== "string" || typeof value.ts !== "string" || typeof value.delivery_id !== "string" || !UUID_RE.test(value.delivery_id) || !isRevision(value.grant_set_revision) || !Array.isArray(value.credentials))
+    return false;
+  const grantIds = /* @__PURE__ */ new Set();
+  const installationIds = /* @__PURE__ */ new Set();
+  const credentialIds = /* @__PURE__ */ new Set();
+  const scopedTokenIds = /* @__PURE__ */ new Set();
+  const numericInstallationIds = /* @__PURE__ */ new Set();
+  const owners = /* @__PURE__ */ new Set();
+  let memberAgentId;
+  for (const raw of value.credentials) {
+    if (!isPlainObject2(raw)) return false;
+    const scope = raw.scope;
+    const providerData = raw.provider_data;
+    if (!hasOnlyKeys(raw, [
+      "grant_id",
+      "installation_record_id",
+      "credential_id",
+      "scoped_token_id",
+      "agent_id",
+      "provider",
+      "kind",
+      "status",
+      "grant_revision",
+      "grant_set_revision",
+      "github_org_login",
+      "github_org_display_name",
+      "installation_id",
+      "expires_at",
+      "scoped_token",
+      "access",
+      "scope",
+      "provider_data"
+    ]) || raw.provider !== "github" || raw.kind !== "issued" || raw.status !== "valid" || typeof raw.grant_id !== "string" || !UUID_RE.test(raw.grant_id) || typeof raw.installation_record_id !== "string" || !UUID_RE.test(raw.installation_record_id) || typeof raw.credential_id !== "string" || !UUID_RE.test(raw.credential_id) || // NOT a UUID, unlike the four relational ids around it. This is GitHub's
+    // INSTALLATION-TOKEN id — a number the mint path stringifies
+    // (`scopedTokenId()` in `services/github/github-api.ts`) into the `text`
+    // column `credentials.scoped_token_id`; real rows look like `5249971925`.
+    // A UUID test here rejected every bundle the server actually sends, so a
+    // marked agent's credential store stayed empty and git kept 401ing. It is
+    // an OPAQUE identifier everywhere else in the codebase (the API contract
+    // types it `z.string().min(1)`), and it is validated as one here: present,
+    // a string, non-empty. Uniqueness within the bundle is still enforced
+    // below.
+    typeof raw.scoped_token_id !== "string" || raw.scoped_token_id.length === 0 || typeof raw.agent_id !== "string" || !UUID_RE.test(raw.agent_id) || !isRevision(raw.grant_revision) || raw.grant_set_revision !== value.grant_set_revision || typeof raw.github_org_login !== "string" || raw.github_org_login.length === 0 || typeof raw.github_org_display_name !== "string" || raw.github_org_display_name.trim().length === 0 || typeof raw.installation_id !== "number" || !Number.isSafeInteger(raw.installation_id) || raw.installation_id <= 0 || typeof raw.expires_at !== "string" || !Number.isFinite(Date.parse(raw.expires_at)) || typeof raw.scoped_token !== "string" || raw.scoped_token.length === 0 || !["read", "write"].includes(raw.access) || !isPlainObject2(scope) || !isPlainObject2(providerData) || !hasOnlyKeys(providerData, [
+      "github_user_id",
+      "github_login",
+      "github_user_email",
+      "git_author_name",
+      "git_author_email"
+    ]) || typeof providerData.github_user_id !== "number" || !Number.isSafeInteger(providerData.github_user_id) || // Strictly positive: no GitHub account has id 0, and 0 is precisely the
+    // placeholder a missing identity used to produce server-side. The
+    // plugins write this into the box's real git config, so a bundle whose
+    // committer resolves to nobody is refused at the boundary too.
+    providerData.github_user_id <= 0 || typeof providerData.github_login !== "string" || providerData.github_login.trim().length === 0 || !(providerData.github_user_email === null || typeof providerData.github_user_email === "string") || typeof providerData.git_author_name !== "string" || providerData.git_author_name.trim().length === 0 || typeof providerData.git_author_email !== "string" || providerData.git_author_email.trim().length === 0)
+      return false;
+    const owner = raw.github_org_login;
+    const validScope = scope.mode === "all" && hasOnlyKeys(scope, ["mode"]) || scope.mode === "selected" && hasOnlyKeys(scope, ["mode", "repository_names"]) && Array.isArray(scope.repository_names) && scope.repository_names.length > 0 && scope.repository_names.every((name) => {
+      if (typeof name !== "string" || name !== name.toLowerCase())
+        return false;
+      const parts = name.split("/");
+      return parts.length === 2 && parts[0] === owner.toLowerCase() && parts[1].length > 0;
+    }) && new Set(scope.repository_names).size === scope.repository_names.length;
+    if (!validScope) return false;
+    const normalizedLogin = owner.toLowerCase();
+    if (grantIds.has(raw.grant_id) || installationIds.has(raw.installation_record_id) || credentialIds.has(raw.credential_id) || scopedTokenIds.has(raw.scoped_token_id) || numericInstallationIds.has(raw.installation_id) || memberAgentId !== void 0 && memberAgentId !== raw.agent_id || owners.has(normalizedLogin))
+      return false;
+    grantIds.add(raw.grant_id);
+    installationIds.add(raw.installation_record_id);
+    credentialIds.add(raw.credential_id);
+    scopedTokenIds.add(raw.scoped_token_id);
+    numericInstallationIds.add(raw.installation_id);
+    memberAgentId = raw.agent_id;
+    owners.add(normalizedLogin);
+  }
+  return true;
+}
+function isA2aServerPayloadValid(obj) {
+  if (obj.type === "a2a_task_dispatch") {
+    return validateA2aTask(obj.task).valid && validateA2aMessage(obj.message).valid && conservativeJsonSizeBudget(obj.task) !== null && conservativeJsonSizeBudget(obj.message) !== null;
+  }
+  if (obj.type === "a2a_message") {
+    return validA2aMessage(obj.message, true, true) && conservativeJsonSizeBudget(obj.message) !== null;
+  }
+  return true;
 }
 var AGENT_CONTROL_CLOSE_CODES = {
   NORMAL: 1e3,
@@ -5024,13 +6031,36 @@ var AGENT_CONTROL_CLOSE_CODES = {
   AUTH_FAILED: 4401,
   AGENT_OWNERSHIP: 4403,
   RESUME_WINDOW_EXCEEDED: 4413,
+  /**
+   * The channel displaced a registered socket that had stopped answering the
+   * keepalive, so a newcomer could take the single-socket slot (S2).
+   *
+   * Distinct from `ALREADY_CONNECTED` because it points the OTHER way: 4429
+   * tells a newcomer "someone live is already here", while this tells an
+   * incumbent "you look dead and have been replaced". It is deliberately NOT
+   * fatal to the client — a socket that receives it either really is a zombie
+   * whose process is gone, or is a live daemon that was mis-judged and must
+   * reconnect rather than exit.
+   */
+  STALE_SOCKET: 4410,
   ALREADY_CONNECTED: 4429,
   /**
    * Set ONLY on a deliberate move/re-bootstrap rotation; the sole trigger
    * for the plugin self-wipe. The close reason string is one of
    * `AUTH_SUPERSEDED_CLOSE_REASONS` — use that constant to match on it.
    */
-  AUTH_SUPERSEDED: 4409
+  AUTH_SUPERSEDED: 4409,
+  /**
+   * The agent is quarantined: its channel is suspended, not revoked (#1348).
+   * Sent only to a client that advertised `AGENT_SUSPEND_CAPABILITY`; any
+   * other gets AUTH_FAILED (4401). The client drops every credential it
+   * placed, keeps its identity, and reconnects with backoff (30 s, doubling to
+   * 5 min). A quarantined agent's capable reconnect is answered with this code
+   * too, until a release lets the upgrade through and the normal resume
+   * re-delivers what is still granted. The reason is
+   * `AGENT_SUSPENDED_CLOSE_REASON`.
+   */
+  AGENT_SUSPENDED: 4423
   // A SERVER_TRANSIENT (4503) code is intentionally not declared here: the
   // server's transient-failure paths (storage put errors, missing DB handle,
   // serialization throws) log and fall through rather than emitting a close
@@ -5041,6 +6071,7 @@ var AUTH_SUPERSEDED_CLOSE_REASONS = {
   ATTACHED_ELSEWHERE: "attached_elsewhere",
   REASSIGNED: "reassigned"
 };
+var AGENT_SUSPEND_CAPABILITY = "agent_suspend_v1";
 var FATAL_CLOSE_CODES = /* @__PURE__ */ new Set([
   // 4400 BOOTSTRAP_ERROR is wired up server-side. Without listing it here,
   // partysocket would auto-reconnect after a bootstrap-terminal failure and
@@ -5065,10 +6096,15 @@ var AgentControlClient = class {
     this.#lastServerSeq = opts.initialLastServerSeq ?? "0";
     this.#knownCredentials = opts.initialKnownCredentials ?? [];
   }
+  opts;
   #ps = null;
+  /** Preserve wire order across async receiver durability hooks. */
+  #messageChain = Promise.resolve();
   #closed = false;
   #lastServerSeq;
   #knownCredentials;
+  /** True only for a connection whose query advertised `resume=always`. */
+  #resumeAlwaysConnection = false;
   #firstConnect = true;
   #pendingRequests = /* @__PURE__ */ new Map();
   // Serializes refresh requests because `credential_delivered` carries no
@@ -5076,6 +6112,11 @@ var AgentControlClient = class {
   // would resolve them out-of-order. This serialization can be dropped if the
   // protocol later grows an `in_response_to` correlation field.
   #refreshChain = Promise.resolve();
+  // Redacted replay and the following divergence pass can announce the same
+  // issued identity before its first refresh completes. Keep one refresh per
+  // identity in flight so the second notice cannot rotate it again after the
+  // first response settles.
+  #redactedRefreshesInFlight = /* @__PURE__ */ new Set();
   // Rotation-fallback timers. Key = seq of the config_updated frame.
   // Cleared when a credential_rotated arrives before the 10s window expires.
   #rotationTimers = /* @__PURE__ */ new Map();
@@ -5084,11 +6125,24 @@ var AgentControlClient = class {
   // value, via the injectable #now()) so the timer can detect a zombie socket.
   #heartbeatTimer = null;
   #lastPongAt = 0;
+  /** Consecutive HTTP-upgrade auth failures seen before a socket opens. */
+  #consecutiveUpgradeAuthFailures = 0;
+  /**
+   * #1348: the last suspended (4423) wait, or null while the session is
+   * healthy. A suspended reconnect still opens (hello, then 4423), so this
+   * resets only on a frame past the hello, never on `open`.
+   */
+  #suspendedDelayMs = null;
+  #suspendedTimer = null;
   /** Open the socket. Subsequent reconnects are automatic. */
   start() {
     if (this.#closed || this.#ps) return;
     const BaseImpl = this.opts.WebSocketImpl ?? wrapper_default;
-    const Impl = makeErrorSafeWebSocket(BaseImpl, this.opts.upgradeHeaders);
+    const Impl = makeErrorSafeWebSocket(
+      BaseImpl,
+      this.opts.upgradeHeaders,
+      (err) => this.#observeUpgradeError(err)
+    );
     const apiBaseUrl = this.opts.apiBaseUrl.replace(/^https?:\/\//, "");
     const tls = this.opts.apiBaseUrl.startsWith("https://");
     const ps = new PartySocket({
@@ -5124,10 +6178,13 @@ var AgentControlClient = class {
     });
     this.#ps = ps;
     ps.addEventListener("open", () => {
+      this.#consecutiveUpgradeAuthFailures = 0;
       void this.#onOpen();
     });
     ps.addEventListener("message", (e) => {
-      void this.#handleMessage(e);
+      this.#messageChain = this.#messageChain.then(
+        () => this.#handleMessage(e)
+      );
     });
     ps.addEventListener("close", (event) => {
       this.#stopHeartbeat();
@@ -5145,6 +6202,10 @@ var AgentControlClient = class {
         this.close();
         return;
       }
+      if (code === AGENT_CONTROL_CLOSE_CODES.AGENT_SUSPENDED) {
+        this.#suspend(reason);
+        return;
+      }
       if (FATAL_CLOSE_CODES.has(code)) {
         this.opts.onFatalClose(code, reason);
         this.close();
@@ -5158,8 +6219,50 @@ var AgentControlClient = class {
       this.opts.onError?.(err);
     });
   }
-  /** Send a CredentialRequest and resolve to the delivered descriptors.
-   *  Times out if no `credential_delivered` arrives within `timeoutMs`. */
+  /**
+   * #1348: the agent is quarantined. PartySocket has already queued its own
+   * quick retry (its close handler reconnects before listeners run), so stop
+   * it and reconnect on the suspended backoff instead. Identity stays.
+   */
+  #suspend(reason) {
+    const ps = this.#ps;
+    if (this.#closed || !ps) return;
+    ps.close();
+    const { initial, max } = this.opts.suspendedBackoffMs ?? {
+      initial: 3e4,
+      max: 3e5
+    };
+    const retryInMs = this.#suspendedDelayMs === null ? initial : Math.min(this.#suspendedDelayMs * 2, max);
+    this.#suspendedDelayMs = retryInMs;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = setTimeout(() => {
+      this.#suspendedTimer = null;
+      if (!this.#closed && this.#ps === ps) ps.reconnect();
+    }, retryInMs);
+    this.#knownCredentials = [];
+    void Promise.resolve().then(() => this.opts.onKnownCredentialsChanged?.([])).then(() => this.opts.onSuspended?.({ reason, retryInMs })).catch(
+      (err) => this.opts.onError?.(
+        err instanceof Error ? err : new Error(String(err))
+      )
+    );
+  }
+  #observeUpgradeError(err) {
+    if (isUpgradeUnauthorized(err)) {
+      this.#consecutiveUpgradeAuthFailures += 1;
+      if (this.#consecutiveUpgradeAuthFailures >= 3) {
+        this.opts.onFatalClose(
+          AGENT_CONTROL_CLOSE_CODES.AUTH_FAILED,
+          "http_upgrade_unauthorized"
+        );
+        this.close();
+      }
+      return;
+    }
+    this.#consecutiveUpgradeAuthFailures = 0;
+  }
+  /** Send a CredentialRequest and resolve after the durable response apply.
+   *  V4 returns delivered descriptors; V5 resolves `[]` after its bundle hook
+   *  commits. Times out if no matching response arrives within `timeoutMs`. */
   async requestRefresh(args, opts = {}) {
     if (!this.#ps) throw new Error("client not started");
     const next = this.#refreshChain.catch(() => void 0).then(() => this.#sendRefresh(args, opts));
@@ -5171,15 +6274,17 @@ var AgentControlClient = class {
     if (!this.#ps) throw new Error("client not started");
     const clientMsgId = crypto.randomUUID();
     const timeoutMs = opts.timeoutMs ?? 3e4;
-    return await new Promise((resolve3, reject) => {
+    return await new Promise((resolve4, reject) => {
       const timer = setTimeout(() => {
         this.#pendingRequests.delete(clientMsgId);
         reject(new Error("credential_request_timeout"));
       }, timeoutMs);
       this.#pendingRequests.set(clientMsgId, {
-        resolve: resolve3,
+        resolve: resolve4,
         reject,
         timer,
+        requestedProvider: args.provider,
+        requestedReason: args.reason,
         // Carry the superseded id so the resolution path can prune it from
         // knownCredentials when the new credential is delivered.
         supersededProvider: args.provider,
@@ -5249,7 +6354,11 @@ var AgentControlClient = class {
           client_msg_id: crypto.randomUUID(),
           state: update.state,
           ...update.login_url ? { login_url: update.login_url } : {},
-          ...update.message ? { message: update.message } : {}
+          ...update.message ? { message: update.message } : {},
+          // T4.3 — carry the per-frame framework discriminator when the caller
+          // (the multiplexed Go box daemon) supplies it. Omitted for the
+          // single-framework Node daemon path so its frame stays byte-identical.
+          ...update.framework ? { framework: update.framework } : {}
         })
       );
     } catch {
@@ -5258,6 +6367,8 @@ var AgentControlClient = class {
   /** Close the socket and stop reconnecting. */
   close() {
     this.#closed = true;
+    if (this.#suspendedTimer) clearTimeout(this.#suspendedTimer);
+    this.#suspendedTimer = null;
     this.#stopHeartbeat();
     for (const [, p] of this.#pendingRequests) {
       clearTimeout(p.timer);
@@ -5339,11 +6450,27 @@ var AgentControlClient = class {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
   }
+  /**
+   * #1348: the Resume capabilities. AGENT_SUSPEND_CAPABILITY is added only
+   * when the plugin wired `onSuspended`, since only then does a suspension
+   * drop what it placed; a client that can't must keep getting 4401.
+   */
+  #resumeCapabilities() {
+    if (!this.opts.onSuspended) return this.opts.capabilities;
+    return [...this.opts.capabilities ?? [], AGENT_SUSPEND_CAPABILITY];
+  }
   async #buildQuery() {
     const creds = await this.opts.credentials();
     if (creds.mode === "secret") {
-      return { agent_secret: creds.agentSecret };
+      this.#resumeAlwaysConnection = true;
+      return {
+        agent_secret: creds.agentSecret,
+        resume: "always",
+        ...creds.framework ? { framework: creds.framework } : {},
+        ...this.opts.onSuspended ? { suspend: "1" } : {}
+      };
     }
+    this.#resumeAlwaysConnection = false;
     if (creds.mode === "managed-bootstrap") {
       return { nonce: creds.nonce };
     }
@@ -5429,16 +6556,14 @@ var AgentControlClient = class {
    * `case 'hello'`.
    */
   #sendResumeIfApplicable() {
-    if (!this.#ps) return;
-    const noStateYet = this.#lastServerSeq === "0" && this.#knownCredentials.length === 0;
-    if (noStateYet) return;
+    if (!this.#ps || !this.#resumeAlwaysConnection) return;
     this.#ps.send(
       JSON.stringify({
         type: "resume",
         client_msg_id: crypto.randomUUID(),
         last_server_seq: this.#lastServerSeq,
         known_credentials: this.#knownCredentials,
-        capabilities: this.opts.capabilities
+        capabilities: this.#resumeCapabilities()
       })
     );
   }
@@ -5455,10 +6580,39 @@ var AgentControlClient = class {
       );
       return;
     }
+    if (frame.type !== "hello") this.#suspendedDelayMs = null;
     try {
       await this.#dispatch(frame);
     } catch (err) {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  /**
+   * A V5 bundle is a complete authoritative GitHub set but carries no request
+   * correlation id. Refresh requests are serialized, so at most one pending
+   * request can match. A scoped refresh is satisfied only when the full set no
+   * longer contains the superseded id; an unscoped manual issuance is
+   * satisfied only by a secret-bearing set. The caller invokes this strictly
+   * after the receiver's durable apply hook succeeds.
+   */
+  #settlePendingGithubGrantBundle(frame) {
+    const activeIds = new Set(
+      frame.credentials.map((credential) => credential.scoped_token_id)
+    );
+    for (const [id, pending] of this.#pendingRequests) {
+      if (pending.requestedProvider !== "github") continue;
+      const matches = pending.supersededScopedTokenId ? !activeIds.has(pending.supersededScopedTokenId) : pending.requestedReason === "manual" && frame.credentials.length > 0;
+      if (!matches) continue;
+      clearTimeout(pending.timer);
+      if (pending.supersededScopedTokenId) {
+        this.#dropKnownCredential(
+          pending.supersededProvider,
+          pending.supersededScopedTokenId
+        );
+      }
+      pending.resolve([]);
+      this.#pendingRequests.delete(id);
+      break;
     }
   }
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pure protocol-frame dispatcher; each case is a leaf delegating to a typed handler. Splitting per-case would scatter the seq-advancement / pending-resolution invariants this method enforces in one place.
@@ -5477,14 +6631,14 @@ var AgentControlClient = class {
           this.#knownCredentials = [];
           await this.opts.onSeqAdvanced("0");
           await this.opts.onKnownCredentialsChanged?.([]);
-          if (this.#ps && preResetKnown.length > 0) {
+          if (this.#ps && this.#resumeAlwaysConnection) {
             this.#ps.send(
               JSON.stringify({
                 type: "resume",
                 client_msg_id: crypto.randomUUID(),
                 last_server_seq: "0",
                 known_credentials: preResetKnown,
-                capabilities: this.opts.capabilities
+                capabilities: this.#resumeCapabilities()
               })
             );
           }
@@ -5493,20 +6647,72 @@ var AgentControlClient = class {
         this.#sendResumeIfApplicable();
         return;
       }
+      case "github_grants_bundle": {
+        try {
+          if (!this.opts.onGithubGrantsBundle) {
+            throw new Error("github_grant_bundle_v1 handler is unavailable");
+          }
+          await this.opts.onGithubGrantsBundle(frame);
+          this.#settlePendingGithubGrantBundle(frame);
+          this.#ps?.send(
+            JSON.stringify({
+              type: "github_grants_applied",
+              protocol_version: "5",
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: true
+            })
+          );
+          await this.#advanceSeq(frame.seq);
+        } catch (error) {
+          this.#ps?.send(
+            JSON.stringify({
+              type: "github_grants_applied",
+              protocol_version: "5",
+              client_msg_id: crypto.randomUUID(),
+              delivery_id: frame.delivery_id,
+              grant_set_revision: frame.grant_set_revision,
+              applied: false,
+              error_code: "durable_apply_failed"
+            })
+          );
+          throw error;
+        }
+        return;
+      }
+      case "github_grants_commit_confirmed":
+        await this.opts.onGithubGrantsCommitConfirmed?.(frame);
+        await this.#advanceSeq(frame.seq);
+        return;
       case "credential_delivered": {
         const isBootstrapCause = frame.cause === "bootstrap" || frame.cause === "re_bootstrap";
-        if (!isBootstrapCause && await this.#handleIfRedacted(
+        const incomplete = this.#incompleteCredentials(frame.credentials);
+        if (!isBootstrapCause && await this.#handleIfIncomplete(
           frame.credentials,
           frame.seq,
           `credential_delivered{cause:'${frame.cause}'}`
         )) {
           return;
         }
-        await this.opts.onCredentialDelivered(frame);
-        this.#trackKnownCredentials(frame.credentials);
+        if (isBootstrapCause && incomplete.length > 0) {
+          await this.#dropIncompleteKnownCredentials(incomplete);
+        }
+        const usableCredentials = incomplete.length > 0 ? frame.credentials.filter(
+          (credential) => this.#credentialCarriesUsableSecret(credential)
+        ) : frame.credentials;
+        await this.opts.onCredentialDelivered(
+          usableCredentials === frame.credentials ? frame : { ...frame, credentials: usableCredentials }
+        );
+        this.#trackKnownCredentials(usableCredentials);
         await this.#advanceSeq(frame.seq);
         if (isBootstrapCause) {
           this.#queueRefreshForBareIssued(frame.credentials);
+          if (incomplete.some((credential) => credential.provider !== "github")) {
+            this.#reportIncomplete(
+              `credential_delivered{cause:'${frame.cause}'}`
+            );
+          }
         }
         if (frame.cause === "refresh_response" || frame.cause === "admin_reissue") {
           for (const [id, p] of this.#pendingRequests) {
@@ -5530,7 +6736,7 @@ var AgentControlClient = class {
           this.#rotationTimers.delete(seq);
         }
         const superseded = frame.superseded_scoped_token_id;
-        if (await this.#handleIfRedacted(
+        if (await this.#handleIfIncomplete(
           frame.credentials,
           frame.seq,
           "credential_rotated",
@@ -5569,6 +6775,7 @@ var AgentControlClient = class {
           await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
         }
         await this.#advanceSeq(frame.seq);
+        await this.opts.onCredentialRevokeSettled?.(frame);
         return;
       }
       case "config_updated": {
@@ -5649,42 +6856,101 @@ var AgentControlClient = class {
         await this.opts.onLoginRestart?.(frame);
         return;
       }
+      case "slack_event":
+      case "slack_event_blocked":
+      case "teams_activity":
+      case "teams_activity_blocked": {
+        this.#dispatchRelayFrame(frame);
+        return;
+      }
     }
   }
   /**
-   * Handles a credential frame that has any redacted credential (no
-   * `scoped_token`). See the redacted-replay contract in protocol.ts.
-   *
-   * Returns `true` if any credential was redacted (caller should return
-   * early, skipping `onCredentialDelivered`/`onCredentialRotated`).
-   * Returns `false` when all credentials carry a `scoped_token`.
-   *
-   * When redacted: advances seq, logs via `onError` (informational), and
-   * queues a fire-and-forget `requestRefresh` for each bare credential.
-   * `client_closed` rejections on teardown are swallowed silently.
+   * Fire-and-forget invocation of the relay-event handler. NEVER awaited on the
+   * dispatch path (R5): a synchronous throw is caught, and a returned rejecting
+   * promise gets a `.catch` — both route to `onError`, never to the socket or
+   * the seq cursor. No-op when `onRelayEvent` is unwired (relay frame ignored).
    */
-  async #handleIfRedacted(creds, seq, logLabel, supersededId) {
-    const issuedCreds = creds.filter(
-      (c) => {
-        const effKind = c.kind ?? (c.provider === "github" ? "issued" : c.kind);
-        return effKind === "issued";
+  #dispatchRelayFrame(frame) {
+    const handler = this.opts.onRelayEvent;
+    if (!handler) return;
+    try {
+      const r = handler(frame);
+      if (r && typeof r.catch === "function") {
+        r.catch((err) => {
+          this.opts.onError?.(
+            err instanceof Error ? err : new Error(String(err))
+          );
+        });
       }
-    );
-    if (!issuedCreds.some((c) => !c.scoped_token)) return false;
-    await this.#advanceSeq(seq);
-    const redactedNotice = `agent-control: redacted ${logLabel} \u2014 queuing credential_request to obtain fresh secret`;
-    if (this.opts.onInfo) {
-      this.opts.onInfo(redactedNotice);
-    } else {
-      this.opts.onError?.(new Error(redactedNotice));
+    } catch (err) {
+      this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
+  }
+  /**
+   * Settle a frame containing a provider-incomplete descriptor. Ring replay
+   * strips GitHub `scoped_token`, Slack/Discord `botToken`, Teams `password`,
+   * and OpenRouter `api_key`. Remove any prior projection entry durably, leave
+   * the consuming destination untouched, advance the replay cursor, and queue
+   * refresh only for the issued GitHub path.
+   */
+  async #handleIfIncomplete(creds, seq, logLabel, supersededId) {
+    const incomplete = this.#incompleteCredentials(creds);
+    if (incomplete.length === 0) return false;
+    await this.#dropIncompleteKnownCredentials(incomplete);
+    await this.#advanceSeq(seq);
+    this.#reportIncomplete(logLabel);
     this.#queueRefreshForBareIssued(creds, supersededId);
     return true;
+  }
+  #credentialCarriesUsableSecret(credential) {
+    const raw = credential;
+    switch (credential.provider) {
+      case "github":
+        return typeof raw.scoped_token === "string" && raw.scoped_token.length > 0;
+      case "slack":
+      case "discord":
+        return typeof raw.botToken === "string" && raw.botToken.length > 0;
+      case "teams":
+        return typeof raw.password === "string" && raw.password.length > 0;
+      case "openrouter":
+        return typeof raw.api_key === "string" && raw.api_key.length > 0;
+      default:
+        return true;
+    }
+  }
+  #incompleteCredentials(credentials) {
+    return credentials.filter(
+      (credential) => !this.#credentialCarriesUsableSecret(credential)
+    );
+  }
+  async #dropIncompleteKnownCredentials(credentials) {
+    const identities = new Set(
+      credentials.map((credential) => {
+        const raw = credential;
+        const id = raw.scoped_token_id ?? credential.credential_id;
+        return `${credential.provider}\0${String(id)}`;
+      })
+    );
+    const next = this.#knownCredentials.filter(
+      (known) => !identities.has(`${known.provider}\0${known.scoped_token_id}`)
+    );
+    if (next.length === this.#knownCredentials.length) return;
+    this.#knownCredentials = next;
+    await this.opts.onKnownCredentialsChanged?.(this.#knownCredentials);
+  }
+  #reportIncomplete(logLabel) {
+    const notice = `agent-control: redacted/replay-incomplete ${logLabel} \u2014 preserving existing credential and awaiting authoritative hydration`;
+    if (this.opts.onInfo) {
+      this.opts.onInfo(notice);
+    } else {
+      this.opts.onError?.(new Error(notice));
+    }
   }
   /**
    * Queue a fire-and-forget `credential_request` for each ISSUED (github)
    * credential that arrived WITHOUT a `scoped_token`. Shared by the
-   * redacted-replay path (`#handleIfRedacted`) and the bootstrap/re_bootstrap
+   * redacted-replay path (`#handleIfIncomplete`) and the bootstrap/re_bootstrap
    * delivery path (where the descriptor is bare by design — see the C11 note
    * in `case 'credential_delivered'`). #refreshChain serializes concurrent
    * requests; `client_closed` / `client not started` rejections on teardown
@@ -5698,10 +6964,14 @@ var AgentControlClient = class {
       if (effKind !== "issued") continue;
       const issued = c;
       if (issued.scoped_token) continue;
+      const identity = supersededId ?? issued.scoped_token_id ?? issued.credential_id;
+      const refreshKey = `${issued.provider}\0${identity}`;
+      if (this.#redactedRefreshesInFlight.has(refreshKey)) continue;
+      this.#redactedRefreshesInFlight.add(refreshKey);
       void this.requestRefresh({
         reason: "expiry",
         provider: issued.provider,
-        superseded_scoped_token_id: supersededId ?? issued.scoped_token_id ?? issued.credential_id
+        superseded_scoped_token_id: identity
       }).catch((err) => {
         if (err instanceof Error && (err.message === "client_closed" || err.message === "client not started")) {
           return;
@@ -5709,6 +6979,8 @@ var AgentControlClient = class {
         this.opts.onError?.(
           err instanceof Error ? err : new Error(String(err))
         );
+      }).finally(() => {
+        this.#redactedRefreshesInFlight.delete(refreshKey);
       });
     }
   }
@@ -5773,7 +7045,30 @@ var AgentControlClient = class {
     }
   }
 };
-function makeErrorSafeWebSocket(Base, headers) {
+function upgradeStatusOf(err) {
+  if (typeof err !== "object" || err === null) return void 0;
+  const e = err;
+  for (const candidate of [
+    e.statusCode,
+    e.status,
+    e.response?.statusCode,
+    e.response?.status
+  ]) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return void 0;
+}
+function isUpgradeUnauthorized(err) {
+  const status = upgradeStatusOf(err);
+  if (status !== void 0) return status === 401;
+  const message = typeof err === "object" && err !== null && "message" in err ? String(err.message ?? "") : String(err ?? "");
+  return /\b(?:http|status(?:\s+code)?|code|response|upgrade|connection)\b[\s:=]*401\b/i.test(
+    message
+  ) || /\b401\s+unauthorized\b/i.test(message);
+}
+function makeErrorSafeWebSocket(Base, headers, onUpgradeError) {
   function Wrapped(url, protocols) {
     const ws = headers ? (
       // biome-ignore lint/suspicious/noExplicitAny: bridging to ws (url, protocols, options) signature (see above).
@@ -5782,30 +7077,44 @@ function makeErrorSafeWebSocket(Base, headers) {
       // biome-ignore lint/suspicious/noExplicitAny: bridging to ws (url, protocols) signature (see above).
       new Base(url, protocols)
     );
+    const observe = (value) => {
+      const wrapped = value;
+      const err = value instanceof Error ? value : wrapped.error instanceof Error ? wrapped.error : new Error(
+        typeof wrapped.message === "string" ? wrapped.message : String(value)
+      );
+      onUpgradeError?.(err);
+    };
     if (ws && typeof ws.on === "function") {
-      ws.on("error", () => {
-      });
+      ws.on("error", observe);
+    } else if (ws && typeof ws.addEventListener === "function") {
+      ws.addEventListener("error", observe);
     }
     return ws;
   }
   Wrapped.prototype = Base.prototype;
   return Wrapped;
 }
+function normalizeManagementBaseUrl(baseUrl) {
+  let url = baseUrl;
+  while (url.endsWith("/")) url = url.slice(0, -1);
+  if (url.endsWith("/v1")) url = url.slice(0, -3);
+  return url;
+}
 var USER_AGENT = "spellguard-plugin/0.1.0";
 function createManagementClient(opts) {
   const baseFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const retryDelay = opts.retryDelayMs ?? 1e3;
   const retryOn5xx = opts.retry ?? true;
-  const retryingFetch = async (input, init) => {
+  const retryingFetch = (async (input, init) => {
     const req = input instanceof Request ? input : new Request(String(input), init);
     if (!retryOn5xx) return baseFetch(req);
     const first = await baseFetch(req.clone());
     if (first.status >= 500) {
-      await new Promise((resolve3) => setTimeout(resolve3, retryDelay));
+      await new Promise((resolve4) => setTimeout(resolve4, retryDelay));
       return baseFetch(req);
     }
     return first;
-  };
+  });
   const auth = {
     onRequest({ request }) {
       if ((opts.auth ?? "agent-secret") === "bearer") {
@@ -5822,11 +7131,1185 @@ function createManagementClient(opts) {
     // Strip a trailing slash AND a trailing `/v1` before appending `/v1`, so a
     // baseUrl of either `https://host` or `https://host/v1` (OpenClaw's docker
     // default carries `/v1`) yields a single `/v1`, never `/v1/v1`.
-    baseUrl: `${opts.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1`,
+    baseUrl: `${normalizeManagementBaseUrl(opts.baseUrl)}/v1`,
     fetch: retryingFetch
   });
   client.use(auth);
   return client;
+}
+var MANAGED_MARKER_BASENAME = ".managed";
+function spellguardRootDir(env = process.env, home = homedir()) {
+  const xdg = env.XDG_CONFIG_HOME;
+  return xdg ? join(xdg, "spellguard") : join(home, ".config", "spellguard");
+}
+function managedMarkerPath(root = spellguardRootDir()) {
+  return join(root, MANAGED_MARKER_BASENAME);
+}
+function readManagedMarker(root = spellguardRootDir()) {
+  const path = managedMarkerPath(root);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    const e = err;
+    if (e.code === "ENOENT") return { managed: false };
+    return {
+      managed: false,
+      diagnostic: `managed marker unreadable at ${path}: ${e.message}`
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker corrupt at ${path}: ${err.message}`
+    };
+  }
+  const marker = parsed;
+  if (!marker || typeof marker !== "object" || typeof marker.agent_id !== "string" || marker.agent_id === "") {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} missing agent_id`
+    };
+  }
+  let stats;
+  try {
+    stats = statSync(path);
+  } catch (err) {
+    return {
+      managed: false,
+      diagnostic: `managed marker unstatable at ${path}: ${err.message}`
+    };
+  }
+  const perm = stats.mode & 511;
+  if (perm & 18) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} is group/world-writable (mode ${perm.toString(8)}); refusing to honor`
+    };
+  }
+  const readerUid = typeof process.getuid === "function" ? process.getuid() : void 0;
+  if (readerUid !== void 0 && readerUid !== 0 && typeof stats.uid === "number" && stats.uid !== 0 && stats.uid !== readerUid) {
+    return {
+      managed: false,
+      diagnostic: `managed marker at ${path} owned by untrusted uid ${stats.uid} (reader uid ${readerUid}, not root); refusing to honor`
+    };
+  }
+  return { marker, managed: true };
+}
+function isManagedBox(root = spellguardRootDir()) {
+  return readManagedMarker(root).managed;
+}
+
+// src/lib/codex-credential-helper-install.ts
+import { dirname as dirname2, join as join3 } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// src/lib/codex-shell-env-policy.ts
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync as readFileSync2,
+  renameSync,
+  writeFileSync
+} from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
+
+// ../../node_modules/smol-toml/dist/error.js
+function getLineColFromPtr(string, ptr) {
+  let lines = string.slice(0, ptr).split(/\r?\n/);
+  return [lines.length, lines.pop().length + 1];
+}
+function makeCodeBlock(string, line, column) {
+  let lines = string.split(/\r?\n/);
+  let codeblock = "";
+  let numberLen = (Math.log10(line + 1) | 0) + 1;
+  for (let i = line - 1; i <= line + 1; i++) {
+    let l = lines[i - 1];
+    if (!l)
+      continue;
+    codeblock += i.toString().padEnd(numberLen, " ");
+    codeblock += ":  ";
+    codeblock += l;
+    codeblock += "\n";
+    if (i === line) {
+      codeblock += " ".repeat(numberLen + column + 2);
+      codeblock += "^\n";
+    }
+  }
+  return codeblock;
+}
+var TomlError = class _TomlError extends Error {
+  line;
+  column;
+  codeblock;
+  constructor(message, options) {
+    const [line, column] = getLineColFromPtr(options.toml, options.ptr);
+    const codeblock = makeCodeBlock(options.toml, line, column);
+    super(`Invalid TOML document: ${message}
+
+${codeblock}`, options);
+    this.line = line;
+    this.column = column;
+    this.codeblock = codeblock;
+  }
+  /** @internal */
+  static x(message, ctx, ptr) {
+    throw new _TomlError(message, { toml: ctx.s, ptr: ptr ?? ctx.p });
+  }
+};
+
+// ../../node_modules/smol-toml/dist/primitive.js
+function parseString(ctx) {
+  let startPtr = ctx.p;
+  let c = ctx.s.charCodeAt(ctx.p++);
+  let first = c;
+  let isLiteral = c === 39;
+  let isMultiline = c === ctx.s.charCodeAt(ctx.p) && c === ctx.s.charCodeAt(ctx.p + 1);
+  if (isMultiline) {
+    if ((c = ctx.s.charCodeAt(ctx.p += 2)) === 10)
+      ctx.p++;
+    else if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)
+      ctx.p += 2;
+  }
+  let parsed = "";
+  let sliceStart = ctx.p;
+  let state = 0;
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    c = ctx.s.charCodeAt(ctx.p);
+    if (isMultiline && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)) {
+      state = state && 3;
+    } else if (c < 32 && c !== 9 || c === 127) {
+      TomlError.x("control characters are not allowed in strings", ctx);
+    } else if ((!state || state === 3) && c === first && (!isMultiline || ctx.s.charCodeAt(ctx.p + 1) === first && ctx.s.charCodeAt(ctx.p + 2) === first)) {
+      if (isMultiline) {
+        if (ctx.s.charCodeAt(ctx.p + 3) === first)
+          ctx.p++;
+        if (ctx.s.charCodeAt(ctx.p + 3) === first)
+          ctx.p++;
+      }
+      if (!state) {
+        let s = ctx.s.slice(sliceStart, ctx.p);
+        parsed = parsed ? parsed + s : s;
+      }
+      ctx.p += isMultiline ? 3 : 1;
+      return parsed;
+    } else if (!state) {
+      if (!isLiteral && c === 92) {
+        parsed += ctx.s.slice(sliceStart, sliceStart = ctx.p);
+        state = 1;
+      }
+    } else if (state === 1) {
+      if (c === 120 || c === 117 || c === 85) {
+        let errPtr = ctx.p++ - 1;
+        let value = 0;
+        let len = c === 120 ? 2 : c === 117 ? 4 : 8;
+        for (let j = 0; j < len; j++, ctx.p++) {
+          let hex = ctx.s.charCodeAt(ctx.p);
+          let digit = (
+            /* 0-9 */
+            hex >= 48 && hex <= 57 ? hex - 48 : (
+              /* A-F */
+              hex >= 65 && hex <= 70 ? hex - 65 + 10 : (
+                /* a-f */
+                hex >= 97 && hex <= 102 ? hex - 97 + 10 : -1
+              )
+            )
+          );
+          if (digit < 0)
+            TomlError.x("invalid non-hex character in unicode escape", ctx);
+          value = value << 4 | digit;
+        }
+        if (value < 0 || value > 1114111 || value >= 55296 && value <= 57343) {
+          TomlError.x("invalid unicode escape", ctx, errPtr);
+        }
+        parsed += String.fromCodePoint(value);
+        sliceStart = ctx.p--;
+        state = 0;
+      } else if (isMultiline && (c === 32 || c === 9)) {
+        state = 2;
+      } else {
+        if (c === 98)
+          parsed += "\b";
+        else if (c === 116)
+          parsed += "	";
+        else if (c === 110)
+          parsed += "\n";
+        else if (c === 102)
+          parsed += "\f";
+        else if (c === 114)
+          parsed += "\r";
+        else if (c === 101)
+          parsed += "\x1B";
+        else if (c === 34)
+          parsed += '"';
+        else if (c === 92)
+          parsed += "\\";
+        else
+          TomlError.x("unrecognised escape sequence", ctx);
+        sliceStart = ctx.p + 1;
+        state = 0;
+      }
+    } else if (c !== 32 && c !== 9) {
+      if (state === 2)
+        TomlError.x("invalid escape: only line-ending whitespace may be escaped", ctx, sliceStart);
+      state = !isLiteral && c === 92 ? 1 : 0;
+      sliceStart = ctx.p;
+    }
+  }
+  TomlError.x("unfinished string", ctx, startPtr);
+}
+
+// ../../node_modules/smol-toml/dist/date.js
+var DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})?[Tt ]?(?:(\d{2}):\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|z|[-+]\d{2}:\d{2})?$/i;
+var TomlDate = class _TomlDate extends Date {
+  #hasDate = false;
+  #hasTime = false;
+  #offset = null;
+  constructor(date, fasttype, unsafeDelim) {
+    let hasDate = true;
+    let hasTime = true;
+    let offset = "Z";
+    let c;
+    if (typeof date === "string") {
+      if (fasttype)
+        prep: {
+          if (fasttype < 3) {
+            if (+date.slice(11, 13) > 23) {
+              date = "";
+              break prep;
+            }
+            if (fasttype === 2) {
+              offset = null;
+              date += "Z";
+            } else if ((c = date.charCodeAt(date.length - 1)) !== 90 && c !== 122) {
+              offset = date.slice(date.length - 6);
+            }
+            if (unsafeDelim)
+              date = date.slice(0, 10) + "T" + date.slice(11);
+          } else if (fasttype === 4) {
+            date = +date.slice(0, 2) > 23 ? "" : `0000-01-01T${date}Z`;
+          }
+          hasDate = fasttype !== 4;
+          hasTime = fasttype !== 3;
+        }
+      else {
+        let match = date.match(DATE_TIME_RE);
+        if (match) {
+          if (!match[1]) {
+            hasDate = false;
+            date = `0000-01-01T${date}`;
+          }
+          hasTime = !!match[2];
+          hasTime && date[10] === " " && (date = date.replace(" ", "T"));
+          if (match[2] && +match[2] > 23) {
+            date = "";
+          } else {
+            offset = match[3] || null;
+            if (!offset && hasTime)
+              date += "Z";
+          }
+        } else {
+          date = "";
+        }
+      }
+    }
+    super(date);
+    if (!isNaN(this.getTime())) {
+      this.#hasDate = hasDate;
+      this.#hasTime = hasTime;
+      this.#offset = offset;
+    }
+  }
+  isDateTime() {
+    return this.#hasDate && this.#hasTime;
+  }
+  isLocal() {
+    return !this.#hasDate || !this.#hasTime || !this.#offset;
+  }
+  isDate() {
+    return this.#hasDate && !this.#hasTime;
+  }
+  isTime() {
+    return this.#hasTime && !this.#hasDate;
+  }
+  isValid() {
+    return this.#hasDate || this.#hasTime;
+  }
+  toISOString() {
+    let iso = super.toISOString();
+    if (this.isDate())
+      return iso.slice(0, 10);
+    if (this.isTime())
+      return iso.slice(11, 23);
+    if (this.#offset === null)
+      return iso.slice(0, -1);
+    if (this.#offset === "Z" || this.#offset === "z")
+      return iso;
+    let offset = +this.#offset.slice(1, 3) * 60 + +this.#offset.slice(4, 6);
+    offset = this.#offset[0] === "-" ? offset : -offset;
+    let offsetDate = new Date(this.getTime() - offset * 6e4);
+    return offsetDate.toISOString().slice(0, -1) + this.#offset;
+  }
+  static wrapAsOffsetDateTime(jsDate, offset = "Z") {
+    let date = new _TomlDate(jsDate);
+    date.#offset = offset;
+    return date;
+  }
+  static wrapAsLocalDateTime(jsDate) {
+    let date = new _TomlDate(jsDate);
+    date.#offset = null;
+    return date;
+  }
+  static wrapAsLocalDate(jsDate) {
+    let date = new _TomlDate(jsDate);
+    date.#hasTime = false;
+    date.#offset = null;
+    return date;
+  }
+  static wrapAsLocalTime(jsDate) {
+    let date = new _TomlDate(jsDate);
+    date.#hasDate = false;
+    date.#offset = null;
+    return date;
+  }
+};
+
+// ../../node_modules/smol-toml/dist/extract.js
+function isDigit(char, base = 10) {
+  return base === 16 ? char > 47 && char < 58 || char > 64 && char < 71 || char > 96 && char < 103 : char > 47 && char < 48 + base;
+}
+function isEndOfValue(char, delim) {
+  return char === 32 || char === 9 || char === 10 || char === 13 || // Structure end or next value delimiter
+  delim && (char === delim || char === 44) || // Comment
+  char === 35;
+}
+function extractValue(ctx, end) {
+  let errPtr = ctx.p;
+  let c = ctx.s.charCodeAt(ctx.p);
+  if (c === 91 || c === 123) {
+    ctx.d-- || TomlError.x("document contains excessively nested structures. aborting.", ctx);
+    let value = c === 91 ? parseArray(ctx) : parseInlineTable(ctx);
+    ctx.d++;
+    return value;
+  }
+  if (c === 34 || c === 39) {
+    return parseString(ctx);
+  }
+  if (c === 116) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 114 || ctx.s.charCodeAt(++ctx.p) !== 117 || ctx.s.charCodeAt(++ctx.p) !== 101)
+      TomlError.x("invalid value", ctx, errPtr);
+    return ctx.p++, true;
+  }
+  if (c === 102) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 97 || ctx.s.charCodeAt(++ctx.p) !== 108 || ctx.s.charCodeAt(++ctx.p) !== 115 || ctx.s.charCodeAt(++ctx.p) !== 101)
+      TomlError.x("invalid value", ctx, errPtr);
+    return ctx.p++, false;
+  }
+  if (c === 43 || c === 45) {
+    return parseNumber(ctx, ctx.p, ctx.s.charCodeAt(++ctx.p), 44 - c, end);
+  }
+  if (ctx.s.charCodeAt(ctx.p + 4) === 45 && ctx.s.charCodeAt(ctx.p + 7) === 45) {
+    return parseDate(ctx, c, end);
+  }
+  if (ctx.s.charCodeAt(ctx.p + 2) === 58) {
+    return parseTime(ctx, c, end);
+  }
+  return parseNumber(ctx, ctx.p, c, 0, end);
+}
+function parseNumber(ctx, startPtr, startChr, sign, endChr) {
+  let c = startChr;
+  let state = 0;
+  let hasUnderscores = false;
+  if (c === 105) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 110 || ctx.s.charCodeAt(++ctx.p) !== 102)
+      TomlError.x("invalid value", ctx, startPtr);
+    return ctx.p++, (sign || 1) / 0;
+  }
+  if (c === 110) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 97 || ctx.s.charCodeAt(++ctx.p) !== 110)
+      TomlError.x("invalid value", ctx, startPtr);
+    return ctx.p++, NaN;
+  }
+  if (c === 48) {
+    if (++ctx.p >= ctx.s.length || isEndOfValue(c = ctx.s.charCodeAt(ctx.p), endChr))
+      return ctx.bi === true ? 0n : 0;
+    if (!sign) {
+      if (c === 120)
+        return parseIntegerBaseN(ctx, startPtr, 16, endChr);
+      else if (c === 98)
+        return parseIntegerBaseN(ctx, startPtr, 2, endChr);
+      else if (c === 111)
+        return parseIntegerBaseN(ctx, startPtr, 8, endChr);
+    }
+    if (c === 46)
+      state = 2;
+    else if (c === 101 || c === 69)
+      state = 4;
+    else
+      TomlError.x("illegal leading zero", ctx, startPtr);
+  } else if (!isDigit(c))
+    TomlError.x("invalid value", ctx, startPtr);
+  while (++ctx.p < ctx.s.length && (c = ctx.s.charCodeAt(ctx.p), !isEndOfValue(c, endChr))) {
+    if (!state)
+      state = 1;
+    if (c === 95) {
+      if (!(state & 1))
+        TomlError.x("illegal underscore", ctx);
+      state += 11;
+      hasUnderscores = true;
+    } else if (state === 1 && c === 46)
+      state = 2;
+    else if ((state === 1 || state === 3) && (c === 101 || c === 69))
+      state = 4;
+    else if (state === 4 && (c === 43 || c === 45)) {
+    } else if (!isDigit(c))
+      TomlError.x(`illegal character in numeric literal`, ctx);
+    else if (state > 9)
+      state -= 11;
+    else if (!(state & 1))
+      state++;
+  }
+  if (!state) {
+    let val = (startChr - 48) * (sign || 1);
+    return ctx.bi === true ? BigInt(val) : val;
+  }
+  if (!(state & 1))
+    TomlError.x("unfinished numeric value", ctx, startPtr);
+  let str = ctx.s.slice(startPtr, ctx.p);
+  if (hasUnderscores)
+    str = str.replaceAll("_", "");
+  return state > 1 ? parseFloat(str) : parseInteger(ctx, str, 10, startPtr);
+}
+function parseIntegerBaseN(ctx, startPtr, base, endChr) {
+  let c, underscore = 1;
+  while (++ctx.p < ctx.s.length && (c = ctx.s.charCodeAt(ctx.p), !isEndOfValue(c, endChr))) {
+    if (c === 95) {
+      if (underscore & 1)
+        TomlError.x("illegal underscore", ctx);
+      underscore = 3;
+    } else if (!isDigit(c, base))
+      TomlError.x(`illegal character in numeric literal`, ctx);
+    else if (underscore & 1)
+      underscore--;
+  }
+  if (underscore & 1)
+    TomlError.x("unfinished numeric value", ctx);
+  let str = ctx.s.slice(startPtr + 2, ctx.p);
+  if (underscore)
+    str = str.replaceAll("_", "");
+  return parseInteger(ctx, str, base, startPtr);
+}
+function parseInteger(ctx, str, base, startPtr) {
+  if (ctx.bi !== true)
+    int: {
+      let val = parseInt(str, base);
+      if (!Number.isSafeInteger(val)) {
+        if (ctx.bi)
+          break int;
+        TomlError.x("integer value cannot be represented losslessly", ctx, startPtr);
+      }
+      return val;
+    }
+  return base === 10 ? BigInt(str) : BigInt((base === 2 ? "0b" : base === 8 ? "0o" : "0x") + str);
+}
+function parseDate(ctx, c, endChr) {
+  let startPtr = ctx.p++, unsafeSeparator;
+  if (!isDigit(c) || !isDigit(ctx.s.charCodeAt(ctx.p++)) || !isDigit(ctx.s.charCodeAt(ctx.p++)) || !isDigit(ctx.s.charCodeAt(ctx.p++))) {
+    return parseNumber(ctx, ctx.p = startPtr, c, 0, endChr);
+  }
+  ctx.p += 5;
+  if (!isDigit(ctx.s.charCodeAt(ctx.p++)))
+    TomlError.x("invalid date-time: date part is malformed", ctx, startPtr);
+  if (ctx.p >= ctx.s.length || ((c = ctx.s.charCodeAt(ctx.p)) !== 32 || (unsafeSeparator = true, !isDigit(ctx.s.charCodeAt(ctx.p + 1)))) && c !== 84 && c !== 116) {
+    let t2 = ctx.s.slice(startPtr, ctx.p);
+    return readDate(ctx, t2, 3, false, startPtr);
+  }
+  if (ctx.s.charCodeAt(ctx.p += 3) !== 58)
+    TomlError.x("invalid date-time: time part is malformed", ctx, startPtr);
+  if (ctx.s.charCodeAt(ctx.p += 3) === 58)
+    ctx.p += 3;
+  if (ctx.s.charCodeAt(ctx.p) === 46)
+    while (isDigit(ctx.s.charCodeAt(++ctx.p)))
+      ;
+  if (c = ctx.s.charCodeAt(ctx.p)) {
+    if (c === 90 || c === 122) {
+      let t2 = ctx.s.slice(startPtr, ++ctx.p);
+      return readDate(ctx, t2, 1, unsafeSeparator, startPtr, "[+00:00]");
+    }
+    if (c === 43 || c === 45) {
+      let t2 = ctx.s.slice(startPtr, ctx.p += 6);
+      return readDate(ctx, t2, 1, unsafeSeparator, startPtr, !ctx.ld && "[" + ctx.s.slice(ctx.p - 6, ctx.p) + "]");
+    }
+  }
+  let t = ctx.s.slice(startPtr, ctx.p);
+  return readDate(ctx, t, 2, unsafeSeparator, startPtr);
+}
+function parseTime(ctx, c, endChr) {
+  let start = ctx.p;
+  if (!isDigit(c) || !isDigit(ctx.s.charCodeAt(++ctx.p))) {
+    return parseNumber(ctx, --ctx.p, c, 0, endChr);
+  }
+  if (ctx.s.charCodeAt(ctx.p += 4) === 58)
+    ctx.p += 3;
+  if (ctx.s.charCodeAt(ctx.p) === 46)
+    while (isDigit(ctx.s.charCodeAt(++ctx.p)))
+      ;
+  let t = ctx.s.slice(start, ctx.p);
+  return readDate(ctx, t, 4, false, start);
+}
+function readDate(ctx, str, type, unsafeDelim, errPtr, temporalSuffix) {
+  if (ctx.ld) {
+    let date = new TomlDate(str, type, unsafeDelim);
+    if (!date.isValid())
+      TomlError.x("invalid date", ctx, errPtr);
+    return date;
+  }
+  try {
+    if (temporalSuffix)
+      str += temporalSuffix;
+    switch (type) {
+      case 1:
+        return Temporal.ZonedDateTime.from(str);
+      case 2:
+        return Temporal.PlainDateTime.from(str);
+      case 3:
+        return Temporal.PlainDate.from(str);
+      case 4:
+        return Temporal.PlainTime.from(str);
+    }
+  } catch (e) {
+    TomlError.x(e instanceof Error ? e.message : "" + e, ctx, errPtr);
+  }
+}
+
+// ../../node_modules/smol-toml/dist/util.js
+function skipComment(ctx) {
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    let c = ctx.s.charCodeAt(ctx.p);
+    if (c === 10)
+      break;
+    if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10) {
+      ctx.p++;
+      break;
+    }
+    if (c < 32 && c !== 9 || c === 127) {
+      TomlError.x("control characters are not allowed in comments", ctx);
+    }
+  }
+}
+function skipVoid(ctx, banNewLines, banComments) {
+  let c;
+  while (ctx.p < ctx.s.length) {
+    while (ctx.p < ctx.s.length && ((c = ctx.s.charCodeAt(ctx.p)) === 32 || c === 9 || !banNewLines && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)))
+      ctx.p++;
+    if (banComments || c !== 35)
+      break;
+    skipComment(ctx);
+  }
+}
+
+// ../../node_modules/smol-toml/dist/struct.js
+function parseKey(ctx, end = 61) {
+  let startPtr;
+  let state = 0;
+  let parsed = [];
+  let sliceStart;
+  let c = ctx.s.charCodeAt(startPtr = ctx.p);
+  do {
+    if (c === end) {
+      if (!state)
+        TomlError.x("unexpected end of key", ctx);
+      if (state === 1)
+        parsed.push(ctx.s.slice(sliceStart, ctx.p));
+      return ctx.p++, parsed;
+    } else if (c === 46) {
+      if (!state)
+        TomlError.x("illegal empty bare key", ctx);
+      if (state === 1)
+        parsed.push(ctx.s.slice(sliceStart, ctx.p));
+      state = 0;
+    } else if (!state && (c === 34 || c === 39)) {
+      if (c === ctx.s.charCodeAt(ctx.p + 1) && c === ctx.s.charCodeAt(ctx.p + 2))
+        TomlError.x("illegal quoted key: multiline strings are not allowed", ctx);
+      parsed.push(parseString(ctx));
+      state = 2;
+      ctx.p--;
+    } else if (c === 32 || c === 9) {
+      if (state === 1) {
+        parsed.push(ctx.s.slice(sliceStart, ctx.p));
+        state = 2;
+      }
+    } else if (state === 2 || c < 48 && c !== 45 || c > 57 && c < 65 || c > 90 && c < 97 && c !== 95 || c > 122) {
+      TomlError.x("illegal character in key", ctx);
+    } else if (!state) {
+      state = 1;
+      sliceStart = ctx.p;
+    }
+  } while (c = ctx.s.charCodeAt(++ctx.p));
+  TomlError.x("incomplete key-value: cannot find end of key", ctx, startPtr);
+}
+function parseInlineTable(ctx) {
+  let startPtr = ctx.p++;
+  let res = /* @__PURE__ */ Object.create(null);
+  let seen = /* @__PURE__ */ new Set();
+  let c;
+  while (ctx.p < ctx.s.length) {
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p)) === 125) {
+      ctx.p++;
+      return res;
+    }
+    let k;
+    let t = res;
+    let hasOwn = false;
+    let errPtr = ctx.p;
+    let key = parseKey(ctx);
+    for (let i = 0; i < key.length; i++) {
+      if (i)
+        t = hasOwn ? t[k] : t[k] = /* @__PURE__ */ Object.create(null);
+      k = key[i];
+      if ((hasOwn = Object.hasOwn(t, k)) && (typeof t[k] !== "object" || seen.has(t[k]))) {
+        TomlError.x("trying to redefine an already defined value", ctx, errPtr);
+      }
+      let unsafe = k === "__proto__";
+      if (ctx.uk && (unsafe || k === "constructor")) {
+        t = ctx.uk !== 1 && TomlError.x("document contains an unsafe property", ctx, errPtr);
+        break;
+      }
+      if (!hasOwn && unsafe) {
+        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
+      }
+    }
+    if (hasOwn) {
+      TomlError.x("trying to redefine an already defined value", ctx, errPtr);
+    }
+    skipVoid(ctx, true, true);
+    let value = extractValue(
+      ctx,
+      125
+      /* } */
+    );
+    if (t && typeof (t[k] = value) === "object")
+      seen.add(value);
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p++)) === 125) {
+      return res;
+    }
+    if (c !== 44)
+      TomlError.x("expected comma or end of structure", ctx, ctx.p - 1);
+  }
+  TomlError.x("unfinished table", ctx, startPtr);
+}
+function parseArray(ctx) {
+  let startPtr = ctx.p++;
+  let res = [];
+  let c;
+  while (ctx.p < ctx.s.length) {
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p)) === 93) {
+      ctx.p++;
+      return res;
+    }
+    res.push(extractValue(
+      ctx,
+      93
+      /* ] */
+    ));
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p++)) === 93) {
+      return res;
+    }
+    if (c !== 44)
+      TomlError.x("expected comma or end of structure", ctx, ctx.p - 1);
+  }
+  TomlError.x("unfinished array", ctx, startPtr);
+}
+
+// ../../node_modules/smol-toml/dist/parse.js
+function peekTable(ctx, key, table, meta, type) {
+  let t = table;
+  let m = meta;
+  let k;
+  let hasOwn = false;
+  let state;
+  for (let i = 0; i < key.length; i++) {
+    if (i) {
+      t = hasOwn ? t[k] : t[k] = /* @__PURE__ */ Object.create(null);
+      m = (state = m[k]).c;
+      if (type === 0 && (state.t === 1 || state.t === 2)) {
+        return null;
+      }
+      if (state.t === 2) {
+        let l = t.length - 1;
+        t = t[l];
+        m = m[l].c;
+      }
+    }
+    k = key[i];
+    if ((hasOwn = Object.hasOwn(t, k)) && m[k]?.t === 0 && m[k]?.d) {
+      return null;
+    }
+    if (!hasOwn) {
+      let unsafe = k === "__proto__";
+      if (ctx.uk && (unsafe || k === "constructor"))
+        return false;
+      if (unsafe) {
+        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
+        Object.defineProperty(m, k, { enumerable: true, configurable: true, writable: true });
+      }
+      m[k] = {
+        t: i < key.length - 1 && type === 2 ? 3 : type,
+        d: false,
+        i: 0,
+        c: /* @__PURE__ */ Object.create(null)
+      };
+    }
+  }
+  state = m[k];
+  if (state.t !== type && !(type === 1 && state.t === 3)) {
+    return null;
+  }
+  if (type === 2) {
+    if (!state.d) {
+      state.d = true;
+      t[k] = [];
+    }
+    t[k].push(t = /* @__PURE__ */ Object.create(null));
+    state.c[state.i++] = state = { t: 1, d: false, i: 0, c: /* @__PURE__ */ Object.create(null) };
+  }
+  if (state.d) {
+    return null;
+  }
+  state.d = true;
+  if (type === 1) {
+    t = hasOwn ? t[k] : t[k] = /* @__PURE__ */ Object.create(null);
+  } else if (type === 0 && hasOwn) {
+    return null;
+  }
+  return [k, t, state.c];
+}
+function validateTablePeek(ctx, peek, ptr) {
+  if (peek === null || ctx.uk === 2)
+    TomlError.x(peek === null ? "trying to redefine an already defined table or value" : "document contains an unsafe property", ctx, ptr);
+}
+function parse(toml, options = {}) {
+  let ctx = {
+    s: toml,
+    p: 0,
+    d: options.maxDepth ?? 1e3,
+    bi: options.integersAsBigInt ?? false,
+    ld: options.useLegacyDate ?? true,
+    uk: options.unsafeKeyBehaviour === "throw" ? 2 : options.unsafeKeyBehaviour === "drop" ? 1 : 0
+  };
+  let res = /* @__PURE__ */ Object.create(null);
+  let meta = /* @__PURE__ */ Object.create(null);
+  let tmp;
+  let skipping = false;
+  let tbl = res;
+  let m = meta;
+  if (toml.charCodeAt(0) === 65279)
+    ctx.p++;
+  skipVoid(ctx);
+  while (ctx.p < toml.length) {
+    if (toml.charCodeAt(ctx.p) === 91) {
+      let isTableArray = toml.charCodeAt(++ctx.p) === 91;
+      tmp = ctx.p += +isTableArray;
+      skipping = false;
+      let k = parseKey(
+        ctx,
+        93
+        /* ] */
+      );
+      if (isTableArray) {
+        if (toml.charCodeAt(ctx.p) !== 93) {
+          TomlError.x("expected end of table array declaration", ctx);
+        }
+        ctx.p++;
+      }
+      let p = peekTable(
+        ctx,
+        k,
+        res,
+        meta,
+        isTableArray ? 2 : 1
+        /* Type.EXPLICIT */
+      );
+      if (!p) {
+        validateTablePeek(ctx, p, tmp);
+        skipping = true;
+      } else {
+        m = p[2];
+        tbl = p[1];
+      }
+    } else {
+      tmp = ctx.p;
+      let k = parseKey(ctx);
+      let p = peekTable(
+        ctx,
+        k,
+        tbl,
+        m,
+        0
+        /* Type.DOTTED */
+      );
+      if (!p && !skipping)
+        validateTablePeek(ctx, p, tmp);
+      skipVoid(ctx, true, true);
+      let v = extractValue(ctx, void 0);
+      if (p && !skipping)
+        p[1][p[0]] = v;
+    }
+    skipVoid(ctx, true);
+    if (ctx.p < toml.length && (tmp = toml.charCodeAt(ctx.p)) !== 10 && (tmp !== 13 || toml.charCodeAt(ctx.p + 1) !== 10)) {
+      TomlError.x("each key-value declaration must be followed by an end-of-line", ctx);
+    }
+    skipVoid(ctx);
+  }
+  return res;
+}
+
+// ../../node_modules/smol-toml/dist/stringify.js
+var BARE_KEY = /^[a-z0-9-_]+$/i;
+var HAS_WELLFORMED = !!"".isWellFormed;
+function extendedTypeOf(obj) {
+  let type = typeof obj;
+  if (type === "object") {
+    if (Array.isArray(obj))
+      return "array";
+    if (typeof obj.getUTCDate === "function" && obj instanceof Date)
+      return "date";
+    if (globalThis.Temporal) {
+      if (obj.until) {
+        if (obj instanceof Temporal.ZonedDateTime)
+          return "temporal/tz+uc";
+        if (obj instanceof Temporal.PlainDateTime || obj instanceof Temporal.PlainDate)
+          return "temporal/uc";
+        if (obj instanceof Temporal.PlainTime || obj instanceof Temporal.Instant)
+          return "temporal";
+        if (obj instanceof Temporal.PlainYearMonth)
+          return "temporal/x";
+      } else if (obj.toPlainDate && obj instanceof Temporal.PlainMonthDay || obj.negated && obj instanceof Temporal.Duration) {
+        return "temporal/x";
+      }
+    }
+  }
+  return type;
+}
+function isArrayOfTables(obj) {
+  for (let i = 0; i < obj.length; i++) {
+    if (extendedTypeOf(obj[i]) !== "object")
+      return false;
+  }
+  return obj.length != 0;
+}
+function formatWellFormedStringUnchecked(s) {
+  return JSON.stringify(s).replaceAll("\x7F", "\\u007f");
+}
+function formatString(s) {
+  return formatWellFormedStringUnchecked(HAS_WELLFORMED ? s.toWellFormed() : s);
+}
+function formatKey(s) {
+  if (BARE_KEY.test(s))
+    return s;
+  if (HAS_WELLFORMED && !s.isWellFormed())
+    throw new RangeError("key contains illegal lone surrogates");
+  return formatWellFormedStringUnchecked(s);
+}
+function stringifyValue(val, type, depth, numberAsFloat, strictTemporal) {
+  if (depth === 0) {
+    throw new Error("Could not stringify the object: maximum object depth exceeded");
+  }
+  switch (type) {
+    // @ts-expect-error -- intentional fallthrough case
+    case "number":
+      if (isNaN(val))
+        return "nan";
+      if (val === Infinity)
+        return "inf";
+      if (val === -Infinity)
+        return "-inf";
+      if (Number.isInteger(val) && (numberAsFloat || !Number.isSafeInteger(val)))
+        return val.toFixed(1);
+    case "bigint":
+    case "boolean":
+    case "temporal":
+      return val.toString();
+    case "string":
+      return formatString(val);
+    case "date":
+      if (isNaN(val.getTime()))
+        throw new TypeError("cannot serialize invalid date");
+      return val.toISOString();
+    case "object":
+      return stringifyInlineTable(val, depth, numberAsFloat, strictTemporal);
+    case "array":
+      return stringifyArray(val, depth, numberAsFloat, strictTemporal);
+    // @ts-expect-error -- intentional fallthrough case
+    case "temporal/tz+uc":
+      if (strictTemporal) {
+        let tz = val.timeZoneId;
+        let tzc = tz.charCodeAt(0);
+        if (
+          // Classic offset
+          tzc !== 43 && tzc !== 45 && // Fast pre-check pass; see below for the actually accepted values
+          (tzc !== 85 && tzc !== 71 && tzc !== 90 && tzc !== 69 || // UTC and its aliases; Temporal implementations don't all canonicalise unfortunately
+          tz !== "UTC" && tz !== "UCT" && tz !== "Universal" && tz !== "Zulu" && // GMT is a TZ but it's for all intents and purposes equivalent to UTC. Safe to downgrade.
+          !tz.startsWith("GMT") && tz !== "Greenwich" && // Etc/* are all safe to downgrade to offset (either UTC, GMT, or offset)
+          !tz.startsWith("Etc/"))
+        ) {
+          throw new TypeError("Temporal objects with an IANA timezone are not allowed in Temporal strict mode");
+        }
+      }
+    case "temporal/uc":
+      if (strictTemporal && val.calendarId !== "iso8601")
+        throw new TypeError("Temporal objects with a non-default calendar are not allowed in Temporal strict mode");
+      return val.toString({
+        calendarName: "never",
+        timeZoneName: "never"
+      });
+    case "temporal/x":
+      throw new TypeError("Unsupported " + val[Symbol.toStringTag]);
+  }
+}
+function stringifyInlineTable(obj, depth, numberAsFloat, strictTemporal) {
+  let keys = Object.keys(obj);
+  if (keys.length === 0)
+    return "{}";
+  let res = "{ ";
+  for (let i = 0; i < keys.length; i++) {
+    let k = keys[i];
+    if (i)
+      res += ", ";
+    res += formatKey(k) + " = " + stringifyValue(obj[k], extendedTypeOf(obj[k]), depth - 1, numberAsFloat, strictTemporal);
+  }
+  return res + " }";
+}
+function stringifyArray(array, depth, numberAsFloat, strictTemporal) {
+  if (array.length === 0)
+    return "[]";
+  let res = "[ ";
+  for (let i = 0; i < array.length; i++) {
+    if (i)
+      res += ", ";
+    if (array[i] === null || array[i] === void 0) {
+      throw new TypeError("arrays cannot contain null or undefined values");
+    }
+    res += stringifyValue(array[i], extendedTypeOf(array[i]), depth - 1, numberAsFloat, strictTemporal);
+  }
+  return res + " ]";
+}
+function stringifyArrayTable(array, key, depth, numberAsFloat, strictTemporal) {
+  if (depth === 0) {
+    throw new Error("Could not stringify the object: maximum object depth exceeded");
+  }
+  let res = "";
+  for (let i = 0; i < array.length; i++) {
+    res += `${res && "\n"}[[${key}]]
+`;
+    res += stringifyTable(0, array[i], key, depth, numberAsFloat, strictTemporal);
+  }
+  return res;
+}
+function stringifyTable(tableKey, obj, prefix, depth, numberAsFloat, strictTemporal) {
+  if (depth === 0) {
+    throw new Error("Could not stringify the object: maximum object depth exceeded");
+  }
+  let preamble = "";
+  let tables = "";
+  let keys = Object.keys(obj);
+  for (let i = 0; i < keys.length; i++) {
+    let k = keys[i];
+    if (obj[k] !== null && obj[k] !== void 0) {
+      let type = extendedTypeOf(obj[k]);
+      if (type === "symbol" || type === "function") {
+        throw new TypeError(`cannot serialize values of type '${type}'`);
+      }
+      let key = formatKey(k);
+      if (type === "array" && isArrayOfTables(obj[k])) {
+        tables += (tables && "\n") + stringifyArrayTable(obj[k], prefix ? `${prefix}.${key}` : key, depth - 1, numberAsFloat, strictTemporal);
+      } else if (type === "object") {
+        let tblKey = prefix ? `${prefix}.${key}` : key;
+        tables += (tables && "\n") + stringifyTable(tblKey, obj[k], tblKey, depth - 1, numberAsFloat, strictTemporal);
+      } else {
+        preamble += key;
+        preamble += " = ";
+        preamble += stringifyValue(obj[k], type, depth, numberAsFloat, strictTemporal);
+        preamble += "\n";
+      }
+    }
+  }
+  if (tableKey && (preamble || !tables))
+    preamble = preamble ? `[${tableKey}]
+${preamble}` : `[${tableKey}]`;
+  return preamble && tables ? `${preamble}
+${tables}` : preamble || tables;
+}
+function stringify(obj, { maxDepth = 1e3, numbersAsFloat = false, strictTemporal = false } = {}) {
+  if (extendedTypeOf(obj) !== "object") {
+    throw new TypeError("stringify can only be called with an object");
+  }
+  let str = stringifyTable(0, obj, "", maxDepth, numbersAsFloat, strictTemporal);
+  if (str[str.length - 1] !== "\n")
+    return str + "\n";
+  return str;
+}
+
+// src/lib/git-insteadof-rules.ts
+var SSH_TO_HTTPS_INSTEADOF = [
+  { key: "url.https://github.com/.insteadOf", value: "git@github.com:" },
+  { key: "url.https://github.com/.insteadOf", value: "ssh://git@github.com/" }
+];
+function repoIdentityInsteadOf(repo) {
+  const base = `https://github.com/${repo.owner}/${repo.repo}`;
+  return [
+    { key: `url.${base}.insteadOf`, value: base },
+    { key: `url.${base}.pushInsteadOf`, value: base }
+  ];
+}
+function sshRewriteEntries(repo) {
+  const entries = [...SSH_TO_HTTPS_INSTEADOF];
+  if (repo) entries.push(...repoIdentityInsteadOf(repo));
+  return entries;
+}
+function isSshRewriteEnabled(env = process.env) {
+  const raw = env.SPELLGUARD_SSH_REWRITE;
+  if (raw === void 0 || raw.trim() === "") return true;
+  return !/^(0|off|false|no)$/i.test(raw.trim());
+}
+
+// src/lib/codex-shell-env-policy.ts
+function gitSlotKeys() {
+  const keys = ["GIT_CONFIG_COUNT"];
+  for (let i = 0; i <= 12; i++) {
+    keys.push(`GIT_CONFIG_KEY_${i}`, `GIT_CONFIG_VALUE_${i}`);
+  }
+  return keys;
+}
+var MANAGED_SET_KEYS = [
+  ...gitSlotKeys(),
+  "GH_CONFIG_DIR",
+  "GH_TOKEN",
+  "GITHUB_TOKEN"
+];
+function configTomlPath(codexHome) {
+  const home = codexHome ?? process.env.CODEX_HOME ?? join2(homedir2(), ".codex");
+  return join2(home, "config.toml");
+}
+function omit(obj, keys) {
+  const drop = new Set(keys);
+  return Object.fromEntries(Object.entries(obj).filter(([k]) => !drop.has(k)));
+}
+function buildGitSlots(helperPath, gitAuthorName, gitAuthorEmail, sshRewrite = isSshRewriteEnabled(), sshRewriteRepo) {
+  const hasAuthor = Boolean(gitAuthorName) && Boolean(gitAuthorEmail);
+  const set = {
+    GIT_CONFIG_KEY_0: "credential.helper",
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: "credential.helper",
+    GIT_CONFIG_VALUE_1: helperPath,
+    GIT_CONFIG_KEY_2: "credential.https://github.com.helper",
+    GIT_CONFIG_VALUE_2: "",
+    GIT_CONFIG_KEY_3: "credential.https://github.com.helper",
+    GIT_CONFIG_VALUE_3: helperPath,
+    GIT_CONFIG_KEY_4: "credential.https://gist.github.com.helper",
+    GIT_CONFIG_VALUE_4: "",
+    GIT_CONFIG_KEY_5: "credential.https://gist.github.com.helper",
+    GIT_CONFIG_VALUE_5: helperPath,
+    GIT_CONFIG_KEY_6: "credential.https://github.com.useHttpPath",
+    GIT_CONFIG_VALUE_6: "true"
+  };
+  let idx = 7;
+  if (sshRewrite) {
+    for (const rule of sshRewriteEntries(sshRewriteRepo)) {
+      set[`GIT_CONFIG_KEY_${idx}`] = rule.key;
+      set[`GIT_CONFIG_VALUE_${idx}`] = rule.value;
+      idx++;
+    }
+  }
+  if (hasAuthor) {
+    set[`GIT_CONFIG_KEY_${idx}`] = "user.name";
+    set[`GIT_CONFIG_VALUE_${idx}`] = gitAuthorName;
+    idx++;
+    set[`GIT_CONFIG_KEY_${idx}`] = "user.email";
+    set[`GIT_CONFIG_VALUE_${idx}`] = gitAuthorEmail;
+    idx++;
+  }
+  return { GIT_CONFIG_COUNT: String(idx), ...set };
+}
+function readConfig(path) {
+  if (!existsSync(path)) return { cfg: {}, exists: false, parsed: true };
+  try {
+    return {
+      cfg: parse(readFileSync2(path, "utf-8")),
+      exists: true,
+      parsed: true
+    };
+  } catch {
+    return { cfg: {}, exists: true, parsed: false };
+  }
+}
+function writeConfig(path, cfg) {
+  const dir = join2(path, "..");
+  mkdirSync(dir, { recursive: true, mode: 448 });
+  const tmp = `${path}.spellguard.tmp`;
+  writeFileSync(tmp, stringify(cfg), { mode: 384 });
+  renameSync(tmp, path);
+}
+function installCodexShellEnvPolicy(args) {
+  const path = configTomlPath(args.codexHome);
+  const { cfg, exists, parsed } = readConfig(path);
+  if (exists && !parsed) return;
+  const sepRaw = cfg.shell_environment_policy;
+  const sep2 = sepRaw && typeof sepRaw === "object" ? sepRaw : {};
+  const existingSet = sep2.set && typeof sep2.set === "object" ? sep2.set : {};
+  const userVars = omit(existingSet, MANAGED_SET_KEYS);
+  const existingGh = existingSet.GH_CONFIG_DIR;
+  const effectiveGh = args.ghConfigDir ?? (typeof existingGh === "string" ? existingGh : void 0);
+  const nextSet = {
+    ...userVars,
+    ...buildGitSlots(
+      args.helperPath,
+      args.gitAuthorName,
+      args.gitAuthorEmail,
+      args.sshRewrite,
+      args.sshRewriteRepo
+    ),
+    // Defense in depth: Codex's default shell policy strips token-shaped env
+    // names, but explicit empties ensure ambient GitHub auth can never outrank
+    // the pinned per-agent GH_CONFIG_DIR if that default changes.
+    GH_TOKEN: "",
+    GITHUB_TOKEN: ""
+  };
+  if (effectiveGh) nextSet.GH_CONFIG_DIR = effectiveGh;
+  cfg.shell_environment_policy = {
+    ...omit(sep2, ["inherit", "set"]),
+    inherit: "core",
+    set: nextSet
+  };
+  writeConfig(path, cfg);
+}
+
+// src/lib/codex-credential-helper-install.ts
+function bundledHelperPath() {
+  const here = dirname2(fileURLToPath(import.meta.url));
+  return join3(here, "..", "..", "bin", "spellguard-git-helper");
+}
+function installCodexCredentialHelper(args) {
+  try {
+    installCodexShellEnvPolicy({
+      helperPath: args.helperPath ?? bundledHelperPath(),
+      ghConfigDir: args.ghConfigDir,
+      gitAuthorName: args.gitAuthorName,
+      gitAuthorEmail: args.gitAuthorEmail,
+      sshRewrite: args.sshRewrite,
+      sshRewriteRepo: args.sshRewriteRepo,
+      codexHome: args.codexHome
+    });
+  } catch {
+  }
 }
 
 // src/lib/commit-observation-emitter.ts
@@ -6050,47 +8533,133 @@ async function emitCommitObservation(input) {
 }
 
 // src/lib/config-store.ts
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   closeSync,
   copyFileSync,
-  existsSync,
-  mkdirSync,
+  existsSync as existsSync2,
+  constants as fsConstants,
+  fstatSync,
+  fsyncSync,
+  linkSync,
+  lstatSync,
+  mkdirSync as mkdirSync2,
   openSync,
-  readFileSync,
-  renameSync,
+  readFileSync as readFileSync3,
+  readdirSync,
+  renameSync as renameSync2,
   rmSync,
-  statSync,
-  writeFileSync,
+  statSync as statSync2,
+  symlinkSync,
+  writeFileSync as writeFileSync2,
   writeSync
 } from "node:fs";
-import { homedir, platform } from "node:os";
-import { dirname as dirname2, join } from "node:path";
+import { homedir as homedir3, platform } from "node:os";
+import { dirname as dirname3, join as join4 } from "node:path";
 
 // src/lib/framework-slug.ts
 var FRAMEWORK_SLUG = "codex";
 
 // src/lib/config-store.ts
-function spellguardRootDir() {
+function spellguardRootDir2() {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return xdg ? join(xdg, "spellguard") : join(homedir(), ".config", "spellguard");
+  return xdg ? join4(xdg, "spellguard") : join4(homedir3(), ".config", "spellguard");
 }
 function defaultConfigDir() {
-  return join(spellguardRootDir(), FRAMEWORK_SLUG);
+  return join4(spellguardRootDir2(), FRAMEWORK_SLUG);
 }
 function defaultConfigPath() {
-  return join(defaultConfigDir(), "config.json");
+  return join4(defaultConfigDir(), "config.json");
+}
+function readPrivateConfigFile(path) {
+  const flags = fsConstants.O_RDONLY | (platform() === "win32" ? 0 : fsConstants.O_NOFOLLOW);
+  const fd = openSync(path, flags);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error("protected config path is not a file");
+    if (platform() !== "win32" && (stat.mode & 63) !== 0) {
+      throw new Error("protected config file permissions are too broad");
+    }
+    return readFileSync3(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
 }
 function gitTokensPath(dir = defaultConfigDir()) {
-  return join(dir, "git-tokens");
+  return join4(dir, "git-tokens");
 }
-function writeGitTokensFile(config, dir = defaultConfigDir()) {
+function servedTokens(config) {
+  const served = /* @__PURE__ */ new Set();
+  if (config.revoked) return served;
+  const entries = Object.values(config.githubCredentials ?? {});
+  for (const entry of entries) {
+    if (!entry.revoked && entry.scopedToken) served.add(entry.scopedToken);
+  }
+  if (config.scopedToken && (entries.length === 0 || served.has(config.scopedToken))) {
+    served.add(config.scopedToken);
+  }
+  return served;
+}
+function keepTokens(config, keep) {
+  const kept = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (key === "scopedToken") {
+      const token = value;
+      if (token !== void 0 && (!token || keep.has(token))) {
+        kept[key] = token;
+      }
+    } else if (key === "githubCredentials" && value) {
+      kept[key] = Object.fromEntries(
+        Object.entries(
+          value
+        ).map(([org, entry]) => {
+          if (!entry.scopedToken || keep.has(entry.scopedToken)) {
+            return [org, entry];
+          }
+          const { scopedToken: _dropped, ...withoutToken } = entry;
+          return [org, withoutToken];
+        })
+      );
+    } else {
+      kept[key] = value;
+    }
+  }
+  return kept;
+}
+function writeConfigSnapshot(path, next) {
+  const bak = `${path}.bak`;
+  let previous;
+  try {
+    previous = JSON.parse(readFileSync3(path, "utf-8"));
+  } catch {
+    previous = void 0;
+  }
+  if (previous === null || typeof previous !== "object") {
+    if (next.revoked) {
+      rmSync(bak, { force: true });
+      return;
+    }
+    copyFileSync(path, bak);
+  } else {
+    const snapshot = keepTokens(
+      previous,
+      servedTokens(next)
+    );
+    writeFileSync2(bak, JSON.stringify(snapshot, null, 2), {
+      encoding: "utf-8",
+      mode: 384
+    });
+  }
+  if (platform() !== "win32") chmodSync(bak, 384);
+}
+function writeGitTokensFile(config, dir = defaultConfigDir(), options = {}) {
   const path = gitTokensPath(dir);
   const lines = [];
   let wildcardToken;
   let usableCount = 0;
   let keyedTotal = 0;
-  const keyed = config.githubCredentials;
+  const keyed = config.revoked ? void 0 : config.githubCredentials;
   if (keyed && Object.keys(keyed).length > 0) {
     keyedTotal = Object.keys(keyed).length;
     for (const [org, entry] of Object.entries(keyed)) {
@@ -6107,14 +8676,11 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
   if (wildcardToken !== void 0 && usableCount === 1 && keyedTotal <= 1) {
     lines.push(`*	${wildcardToken}`);
   }
-  if (lines.length === 0) {
-    if (existsSync(path)) rmSync(path, { force: true });
-    return;
-  }
-  mkdirSync(dirname2(path), { recursive: true, mode: 448 });
-  const content = `${lines.join("\n")}
+  mkdirSync2(dirname3(path), { recursive: true, mode: 448 });
+  const content = lines.length === 0 ? "" : `${lines.join("\n")}
 `;
-  const tmpPath = `${path}.tmp`;
+  let committed = true;
+  const tmpPath = options.onlyIfMissing ? `${path}.${randomUUID()}.tmp` : `${path}.tmp`;
   if (platform() !== "win32") {
     const fd = openSync(tmpPath, "w", 384);
     try {
@@ -6123,9 +8689,55 @@ function writeGitTokensFile(config, dir = defaultConfigDir()) {
       closeSync(fd);
     }
   } else {
-    writeFileSync(tmpPath, content, "utf-8");
+    writeFileSync2(tmpPath, content, "utf-8");
   }
-  renameSync(tmpPath, path);
+  try {
+    if (options.onlyIfMissing) linkSync(tmpPath, path);
+    else renameSync2(tmpPath, path);
+  } catch (error) {
+    if (!options.onlyIfMissing || !isAlreadyExistsError(error)) throw error;
+    committed = false;
+  } finally {
+    if (options.onlyIfMissing) rmSync(tmpPath, { force: true });
+  }
+  if (!committed) return;
+  const resetMarker = join4(
+    dirname3(path),
+    "github-grants",
+    "current",
+    ".reset-tombstone"
+  );
+  if (!config.revoked && config.scopedToken && existsSync2(resetMarker)) {
+    rmSync(join4(dirname3(path), "github-grants"), {
+      recursive: true,
+      force: true
+    });
+  }
+}
+function isAlreadyExistsError(error) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+function healConfigMode(path, mode) {
+  if (mode === 384) return "ok";
+  const uid = process.getuid?.();
+  let ownerUid;
+  try {
+    ownerUid = statSync2(path).uid;
+  } catch {
+    return "unhealable";
+  }
+  if (uid === void 0 || ownerUid !== uid) return "unhealable";
+  try {
+    chmodSync(path, 384);
+  } catch {
+    return "unhealable";
+  }
+  try {
+    if ((statSync2(path).mode & 511) !== 384) return "unhealable";
+  } catch {
+    return "unhealable";
+  }
+  return "healed";
 }
 function mistypedGithubField(parsed) {
   if (parsed.scopedToken !== void 0 && typeof parsed.scopedToken !== "string")
@@ -6136,22 +8748,33 @@ function mistypedGithubField(parsed) {
     return "expiresAt";
   if (parsed.revokedMessage !== void 0 && typeof parsed.revokedMessage !== "string")
     return "revokedMessage";
+  if (parsed.githubReissue !== void 0 && (parsed.githubReissue === null || typeof parsed.githubReissue !== "object" || parsed.githubReissue.pending !== true))
+    return "githubReissue";
   return null;
 }
-function readConfig(path = defaultConfigPath()) {
-  if (!existsSync(path)) return { config: null, reason: "missing" };
+function readConfig2(path = defaultConfigPath()) {
+  if (!existsSync2(path)) return { config: null, reason: "missing" };
+  let permissionsHealed = false;
   if (platform() !== "win32") {
+    let mode;
     try {
-      const stat = statSync(path);
-      const mode = stat.mode & 511;
-      if (mode !== 384) return { config: null, reason: "wrong_permissions" };
+      mode = statSync2(path).mode & 511;
     } catch {
       return { config: null, reason: "missing" };
     }
+    const healed = healConfigMode(path, mode);
+    if (healed === "unhealable") {
+      return {
+        config: null,
+        reason: "wrong_permissions",
+        foundMode: mode.toString(8).padStart(4, "0")
+      };
+    }
+    permissionsHealed = healed === "healed";
   }
   let raw;
   try {
-    raw = readFileSync(path, "utf-8");
+    raw = readFileSync3(path, "utf-8");
   } catch {
     return { config: null, reason: "missing" };
   }
@@ -6192,18 +8815,18 @@ function readConfig(path = defaultConfigPath()) {
         return { config: null, reason: "malformed" };
       }
     }
-    return { config: parsed };
+    return permissionsHealed ? { config: parsed, permissionsHealed: true } : { config: parsed };
   } catch {
     return { config: null, reason: "malformed", malformedField: "json" };
   }
 }
-function writeConfig(config, path = defaultConfigPath()) {
-  mkdirSync(dirname2(path), { recursive: true, mode: 448 });
-  const content = JSON.stringify(config, null, 2);
-  if (existsSync(path)) {
+function writeConfig2(config, path = defaultConfigPath(), testHooks = {}) {
+  mkdirSync2(dirname3(path), { recursive: true, mode: 448 });
+  const persisted = keepTokens(config, servedTokens(config));
+  const content = JSON.stringify(persisted, null, 2);
+  if (existsSync2(path)) {
     try {
-      copyFileSync(path, `${path}.bak`);
-      if (platform() !== "win32") chmodSync(`${path}.bak`, 384);
+      writeConfigSnapshot(path, persisted);
     } catch {
     }
   }
@@ -6216,21 +8839,34 @@ function writeConfig(config, path = defaultConfigPath()) {
       closeSync(fd);
     }
   } else {
-    writeFileSync(tmpPath, content, "utf-8");
+    writeFileSync2(tmpPath, content, "utf-8");
   }
-  renameSync(tmpPath, path);
-  writeGitTokensFile(config, dirname2(path));
+  writeGitTokensFile(persisted, dirname3(path));
+  testHooks.beforeConfigCommit?.();
+  renameSync2(tmpPath, path);
 }
-function markConfigRevoked(path = defaultConfigPath()) {
-  const result = readConfig(path);
+function markConfigRevoked(path = defaultConfigPath(), testHooks = {}) {
+  const result = readConfig2(path);
   if (result.config) {
-    writeConfig({ ...result.config, revoked: true }, path);
+    invalidateActiveGithubGrantGeneration(
+      dirname3(path),
+      testHooks,
+      result.config.agentId
+    );
+    testHooks.afterV5Invalidation?.();
+    writeConfig2({ ...result.config, revoked: true }, path);
   }
 }
-function markConfigSuperseded(message, path = defaultConfigPath()) {
-  const result = readConfig(path);
+function markConfigSuperseded(message, path = defaultConfigPath(), testHooks = {}) {
+  const result = readConfig2(path);
   if (!result.config) return;
-  writeConfig(
+  invalidateActiveGithubGrantGeneration(
+    dirname3(path),
+    testHooks,
+    result.config.agentId
+  );
+  testHooks.afterV5Invalidation?.();
+  writeConfig2(
     {
       agentId: result.config.agentId,
       agentSecret: result.config.agentSecret,
@@ -6242,1015 +8878,114 @@ function markConfigSuperseded(message, path = defaultConfigPath()) {
     path
   );
 }
-
-// src/lib/codex-credential-helper-install.ts
-import { dirname as dirname3, join as join3 } from "node:path";
-import { fileURLToPath } from "node:url";
-
-// src/lib/codex-shell-env-policy.ts
-import {
-  existsSync as existsSync2,
-  mkdirSync as mkdirSync2,
-  readFileSync as readFileSync2,
-  renameSync as renameSync2,
-  writeFileSync as writeFileSync2
-} from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { join as join2 } from "node:path";
-
-// ../../node_modules/smol-toml/dist/error.js
-function getLineColFromPtr(string, ptr) {
-  let lines = string.slice(0, ptr).split(/\r\n|\n|\r/g);
-  return [lines.length, lines.pop().length + 1];
+function markConfigSuspended(path = defaultConfigPath(), testHooks = {}) {
+  const result = readConfig2(path);
+  if (!result.config) return;
+  const current = result.config;
+  invalidateActiveGithubGrantGeneration(
+    dirname3(path),
+    testHooks,
+    current.agentId
+  );
+  testHooks.afterV5Invalidation?.();
+  writeConfig2(
+    {
+      agentId: current.agentId,
+      agentSecret: current.agentSecret,
+      spellguardBaseUrl: current.spellguardBaseUrl,
+      agentName: current.agentName,
+      gitAuthorName: current.gitAuthorName,
+      gitAuthorEmail: current.gitAuthorEmail,
+      lastServerSeq: current.lastServerSeq,
+      providerConfig: current.providerConfig,
+      knownCredentials: [],
+      revoked: false
+    },
+    path
+  );
 }
-function makeCodeBlock(string, line, column) {
-  let lines = string.split(/\r\n|\n|\r/g);
-  let codeblock = "";
-  let numberLen = (Math.log10(line + 1) | 0) + 1;
-  for (let i = line - 1; i <= line + 1; i++) {
-    let l = lines[i - 1];
-    if (!l)
-      continue;
-    codeblock += i.toString().padEnd(numberLen, " ");
-    codeblock += ":  ";
-    codeblock += l;
-    codeblock += "\n";
-    if (i === line) {
-      codeblock += " ".repeat(numberLen + column + 2);
-      codeblock += "^\n";
-    }
+function syncPath(path) {
+  const fd = openSync(path, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
   }
-  return codeblock;
 }
-var TomlError = class extends Error {
-  line;
-  column;
-  codeblock;
-  constructor(message, options) {
-    const [line, column] = getLineColFromPtr(options.toml, options.ptr);
-    const codeblock = makeCodeBlock(options.toml, line, column);
-    super(`Invalid TOML document: ${message}
-
-${codeblock}`, options);
-    this.line = line;
-    this.column = column;
-    this.codeblock = codeblock;
+function requireRealDirectory(path) {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`unsafe GitHub generation directory: ${path}`);
   }
-};
-
-// ../../node_modules/smol-toml/dist/util.js
-function isEscaped(str, ptr) {
-  let i = 0;
-  while (str[ptr - ++i] === "\\")
-    ;
-  return --i && i % 2;
 }
-function indexOfNewline(str, start = 0, end = str.length) {
-  let idx = str.indexOf("\n", start);
-  if (str[idx - 1] === "\r")
-    idx--;
-  return idx <= end ? idx : -1;
-}
-function skipComment(str, ptr) {
-  for (let i = ptr; i < str.length; i++) {
-    let c = str[i];
-    if (c === "\n")
-      return i;
-    if (c === "\r" && str[i + 1] === "\n")
-      return i + 1;
-    if (c < " " && c !== "	" || c === "\x7F") {
-      throw new TomlError("control characters are not allowed in comments", {
-        toml: str,
-        ptr
-      });
+function removeSiblingGenerations(generations, activeName) {
+  requireRealDirectory(generations);
+  for (const entry of readdirSync(generations, { withFileTypes: true })) {
+    if (entry.name === activeName) continue;
+    const candidate = join4(generations, entry.name);
+    if (dirname3(candidate) !== generations) {
+      throw new Error("unsafe GitHub generation cleanup target");
     }
-  }
-  return str.length;
-}
-function skipVoid(str, ptr, banNewLines, banComments) {
-  let c;
-  while (1) {
-    while ((c = str[ptr]) === " " || c === "	" || !banNewLines && (c === "\n" || c === "\r" && str[ptr + 1] === "\n"))
-      ptr++;
-    if (banComments || c !== "#")
-      break;
-    ptr = skipComment(str, ptr);
-  }
-  return ptr;
-}
-function skipUntil(str, ptr, sep, end, banNewLines = false) {
-  if (!end) {
-    ptr = indexOfNewline(str, ptr);
-    return ptr < 0 ? str.length : ptr;
-  }
-  for (let i = ptr; i < str.length; i++) {
-    let c = str[i];
-    if (c === "#") {
-      i = indexOfNewline(str, i);
-    } else if (c === sep) {
-      return i + 1;
-    } else if (c === end || banNewLines && (c === "\n" || c === "\r" && str[i + 1] === "\n")) {
-      return i;
-    }
-  }
-  throw new TomlError("cannot find end of structure", {
-    toml: str,
-    ptr
-  });
-}
-function getStringEnd(str, seek) {
-  let first = str[seek];
-  let target = first === str[seek + 1] && str[seek + 1] === str[seek + 2] ? str.slice(seek, seek + 3) : first;
-  seek += target.length - 1;
-  do
-    seek = str.indexOf(target, ++seek);
-  while (seek > -1 && first !== "'" && isEscaped(str, seek));
-  if (seek > -1) {
-    seek += target.length;
-    if (target.length > 1) {
-      if (str[seek] === first)
-        seek++;
-      if (str[seek] === first)
-        seek++;
-    }
-  }
-  return seek;
-}
-
-// ../../node_modules/smol-toml/dist/date.js
-var DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})?[T ]?(?:(\d{2}):\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[-+]\d{2}:\d{2})?$/i;
-var TomlDate = class _TomlDate extends Date {
-  #hasDate = false;
-  #hasTime = false;
-  #offset = null;
-  constructor(date) {
-    let hasDate = true;
-    let hasTime = true;
-    let offset = "Z";
-    if (typeof date === "string") {
-      let match = date.match(DATE_TIME_RE);
-      if (match) {
-        if (!match[1]) {
-          hasDate = false;
-          date = `0000-01-01T${date}`;
-        }
-        hasTime = !!match[2];
-        hasTime && date[10] === " " && (date = date.replace(" ", "T"));
-        if (match[2] && +match[2] > 23) {
-          date = "";
-        } else {
-          offset = match[3] || null;
-          date = date.toUpperCase();
-          if (!offset && hasTime)
-            date += "Z";
-        }
-      } else {
-        date = "";
-      }
-    }
-    super(date);
-    if (!isNaN(this.getTime())) {
-      this.#hasDate = hasDate;
-      this.#hasTime = hasTime;
-      this.#offset = offset;
-    }
-  }
-  isDateTime() {
-    return this.#hasDate && this.#hasTime;
-  }
-  isLocal() {
-    return !this.#hasDate || !this.#hasTime || !this.#offset;
-  }
-  isDate() {
-    return this.#hasDate && !this.#hasTime;
-  }
-  isTime() {
-    return this.#hasTime && !this.#hasDate;
-  }
-  isValid() {
-    return this.#hasDate || this.#hasTime;
-  }
-  toISOString() {
-    let iso = super.toISOString();
-    if (this.isDate())
-      return iso.slice(0, 10);
-    if (this.isTime())
-      return iso.slice(11, 23);
-    if (this.#offset === null)
-      return iso.slice(0, -1);
-    if (this.#offset === "Z")
-      return iso;
-    let offset = +this.#offset.slice(1, 3) * 60 + +this.#offset.slice(4, 6);
-    offset = this.#offset[0] === "-" ? offset : -offset;
-    let offsetDate = new Date(this.getTime() - offset * 6e4);
-    return offsetDate.toISOString().slice(0, -1) + this.#offset;
-  }
-  static wrapAsOffsetDateTime(jsDate, offset = "Z") {
-    let date = new _TomlDate(jsDate);
-    date.#offset = offset;
-    return date;
-  }
-  static wrapAsLocalDateTime(jsDate) {
-    let date = new _TomlDate(jsDate);
-    date.#offset = null;
-    return date;
-  }
-  static wrapAsLocalDate(jsDate) {
-    let date = new _TomlDate(jsDate);
-    date.#hasTime = false;
-    date.#offset = null;
-    return date;
-  }
-  static wrapAsLocalTime(jsDate) {
-    let date = new _TomlDate(jsDate);
-    date.#hasDate = false;
-    date.#offset = null;
-    return date;
-  }
-};
-
-// ../../node_modules/smol-toml/dist/primitive.js
-var INT_REGEX = /^((0x[0-9a-fA-F](_?[0-9a-fA-F])*)|(([+-]|0[ob])?\d(_?\d)*))$/;
-var FLOAT_REGEX = /^[+-]?\d(_?\d)*(\.\d(_?\d)*)?([eE][+-]?\d(_?\d)*)?$/;
-var LEADING_ZERO = /^[+-]?0[0-9_]/;
-var ESCAPE_REGEX = /^[0-9a-f]{2,8}$/i;
-var ESC_MAP = {
-  b: "\b",
-  t: "	",
-  n: "\n",
-  f: "\f",
-  r: "\r",
-  e: "\x1B",
-  '"': '"',
-  "\\": "\\"
-};
-function parseString(str, ptr = 0, endPtr = str.length) {
-  let isLiteral = str[ptr] === "'";
-  let isMultiline = str[ptr++] === str[ptr] && str[ptr] === str[ptr + 1];
-  if (isMultiline) {
-    endPtr -= 2;
-    if (str[ptr += 2] === "\r")
-      ptr++;
-    if (str[ptr] === "\n")
-      ptr++;
-  }
-  let tmp = 0;
-  let isEscape;
-  let parsed = "";
-  let sliceStart = ptr;
-  while (ptr < endPtr - 1) {
-    let c = str[ptr++];
-    if (c === "\n" || c === "\r" && str[ptr] === "\n") {
-      if (!isMultiline) {
-        throw new TomlError("newlines are not allowed in strings", {
-          toml: str,
-          ptr: ptr - 1
-        });
-      }
-    } else if (c < " " && c !== "	" || c === "\x7F") {
-      throw new TomlError("control characters are not allowed in strings", {
-        toml: str,
-        ptr: ptr - 1
-      });
-    }
-    if (isEscape) {
-      isEscape = false;
-      if (c === "x" || c === "u" || c === "U") {
-        let code = str.slice(ptr, ptr += c === "x" ? 2 : c === "u" ? 4 : 8);
-        if (!ESCAPE_REGEX.test(code)) {
-          throw new TomlError("invalid unicode escape", {
-            toml: str,
-            ptr: tmp
-          });
-        }
-        try {
-          parsed += String.fromCodePoint(parseInt(code, 16));
-        } catch {
-          throw new TomlError("invalid unicode escape", {
-            toml: str,
-            ptr: tmp
-          });
-        }
-      } else if (isMultiline && (c === "\n" || c === " " || c === "	" || c === "\r")) {
-        ptr = skipVoid(str, ptr - 1, true);
-        if (str[ptr] !== "\n" && str[ptr] !== "\r") {
-          throw new TomlError("invalid escape: only line-ending whitespace may be escaped", {
-            toml: str,
-            ptr: tmp
-          });
-        }
-        ptr = skipVoid(str, ptr);
-      } else if (c in ESC_MAP) {
-        parsed += ESC_MAP[c];
-      } else {
-        throw new TomlError("unrecognized escape sequence", {
-          toml: str,
-          ptr: tmp
-        });
-      }
-      sliceStart = ptr;
-    } else if (!isLiteral && c === "\\") {
-      tmp = ptr - 1;
-      isEscape = true;
-      parsed += str.slice(sliceStart, tmp);
-    }
-  }
-  return parsed + str.slice(sliceStart, endPtr - 1);
-}
-function parseValue(value, toml, ptr, integersAsBigInt) {
-  if (value === "true")
-    return true;
-  if (value === "false")
-    return false;
-  if (value === "-inf")
-    return -Infinity;
-  if (value === "inf" || value === "+inf")
-    return Infinity;
-  if (value === "nan" || value === "+nan" || value === "-nan")
-    return NaN;
-  if (value === "-0")
-    return integersAsBigInt ? 0n : 0;
-  let isInt = INT_REGEX.test(value);
-  if (isInt || FLOAT_REGEX.test(value)) {
-    if (LEADING_ZERO.test(value)) {
-      throw new TomlError("leading zeroes are not allowed", {
-        toml,
-        ptr
-      });
-    }
-    value = value.replace(/_/g, "");
-    let numeric = +value;
-    if (isNaN(numeric)) {
-      throw new TomlError("invalid number", {
-        toml,
-        ptr
-      });
-    }
-    if (isInt) {
-      if ((isInt = !Number.isSafeInteger(numeric)) && !integersAsBigInt) {
-        throw new TomlError("integer value cannot be represented losslessly", {
-          toml,
-          ptr
-        });
-      }
-      if (isInt || integersAsBigInt === true)
-        numeric = BigInt(value);
-    }
-    return numeric;
-  }
-  const date = new TomlDate(value);
-  if (!date.isValid()) {
-    throw new TomlError("invalid value", {
-      toml,
-      ptr
-    });
-  }
-  return date;
-}
-
-// ../../node_modules/smol-toml/dist/extract.js
-function sliceAndTrimEndOf(str, startPtr, endPtr) {
-  let value = str.slice(startPtr, endPtr);
-  let commentIdx = value.indexOf("#");
-  if (commentIdx > -1) {
-    skipComment(str, commentIdx);
-    value = value.slice(0, commentIdx);
-  }
-  return [value.trimEnd(), commentIdx];
-}
-function extractValue(str, ptr, end, depth, integersAsBigInt) {
-  if (depth === 0) {
-    throw new TomlError("document contains excessively nested structures. aborting.", {
-      toml: str,
-      ptr
-    });
-  }
-  let c = str[ptr];
-  if (c === "[" || c === "{") {
-    let [value, endPtr2] = c === "[" ? parseArray(str, ptr, depth, integersAsBigInt) : parseInlineTable(str, ptr, depth, integersAsBigInt);
-    if (end) {
-      endPtr2 = skipVoid(str, endPtr2);
-      if (str[endPtr2] === ",")
-        endPtr2++;
-      else if (str[endPtr2] !== end) {
-        throw new TomlError("expected comma or end of structure", {
-          toml: str,
-          ptr: endPtr2
-        });
-      }
-    }
-    return [value, endPtr2];
-  }
-  let endPtr;
-  if (c === '"' || c === "'") {
-    endPtr = getStringEnd(str, ptr);
-    let parsed = parseString(str, ptr, endPtr);
-    if (end) {
-      endPtr = skipVoid(str, endPtr);
-      if (str[endPtr] && str[endPtr] !== "," && str[endPtr] !== end && str[endPtr] !== "\n" && str[endPtr] !== "\r") {
-        throw new TomlError("unexpected character encountered", {
-          toml: str,
-          ptr: endPtr
-        });
-      }
-      endPtr += +(str[endPtr] === ",");
-    }
-    return [parsed, endPtr];
-  }
-  endPtr = skipUntil(str, ptr, ",", end);
-  let slice = sliceAndTrimEndOf(str, ptr, endPtr - +(str[endPtr - 1] === ","));
-  if (!slice[0]) {
-    throw new TomlError("incomplete key-value declaration: no value specified", {
-      toml: str,
-      ptr
-    });
-  }
-  if (end && slice[1] > -1) {
-    endPtr = skipVoid(str, ptr + slice[1]);
-    endPtr += +(str[endPtr] === ",");
-  }
-  return [
-    parseValue(slice[0], str, ptr, integersAsBigInt),
-    endPtr
-  ];
-}
-
-// ../../node_modules/smol-toml/dist/struct.js
-var KEY_PART_RE = /^[a-zA-Z0-9-_]+[ \t]*$/;
-function parseKey(str, ptr, end = "=") {
-  let dot = ptr - 1;
-  let parsed = [];
-  let endPtr = str.indexOf(end, ptr);
-  if (endPtr < 0) {
-    throw new TomlError("incomplete key-value: cannot find end of key", {
-      toml: str,
-      ptr
-    });
-  }
-  do {
-    let c = str[ptr = ++dot];
-    if (c !== " " && c !== "	") {
-      if (c === '"' || c === "'") {
-        if (c === str[ptr + 1] && c === str[ptr + 2]) {
-          throw new TomlError("multiline strings are not allowed in keys", {
-            toml: str,
-            ptr
-          });
-        }
-        let eos = getStringEnd(str, ptr);
-        if (eos < 0) {
-          throw new TomlError("unfinished string encountered", {
-            toml: str,
-            ptr
-          });
-        }
-        dot = str.indexOf(".", eos);
-        let strEnd = str.slice(eos, dot < 0 || dot > endPtr ? endPtr : dot);
-        let newLine = indexOfNewline(strEnd);
-        if (newLine > -1) {
-          throw new TomlError("newlines are not allowed in keys", {
-            toml: str,
-            ptr: ptr + dot + newLine
-          });
-        }
-        if (strEnd.trimStart()) {
-          throw new TomlError("found extra tokens after the string part", {
-            toml: str,
-            ptr: eos
-          });
-        }
-        if (endPtr < eos) {
-          endPtr = str.indexOf(end, eos);
-          if (endPtr < 0) {
-            throw new TomlError("incomplete key-value: cannot find end of key", {
-              toml: str,
-              ptr
-            });
-          }
-        }
-        parsed.push(parseString(str, ptr, eos));
-      } else {
-        dot = str.indexOf(".", ptr);
-        let part = str.slice(ptr, dot < 0 || dot > endPtr ? endPtr : dot);
-        if (!KEY_PART_RE.test(part)) {
-          throw new TomlError("only letter, numbers, dashes and underscores are allowed in keys", {
-            toml: str,
-            ptr
-          });
-        }
-        parsed.push(part.trimEnd());
-      }
-    }
-  } while (dot + 1 && dot < endPtr);
-  return [parsed, skipVoid(str, endPtr + 1, true, true)];
-}
-function parseInlineTable(str, ptr, depth, integersAsBigInt) {
-  let res = {};
-  let seen = /* @__PURE__ */ new Set();
-  let c;
-  ptr++;
-  while ((c = str[ptr++]) !== "}" && c) {
-    if (c === ",") {
-      throw new TomlError("expected value, found comma", {
-        toml: str,
-        ptr: ptr - 1
-      });
-    } else if (c === "#")
-      ptr = skipComment(str, ptr);
-    else if (c !== " " && c !== "	" && c !== "\n" && c !== "\r") {
-      let k;
-      let t = res;
-      let hasOwn = false;
-      let [key, keyEndPtr] = parseKey(str, ptr - 1);
-      for (let i = 0; i < key.length; i++) {
-        if (i)
-          t = hasOwn ? t[k] : t[k] = {};
-        k = key[i];
-        if ((hasOwn = Object.hasOwn(t, k)) && (typeof t[k] !== "object" || seen.has(t[k]))) {
-          throw new TomlError("trying to redefine an already defined value", {
-            toml: str,
-            ptr
-          });
-        }
-        if (!hasOwn && k === "__proto__") {
-          Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
-        }
-      }
-      if (hasOwn) {
-        throw new TomlError("trying to redefine an already defined value", {
-          toml: str,
-          ptr
-        });
-      }
-      let [value, valueEndPtr] = extractValue(str, keyEndPtr, "}", depth - 1, integersAsBigInt);
-      seen.add(value);
-      t[k] = value;
-      ptr = valueEndPtr;
-    }
-  }
-  if (!c) {
-    throw new TomlError("unfinished table encountered", {
-      toml: str,
-      ptr
-    });
-  }
-  return [res, ptr];
-}
-function parseArray(str, ptr, depth, integersAsBigInt) {
-  let res = [];
-  let c;
-  ptr++;
-  while ((c = str[ptr++]) !== "]" && c) {
-    if (c === ",") {
-      throw new TomlError("expected value, found comma", {
-        toml: str,
-        ptr: ptr - 1
-      });
-    } else if (c === "#")
-      ptr = skipComment(str, ptr);
-    else if (c !== " " && c !== "	" && c !== "\n" && c !== "\r") {
-      let e = extractValue(str, ptr - 1, "]", depth - 1, integersAsBigInt);
-      res.push(e[0]);
-      ptr = e[1];
-    }
-  }
-  if (!c) {
-    throw new TomlError("unfinished array encountered", {
-      toml: str,
-      ptr
-    });
-  }
-  return [res, ptr];
-}
-
-// ../../node_modules/smol-toml/dist/parse.js
-function peekTable(key, table, meta, type) {
-  let t = table;
-  let m = meta;
-  let k;
-  let hasOwn = false;
-  let state;
-  for (let i = 0; i < key.length; i++) {
-    if (i) {
-      t = hasOwn ? t[k] : t[k] = {};
-      m = (state = m[k]).c;
-      if (type === 0 && (state.t === 1 || state.t === 2)) {
-        return null;
-      }
-      if (state.t === 2) {
-        let l = t.length - 1;
-        t = t[l];
-        m = m[l].c;
-      }
-    }
-    k = key[i];
-    if ((hasOwn = Object.hasOwn(t, k)) && m[k]?.t === 0 && m[k]?.d) {
-      return null;
-    }
-    if (!hasOwn) {
-      if (k === "__proto__") {
-        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
-        Object.defineProperty(m, k, { enumerable: true, configurable: true, writable: true });
-      }
-      m[k] = {
-        t: i < key.length - 1 && type === 2 ? 3 : type,
-        d: false,
-        i: 0,
-        c: {}
-      };
-    }
-  }
-  state = m[k];
-  if (state.t !== type && !(type === 1 && state.t === 3)) {
-    return null;
-  }
-  if (type === 2) {
-    if (!state.d) {
-      state.d = true;
-      t[k] = [];
-    }
-    t[k].push(t = {});
-    state.c[state.i++] = state = { t: 1, d: false, i: 0, c: {} };
-  }
-  if (state.d) {
-    return null;
-  }
-  state.d = true;
-  if (type === 1) {
-    t = hasOwn ? t[k] : t[k] = {};
-  } else if (type === 0 && hasOwn) {
-    return null;
-  }
-  return [k, t, state.c];
-}
-function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
-  let res = {};
-  let meta = {};
-  let tbl = res;
-  let m = meta;
-  for (let ptr = skipVoid(toml, 0); ptr < toml.length; ) {
-    if (toml[ptr] === "[") {
-      let isTableArray = toml[++ptr] === "[";
-      let k = parseKey(toml, ptr += +isTableArray, "]");
-      if (isTableArray) {
-        if (toml[k[1] - 1] !== "]") {
-          throw new TomlError("expected end of table declaration", {
-            toml,
-            ptr: k[1] - 1
-          });
-        }
-        k[1]++;
-      }
-      let p = peekTable(
-        k[0],
-        res,
-        meta,
-        isTableArray ? 2 : 1
-        /* Type.EXPLICIT */
-      );
-      if (!p) {
-        throw new TomlError("trying to redefine an already defined table or value", {
-          toml,
-          ptr
-        });
-      }
-      m = p[2];
-      tbl = p[1];
-      ptr = k[1];
+    const stat = lstatSync(candidate);
+    if (stat.isDirectory() && !stat.isSymbolicLink()) {
+      rmSync(candidate, { recursive: true });
     } else {
-      let k = parseKey(toml, ptr);
-      let p = peekTable(
-        k[0],
-        tbl,
-        m,
-        0
-        /* Type.DOTTED */
+      rmSync(candidate);
+    }
+  }
+  syncPath(generations);
+}
+function invalidateActiveGithubGrantGeneration(configDir, testHooks = {}, configuredAgentId) {
+  const root = join4(configDir, "github-grants");
+  const generations = join4(root, "generations");
+  const deliveryId = randomUUID();
+  const generationName = `0-${deliveryId}`;
+  const generation = join4(generations, generationName);
+  mkdirSync2(root, { recursive: true, mode: 448 });
+  requireRealDirectory(root);
+  if (!existsSync2(generations)) mkdirSync2(generations, { mode: 448 });
+  requireRealDirectory(generations);
+  mkdirSync2(generation, { mode: 448 });
+  mkdirSync2(join4(generation, "tokens"), { mode: 448 });
+  let agentId = configuredAgentId;
+  if (!agentId) {
+    try {
+      const active = JSON.parse(
+        readPrivateConfigFile(join4(root, "current", "state.json"))
       );
-      if (!p) {
-        throw new TomlError("trying to redefine an already defined table or value", {
-          toml,
-          ptr
-        });
-      }
-      let v = extractValue(toml, k[1], void 0, maxDepth, integersAsBigInt);
-      p[1][p[0]] = v[0];
-      ptr = v[1];
-    }
-    ptr = skipVoid(toml, ptr, true);
-    if (toml[ptr] && toml[ptr] !== "\n" && toml[ptr] !== "\r") {
-      throw new TomlError("each key-value declaration must be followed by an end-of-line", {
-        toml,
-        ptr
-      });
-    }
-    ptr = skipVoid(toml, ptr);
-  }
-  return res;
-}
-
-// ../../node_modules/smol-toml/dist/stringify.js
-var BARE_KEY = /^[a-z0-9-_]+$/i;
-function extendedTypeOf(obj) {
-  let type = typeof obj;
-  if (type === "object") {
-    if (Array.isArray(obj))
-      return "array";
-    if (obj instanceof Date)
-      return "date";
-  }
-  return type;
-}
-function isArrayOfTables(obj) {
-  for (let i = 0; i < obj.length; i++) {
-    if (extendedTypeOf(obj[i]) !== "object")
-      return false;
-  }
-  return obj.length != 0;
-}
-function formatString(s) {
-  return JSON.stringify(s).replace(/\x7f/g, "\\u007f");
-}
-function stringifyValue(val, type, depth, numberAsFloat) {
-  if (depth === 0) {
-    throw new Error("Could not stringify the object: maximum object depth exceeded");
-  }
-  if (type === "number") {
-    if (isNaN(val))
-      return "nan";
-    if (val === Infinity)
-      return "inf";
-    if (val === -Infinity)
-      return "-inf";
-    if (numberAsFloat && Number.isInteger(val))
-      return val.toFixed(1);
-    return val.toString();
-  }
-  if (type === "bigint" || type === "boolean") {
-    return val.toString();
-  }
-  if (type === "string") {
-    return formatString(val);
-  }
-  if (type === "date") {
-    if (isNaN(val.getTime())) {
-      throw new TypeError("cannot serialize invalid date");
-    }
-    return val.toISOString();
-  }
-  if (type === "object") {
-    return stringifyInlineTable(val, depth, numberAsFloat);
-  }
-  if (type === "array") {
-    return stringifyArray(val, depth, numberAsFloat);
-  }
-}
-function stringifyInlineTable(obj, depth, numberAsFloat) {
-  let keys = Object.keys(obj);
-  if (keys.length === 0)
-    return "{}";
-  let res = "{ ";
-  for (let i = 0; i < keys.length; i++) {
-    let k = keys[i];
-    if (i)
-      res += ", ";
-    res += BARE_KEY.test(k) ? k : formatString(k);
-    res += " = ";
-    res += stringifyValue(obj[k], extendedTypeOf(obj[k]), depth - 1, numberAsFloat);
-  }
-  return res + " }";
-}
-function stringifyArray(array, depth, numberAsFloat) {
-  if (array.length === 0)
-    return "[]";
-  let res = "[ ";
-  for (let i = 0; i < array.length; i++) {
-    if (i)
-      res += ", ";
-    if (array[i] === null || array[i] === void 0) {
-      throw new TypeError("arrays cannot contain null or undefined values");
-    }
-    res += stringifyValue(array[i], extendedTypeOf(array[i]), depth - 1, numberAsFloat);
-  }
-  return res + " ]";
-}
-function stringifyArrayTable(array, key, depth, numberAsFloat) {
-  if (depth === 0) {
-    throw new Error("Could not stringify the object: maximum object depth exceeded");
-  }
-  let res = "";
-  for (let i = 0; i < array.length; i++) {
-    res += `${res && "\n"}[[${key}]]
-`;
-    res += stringifyTable(0, array[i], key, depth, numberAsFloat);
-  }
-  return res;
-}
-function stringifyTable(tableKey, obj, prefix, depth, numberAsFloat) {
-  if (depth === 0) {
-    throw new Error("Could not stringify the object: maximum object depth exceeded");
-  }
-  let preamble = "";
-  let tables = "";
-  let keys = Object.keys(obj);
-  for (let i = 0; i < keys.length; i++) {
-    let k = keys[i];
-    if (obj[k] !== null && obj[k] !== void 0) {
-      let type = extendedTypeOf(obj[k]);
-      if (type === "symbol" || type === "function") {
-        throw new TypeError(`cannot serialize values of type '${type}'`);
-      }
-      let key = BARE_KEY.test(k) ? k : formatString(k);
-      if (type === "array" && isArrayOfTables(obj[k])) {
-        tables += (tables && "\n") + stringifyArrayTable(obj[k], prefix ? `${prefix}.${key}` : key, depth - 1, numberAsFloat);
-      } else if (type === "object") {
-        let tblKey = prefix ? `${prefix}.${key}` : key;
-        tables += (tables && "\n") + stringifyTable(tblKey, obj[k], tblKey, depth - 1, numberAsFloat);
-      } else {
-        preamble += key;
-        preamble += " = ";
-        preamble += stringifyValue(obj[k], type, depth, numberAsFloat);
-        preamble += "\n";
-      }
+      if (typeof active.agentId === "string") agentId = active.agentId;
+      else if (typeof active.grants?.[0]?.agent_id === "string")
+        agentId = active.grants[0].agent_id;
+    } catch {
     }
   }
-  if (tableKey && (preamble || !tables))
-    preamble = preamble ? `[${tableKey}]
-${preamble}` : `[${tableKey}]`;
-  return preamble && tables ? `${preamble}
-${tables}` : preamble || tables;
-}
-function stringify(obj, { maxDepth = 1e3, numbersAsFloat = false } = {}) {
-  if (extendedTypeOf(obj) !== "object") {
-    throw new TypeError("stringify can only be called with an object");
-  }
-  let str = stringifyTable(0, obj, "", maxDepth, numbersAsFloat);
-  if (str[str.length - 1] !== "\n")
-    return str + "\n";
-  return str;
-}
-
-// src/lib/git-insteadof-rules.ts
-var SSH_TO_HTTPS_INSTEADOF = [
-  { key: "url.https://github.com/.insteadOf", value: "git@github.com:" },
-  { key: "url.https://github.com/.insteadOf", value: "ssh://git@github.com/" }
-];
-function repoIdentityInsteadOf(repo) {
-  const base = `https://github.com/${repo.owner}/${repo.repo}`;
-  return [
-    { key: `url.${base}.insteadOf`, value: base },
-    { key: `url.${base}.pushInsteadOf`, value: base }
-  ];
-}
-function sshRewriteEntries(repo) {
-  const entries = [...SSH_TO_HTTPS_INSTEADOF];
-  if (repo) entries.push(...repoIdentityInsteadOf(repo));
-  return entries;
-}
-function isSshRewriteEnabled(env = process.env) {
-  const raw = env.SPELLGUARD_SSH_REWRITE;
-  if (raw === void 0 || raw.trim() === "") return true;
-  return !/^(0|off|false|no)$/i.test(raw.trim());
-}
-
-// src/lib/codex-shell-env-policy.ts
-function gitSlotKeys() {
-  const keys = ["GIT_CONFIG_COUNT"];
-  for (let i = 0; i <= 12; i++) {
-    keys.push(`GIT_CONFIG_KEY_${i}`, `GIT_CONFIG_VALUE_${i}`);
-  }
-  return keys;
-}
-var MANAGED_SET_KEYS = [...gitSlotKeys(), "GH_CONFIG_DIR"];
-function configTomlPath(codexHome) {
-  const home = codexHome ?? process.env.CODEX_HOME ?? join2(homedir2(), ".codex");
-  return join2(home, "config.toml");
-}
-function omit(obj, keys) {
-  const drop = new Set(keys);
-  return Object.fromEntries(Object.entries(obj).filter(([k]) => !drop.has(k)));
-}
-function buildGitSlots(helperPath, gitAuthorName, gitAuthorEmail, sshRewrite = isSshRewriteEnabled(), sshRewriteRepo) {
-  const hasAuthor = Boolean(gitAuthorName) && Boolean(gitAuthorEmail);
-  const set = {
-    GIT_CONFIG_KEY_0: "credential.helper",
-    GIT_CONFIG_VALUE_0: "",
-    GIT_CONFIG_KEY_1: "credential.helper",
-    GIT_CONFIG_VALUE_1: helperPath,
-    GIT_CONFIG_KEY_2: "credential.https://github.com.helper",
-    GIT_CONFIG_VALUE_2: "",
-    GIT_CONFIG_KEY_3: "credential.https://github.com.helper",
-    GIT_CONFIG_VALUE_3: helperPath,
-    GIT_CONFIG_KEY_4: "credential.https://gist.github.com.helper",
-    GIT_CONFIG_VALUE_4: "",
-    GIT_CONFIG_KEY_5: "credential.https://gist.github.com.helper",
-    GIT_CONFIG_VALUE_5: helperPath,
-    GIT_CONFIG_KEY_6: "credential.https://github.com.useHttpPath",
-    GIT_CONFIG_VALUE_6: "true"
-  };
-  let idx = 7;
-  if (sshRewrite) {
-    for (const rule of sshRewriteEntries(sshRewriteRepo)) {
-      set[`GIT_CONFIG_KEY_${idx}`] = rule.key;
-      set[`GIT_CONFIG_VALUE_${idx}`] = rule.value;
-      idx++;
-    }
-  }
-  if (hasAuthor) {
-    set[`GIT_CONFIG_KEY_${idx}`] = "user.name";
-    set[`GIT_CONFIG_VALUE_${idx}`] = gitAuthorName;
-    idx++;
-    set[`GIT_CONFIG_KEY_${idx}`] = "user.email";
-    set[`GIT_CONFIG_VALUE_${idx}`] = gitAuthorEmail;
-    idx++;
-  }
-  return { GIT_CONFIG_COUNT: String(idx), ...set };
-}
-function readConfig2(path) {
-  if (!existsSync2(path)) return { cfg: {}, exists: false, parsed: true };
-  try {
-    return {
-      cfg: parse(readFileSync2(path, "utf-8")),
-      exists: true,
-      parsed: true
-    };
-  } catch {
-    return { cfg: {}, exists: true, parsed: false };
-  }
-}
-function writeConfig2(path, cfg) {
-  const dir = join2(path, "..");
-  mkdirSync2(dir, { recursive: true, mode: 448 });
-  const tmp = `${path}.spellguard.tmp`;
-  writeFileSync2(tmp, stringify(cfg), { mode: 384 });
-  renameSync2(tmp, path);
-}
-function installCodexShellEnvPolicy(args) {
-  const path = configTomlPath(args.codexHome);
-  const { cfg, exists, parsed } = readConfig2(path);
-  if (exists && !parsed) return;
-  const sepRaw = cfg.shell_environment_policy;
-  const sep = sepRaw && typeof sepRaw === "object" ? sepRaw : {};
-  const existingSet = sep.set && typeof sep.set === "object" ? sep.set : {};
-  const userVars = omit(existingSet, MANAGED_SET_KEYS);
-  const existingGh = existingSet.GH_CONFIG_DIR;
-  const effectiveGh = args.ghConfigDir ?? (typeof existingGh === "string" ? existingGh : void 0);
-  const nextSet = {
-    ...userVars,
-    ...buildGitSlots(
-      args.helperPath,
-      args.gitAuthorName,
-      args.gitAuthorEmail,
-      args.sshRewrite,
-      args.sshRewriteRepo
-    )
-  };
-  if (effectiveGh) nextSet.GH_CONFIG_DIR = effectiveGh;
-  cfg.shell_environment_policy = {
-    ...omit(sep, ["inherit", "set"]),
-    inherit: "core",
-    set: nextSet
-  };
-  writeConfig2(path, cfg);
-}
-function clearCodexShellEnvPolicy(args) {
-  const path = configTomlPath(args?.codexHome);
-  const { cfg, exists, parsed } = readConfig2(path);
-  if (!exists || !parsed) return;
-  const sepRaw = cfg.shell_environment_policy;
-  if (!sepRaw || typeof sepRaw !== "object") return;
-  const sep = sepRaw;
-  const existingSet = sep.set && typeof sep.set === "object" ? sep.set : {};
-  const userVars = omit(existingSet, MANAGED_SET_KEYS);
-  const rebuilt = Object.keys(userVars).length > 0 ? { ...sep, set: userVars } : omit(sep, ["set"]);
-  const nonInherit = Object.keys(rebuilt).filter((k) => k !== "inherit");
-  const cleaned = nonInherit.length === 0 ? omit(cfg, ["shell_environment_policy"]) : { ...cfg, shell_environment_policy: rebuilt };
-  writeConfig2(path, cleaned);
-}
-
-// src/lib/codex-credential-helper-install.ts
-function bundledHelperPath() {
-  const here = dirname3(fileURLToPath(import.meta.url));
-  return join3(here, "..", "..", "bin", "spellguard-git-helper");
-}
-function installCodexCredentialHelper(args) {
-  try {
-    installCodexShellEnvPolicy({
-      helperPath: args.helperPath ?? bundledHelperPath(),
-      ghConfigDir: args.ghConfigDir,
-      gitAuthorName: args.gitAuthorName,
-      gitAuthorEmail: args.gitAuthorEmail,
-      sshRewrite: args.sshRewrite,
-      sshRewriteRepo: args.sshRewriteRepo,
-      codexHome: args.codexHome
-    });
-  } catch {
-  }
-}
-function clearCodexCredentialHelper(args) {
-  try {
-    clearCodexShellEnvPolicy({ codexHome: args?.codexHome });
-  } catch {
-  }
+  writeFileSync2(
+    join4(generation, "state.json"),
+    JSON.stringify({
+      protocolVersion: 5,
+      ...agentId ? { agentId } : {},
+      deliveryId,
+      grantSetRevision: "0",
+      grants: []
+    }),
+    { mode: 384 }
+  );
+  writeFileSync2(join4(generation, "manifest.tsv"), "\n", { mode: 384 });
+  writeFileSync2(join4(generation, ".reset-tombstone"), "", { mode: 384 });
+  syncPath(join4(generation, "state.json"));
+  syncPath(join4(generation, "manifest.tsv"));
+  syncPath(join4(generation, ".reset-tombstone"));
+  syncPath(join4(generation, "tokens"));
+  syncPath(generation);
+  syncPath(generations);
+  testHooks.beforeV5Activation?.();
+  const pendingCurrent = join4(root, `.current.${randomUUID()}.tmp`);
+  symlinkSync(join4("generations", generationName), pendingCurrent);
+  renameSync2(pendingCurrent, join4(root, "current"));
+  syncPath(root);
+  testHooks.afterV5Activation?.();
+  testHooks.beforeV5Cleanup?.();
+  removeSiblingGenerations(generations, generationName);
 }
 
 // src/lib/gh-config-dir.ts
@@ -7261,14 +8996,14 @@ import {
   rmSync as rmSync2,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { join as join4 } from "node:path";
+import { join as join5 } from "node:path";
 function ghConfigDirPath(configDir, agentId) {
-  return join4(configDir, "gh", agentId);
+  return join5(configDir, "gh", agentId);
 }
 function writeGhSessionConfig(args) {
   const host = args.host ?? "github.com";
   mkdirSync3(args.dir, { recursive: true, mode: 448 });
-  const configYml = join4(args.dir, "config.yml");
+  const configYml = join5(args.dir, "config.yml");
   if (!existsSync3(configYml)) {
     writeFileSync3(configYml, 'version: "1"\n', { mode: 384 });
   }
@@ -7276,13 +9011,13 @@ function writeGhSessionConfig(args) {
     oauth_token: ${args.token}
     git_protocol: https
 `;
-  const hostsTmp = join4(args.dir, "hosts.yml.tmp");
+  const hostsTmp = join5(args.dir, "hosts.yml.tmp");
   writeFileSync3(hostsTmp, hosts, { mode: 384 });
-  renameSync3(hostsTmp, join4(args.dir, "hosts.yml"));
+  renameSync3(hostsTmp, join5(args.dir, "hosts.yml"));
 }
 function clearGhSessionConfig(dir) {
   try {
-    rmSync2(join4(dir, "hosts.yml"), { force: true });
+    rmSync2(join5(dir, "hosts.yml"), { force: true });
   } catch {
   }
 }
@@ -7303,6 +9038,13 @@ function renderMessage(input) {
 function githubEntryKey(orgLogin) {
   return (orgLogin ?? "__default").toLowerCase();
 }
+var RECOVERABLE_GITHUB_REVOKE_REASONS = /* @__PURE__ */ new Set(["github_side_revoked", "installation_revoked", "refresh_token_expired"]);
+function githubReissueAfterFinalRevoke(frame) {
+  return frame.provider === "github" && RECOVERABLE_GITHUB_REVOKE_REASONS.has(frame.reason) ? { pending: true } : void 0;
+}
+function finalGithubRevocationMessage(frame) {
+  return githubReissueAfterFinalRevoke(frame) ? "Spellguard: GitHub credential revoked; GitHub mutations are blocked while Spellguard waits for a replacement credential." : "Spellguard: GitHub credential revoked; GitHub mutations are blocked. This terminal revocation will not request a replacement automatically.";
+}
 function dropStaleDefaultKey(creds, installedRealKey, supersededId) {
   const def = creds.__default;
   const shouldDrop = Boolean(def) && installedRealKey && (supersededId === void 0 || supersededId === def?.scopedTokenId);
@@ -7315,18 +9057,20 @@ function handleCredentialUpdate(frame, deps) {
   const ghCreds = frame.credentials.filter(
     (c) => c.provider === "github" && Boolean(c.scoped_token)
   );
-  if (ghCreds.length === 0) return;
+  if (ghCreds.length === 0) return false;
   const cur = deps.readConfigImpl();
-  if (!cur.config) return;
+  if (!cur.config) return false;
   const hadKeyedMap = cur.config.githubCredentials !== void 0 && Object.keys(cur.config.githubCredentials).length > 0;
-  if (!hadKeyedMap && cur.config.revoked) return;
+  if (!hadKeyedMap && cur.config.revoked) return false;
   const githubCredentials = {
     ...cur.config.githubCredentials ?? {}
   };
   let firstInstalled = null;
   for (const ghCred of ghCreds) {
     const key = githubEntryKey(ghCred.github_org_login);
-    if (githubCredentials[key]?.revoked) continue;
+    const incomingId = ghCred.scoped_token_id ?? ghCred.credential_id;
+    const existing = githubCredentials[key];
+    if (existing?.revoked && existing.scopedTokenId === incomingId) continue;
     const entry = {
       scopedToken: ghCred.scoped_token,
       scopedTokenId: ghCred.scoped_token_id ?? ghCred.credential_id,
@@ -7344,7 +9088,7 @@ function handleCredentialUpdate(frame, deps) {
       };
     }
   }
-  if (firstInstalled === null) return;
+  if (firstInstalled === null) return false;
   const supersededId = "superseded_scoped_token_id" in frame ? frame.superseded_scoped_token_id : void 0;
   const installedRealKey = ghCreds.some(
     (c) => githubEntryKey(c.github_org_login) !== "__default"
@@ -7364,23 +9108,28 @@ function handleCredentialUpdate(frame, deps) {
     agentId: ghCreds[0].agent_id,
     gitAuthorName: firstInstalled.authorName,
     gitAuthorEmail: firstInstalled.authorEmail,
-    revoked: false
+    revoked: false,
+    githubReissue: void 0
   });
-  installCodexCredentialHelper({
-    gitAuthorName: firstInstalled.authorName,
-    gitAuthorEmail: firstInstalled.authorEmail,
-    ghConfigDir: deps.ghConfigDir,
-    helperPath: deps.helperPath,
-    // Rotation must regenerate the full rule set, incl. the repo-specific rules
-    // 3/4 (out-specify a force-SSH rule). See git-insteadof-rules.ts.
-    sshRewriteRepo: deps.sshRewriteRepo
-  });
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+  if (!managed) {
+    installCodexCredentialHelper({
+      gitAuthorName: firstInstalled.authorName,
+      gitAuthorEmail: firstInstalled.authorEmail,
+      ghConfigDir: deps.ghConfigDir,
+      helperPath: deps.helperPath,
+      // Rotation must regenerate the full rule set, incl. the repo-specific rules
+      // 3/4 (out-specify a force-SSH rule). See git-insteadof-rules.ts.
+      sshRewriteRepo: deps.sshRewriteRepo
+    });
+  }
   if (deps.ghConfigDir && firstInstalled.entry.scopedToken) {
     writeGhSessionConfig({
       dir: deps.ghConfigDir,
       token: firstInstalled.entry.scopedToken
     });
   }
+  return true;
 }
 function handleConfigUpdate(frame, deps) {
   const cur = deps.readConfigImpl();
@@ -7394,18 +9143,37 @@ function handleConfigUpdate(frame, deps) {
 function handleCredentialRevoked(frame, deps) {
   const cur = deps.readConfigImpl();
   const keyed = cur.config?.githubCredentials;
-  if (!cur.config || !keyed || Object.keys(keyed).length === 0) {
-    deps.markConfigRevokedImpl();
+  if (!cur.config) return false;
+  if (frame.provider !== "github") return true;
+  if (!keyed || Object.keys(keyed).length === 0) {
+    deps.writeConfigImpl({
+      ...cur.config,
+      scopedToken: void 0,
+      scopedTokenId: void 0,
+      expiresAt: void 0,
+      scopeSummary: void 0,
+      revoked: false,
+      githubReissue: githubReissueAfterFinalRevoke(frame)
+    });
     try {
-      clearCodexCredentialHelper();
       if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+      const managed = (deps.isManagedBox ?? isManagedBox)();
+      if (!managed) {
+        installCodexCredentialHelper({
+          gitAuthorName: cur.config.gitAuthorName,
+          gitAuthorEmail: cur.config.gitAuthorEmail,
+          ghConfigDir: deps.ghConfigDir,
+          helperPath: deps.helperPath,
+          sshRewriteRepo: deps.sshRewriteRepo
+        });
+      }
     } catch {
     }
     renderMessage({
       level: "error",
-      message: "Spellguard: credential revoked (push); subsequent git operations will fail until you re-run `@spellguard-setup` or restart Codex."
+      message: finalGithubRevocationMessage(frame)
     });
-    return false;
+    return true;
   }
   const next = {};
   let matched = false;
@@ -7426,7 +9194,8 @@ function handleCredentialRevoked(frame, deps) {
       scopedToken: survivor?.scopedToken,
       scopedTokenId: survivor?.scopedTokenId,
       expiresAt: survivor?.expiresAt,
-      scopeSummary: survivor?.scopeSummary
+      scopeSummary: survivor?.scopeSummary,
+      githubReissue: void 0
     });
     renderMessage({
       level: "error",
@@ -7434,25 +9203,52 @@ function handleCredentialRevoked(frame, deps) {
     });
     return true;
   }
-  deps.writeConfigImpl({ ...cur.config, githubCredentials: next });
-  deps.markConfigRevokedImpl();
+  deps.writeConfigImpl({
+    ...cur.config,
+    githubCredentials: next,
+    scopedToken: void 0,
+    scopedTokenId: void 0,
+    expiresAt: void 0,
+    scopeSummary: void 0,
+    revoked: false,
+    githubReissue: githubReissueAfterFinalRevoke(frame)
+  });
   try {
-    clearCodexCredentialHelper();
     if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+    const managed = (deps.isManagedBox ?? isManagedBox)();
+    if (!managed) {
+      installCodexCredentialHelper({
+        gitAuthorName: cur.config.gitAuthorName,
+        gitAuthorEmail: cur.config.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo
+      });
+    }
   } catch {
   }
   renderMessage({
     level: "error",
-    message: "Spellguard: credential revoked (push); subsequent git operations will fail until you re-run `@spellguard-setup` or restart Codex."
+    message: finalGithubRevocationMessage(frame)
   });
-  return false;
+  return true;
 }
 function handleAuthFailedClose(code, deps) {
   if (code !== 4401) return false;
+  const cur = deps.readConfigImpl();
   deps.markConfigRevokedImpl();
   try {
-    clearCodexCredentialHelper();
     if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+    const managed = (deps.isManagedBox ?? isManagedBox)();
+    if (!managed) {
+      installCodexCredentialHelper({
+        gitAuthorName: cur.config?.gitAuthorName,
+        gitAuthorEmail: cur.config?.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo
+      });
+    }
   } catch {
   }
   renderMessage({
@@ -7461,20 +9257,236 @@ function handleAuthFailedClose(code, deps) {
   });
   return true;
 }
+function handleSuspended(deps) {
+  if (!deps.markConfigSuspendedImpl) return false;
+  const cur = deps.readConfigImpl();
+  deps.markConfigSuspendedImpl();
+  try {
+    if (deps.ghConfigDir) clearGhSessionConfig(deps.ghConfigDir);
+    const managed = (deps.isManagedBox ?? isManagedBox)();
+    if (!managed) {
+      installCodexCredentialHelper({
+        gitAuthorName: cur.config?.gitAuthorName,
+        gitAuthorEmail: cur.config?.gitAuthorEmail,
+        ghConfigDir: deps.ghConfigDir,
+        helperPath: deps.helperPath,
+        sshRewriteRepo: deps.sshRewriteRepo
+      });
+    }
+  } catch {
+  }
+  renderMessage({
+    level: "error",
+    message: "Spellguard: this agent is quarantined. Its credentials were removed from this machine; it reconnects by itself once an admin releases it."
+  });
+  return true;
+}
 function isHandshakeAuthRejection(err) {
   return /Unexpected server response: 40[13]\b/.test(err?.message ?? "");
 }
 
+// src/lib/daemon-spawn.ts
+import {
+  execFileSync,
+  spawn
+} from "node:child_process";
+import { createHash, randomUUID as randomUUID2 } from "node:crypto";
+import {
+  chmodSync as chmodSync2,
+  existsSync as existsSync4,
+  mkdirSync as mkdirSync4,
+  readFileSync as readFileSync4,
+  realpathSync,
+  renameSync as renameSync4,
+  rmSync as rmSync3,
+  unlinkSync,
+  writeFileSync as writeFileSync4
+} from "node:fs";
+import { platform as platform2 } from "node:os";
+import { basename, dirname as dirname4, join as join6, resolve, sep } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var HEALTH_SCHEMA_VERSION = 1;
+function agentsDir(configDir) {
+  return join6(configDir, "agents");
+}
+function daemonHealthFilePath(configDir, agentId) {
+  return join6(agentsDir(configDir), `${agentId}.health.json`);
+}
+function daemonScriptPath() {
+  const here = dirname4(fileURLToPath2(import.meta.url));
+  const devPath = join6(
+    here,
+    "..",
+    "..",
+    "bin",
+    "spellguard-credential-daemon.ts"
+  );
+  const builtPath = join6(here, "spellguard-credential-daemon.mjs");
+  const runningFromDist = here.endsWith(`${sep}dist${sep}bin`) || here.endsWith("/dist/bin");
+  if (runningFromDist && existsSync4(builtPath)) return realpathSync(builtPath);
+  if (existsSync4(devPath)) return realpathSync(devPath);
+  return resolve(builtPath);
+}
+function daemonArtifactId(scriptPath = daemonScriptPath()) {
+  const canonicalPath = existsSync4(scriptPath) ? realpathSync(scriptPath) : resolve(scriptPath);
+  const hash = createHash("sha256");
+  hash.update(canonicalPath);
+  hash.update("\0");
+  hash.update(readFileSync4(canonicalPath));
+  return hash.digest("hex");
+}
+function writeHealthRecord(path, record) {
+  mkdirSync4(dirname4(path), { recursive: true, mode: 448 });
+  const tempPath = `${path}.${record.instanceId}.tmp`;
+  writeFileSync4(tempPath, `${JSON.stringify(record)}
+`, { mode: 384 });
+  chmodSync2(tempPath, 384);
+  renameSync4(tempPath, path);
+}
+function removeOwnedHealthRecord(path, instanceId) {
+  try {
+    const value = JSON.parse(readFileSync4(path, "utf8"));
+    if (value && typeof value === "object" && value.instanceId === instanceId) {
+      unlinkSync(path);
+    }
+  } catch {
+  }
+}
+function startDaemonHealthReporter(args) {
+  const path = daemonHealthFilePath(args.configDir, args.agentId);
+  const snapshot = readProcessSnapshot(process.pid);
+  if (!snapshot) throw new Error("could not read daemon process identity");
+  let record = {
+    schemaVersion: HEALTH_SCHEMA_VERSION,
+    pid: process.pid,
+    processStartToken: snapshot.startToken,
+    agentId: args.agentId,
+    configDir: resolve(args.configDir),
+    scriptPath: resolve(args.scriptPath),
+    artifactId: args.artifactId,
+    instanceId: args.instanceId,
+    heartbeatAt: (/* @__PURE__ */ new Date()).toISOString(),
+    processState: "starting",
+    transportState: "connecting",
+    credentialState: args.credentialState
+  };
+  const flush = () => {
+    record = { ...record, heartbeatAt: (/* @__PURE__ */ new Date()).toISOString() };
+    writeHealthRecord(path, record);
+  };
+  flush();
+  const interval = setInterval(flush, args.heartbeatIntervalMs ?? 1e3);
+  interval.unref();
+  return {
+    markReady: () => {
+      record = { ...record, processState: "ready" };
+      flush();
+    },
+    setTransport: (state, error) => {
+      record = {
+        ...record,
+        transportState: state,
+        ...error ? { transportError: error } : { transportError: void 0 }
+      };
+      flush();
+    },
+    setCredentialState: (state) => {
+      record = { ...record, credentialState: state };
+      flush();
+    },
+    close: () => {
+      clearInterval(interval);
+      removeOwnedHealthRecord(path, args.instanceId);
+    }
+  };
+}
+function processExists(pid) {
+  if (platform2() === "linux") {
+    try {
+      const stat = readFileSync4(`/proc/${pid}/stat`, "utf8");
+      const closeParen = stat.lastIndexOf(")");
+      if (closeParen >= 0) {
+        const state = stat.slice(closeParen + 2).trim().split(/\s+/, 1)[0];
+        if (state === "Z") return false;
+      }
+    } catch {
+    }
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+function readProcessSnapshot(pid) {
+  if (!processExists(pid)) return null;
+  if (platform2() === "linux") {
+    try {
+      const stat = readFileSync4(`/proc/${pid}/stat`, "utf8");
+      const closeParen = stat.lastIndexOf(")");
+      if (closeParen < 0) return null;
+      const fields = stat.slice(closeParen + 2).trim().split(/\s+/);
+      const startToken = fields[19];
+      if (!startToken) return null;
+      const argv = readFileSync4(`/proc/${pid}/cmdline`).toString("utf8").split("\0").filter(Boolean);
+      const environment = Object.fromEntries(
+        readFileSync4(`/proc/${pid}/environ`).toString("utf8").split("\0").filter(Boolean).map((entry) => {
+          const index = entry.indexOf("=");
+          return index < 0 ? [entry, ""] : [entry.slice(0, index), entry.slice(index + 1)];
+        })
+      );
+      return {
+        pid,
+        startToken,
+        argv,
+        commandLine: argv.join(" "),
+        environment
+      };
+    } catch {
+      return null;
+    }
+  }
+  if (platform2() === "darwin") {
+    try {
+      const startToken = execFileSync(
+        "ps",
+        ["-p", String(pid), "-o", "lstart="],
+        { encoding: "utf8" }
+      ).trim();
+      const commandLine = execFileSync(
+        "ps",
+        ["-ww", "-p", String(pid), "-o", "command="],
+        { encoding: "utf8" }
+      ).trim();
+      return {
+        pid,
+        startToken,
+        argv: parseObservedCommandLine(commandLine),
+        commandLine,
+        environment: null
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function parseObservedCommandLine(commandLine) {
+  if (!commandLine || /["'\\]/.test(commandLine)) return [];
+  return commandLine.split(/\s+/);
+}
+
 // src/lib/edit-store.ts
-import { chmodSync as chmodSync2, existsSync as existsSync4, mkdirSync as mkdirSync4 } from "node:fs";
-import { join as join5 } from "node:path";
+import { chmodSync as chmodSync3, existsSync as existsSync5, mkdirSync as mkdirSync5 } from "node:fs";
+import { join as join7 } from "node:path";
 
 // src/lib/sqlite-backend.ts
 import { createRequire } from "node:module";
 var localRequire = typeof __require === "function" ? __require : createRequire(import.meta.url);
 function suppressSqliteExperimentalWarning() {
   const original = process.emitWarning;
-  process.emitWarning = (warning, ...rest) => {
+  process.emitWarning = ((warning, ...rest) => {
     const optsOrType = rest[0];
     const type = typeof optsOrType === "object" && optsOrType !== null ? optsOrType.type : optsOrType;
     const name = typeof warning === "object" ? warning?.name : void 0;
@@ -7482,7 +9494,7 @@ function suppressSqliteExperimentalWarning() {
     const isSqliteExperimental = type === "ExperimentalWarning" || name === "ExperimentalWarning" || typeof message === "string" && message.includes("SQLite is an experimental");
     if (isSqliteExperimental) return;
     return original.call(process, warning, ...rest);
-  };
+  });
   return () => {
     process.emitWarning = original;
   };
@@ -7636,9 +9648,9 @@ function noopStore() {
 }
 function openEditStore(opts) {
   if (!backend) return noopStore();
-  mkdirSync4(opts.rootDir, { recursive: true });
+  mkdirSync5(opts.rootDir, { recursive: true });
   tryChmod(opts.rootDir, 448);
-  const dbPath = join5(opts.rootDir, "edits.db");
+  const dbPath = join7(opts.rootDir, "edits.db");
   const db = backend.open(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
@@ -7674,7 +9686,7 @@ function openEditStore(opts) {
   });
   for (const suffix of ["", "-wal", "-shm"]) {
     const path = `${dbPath}${suffix}`;
-    if (existsSync4(path)) tryChmod(path, 384);
+    if (existsSync5(path)) tryChmod(path, 384);
   }
   return {
     async record(r) {
@@ -7696,7 +9708,7 @@ function openEditStore(opts) {
 }
 function tryChmod(path, mode) {
   try {
-    chmodSync2(path, mode);
+    chmodSync3(path, mode);
   } catch {
   }
 }
@@ -7704,25 +9716,25 @@ function tryChmod(path, mode) {
 // src/lib/env-file-writer.ts
 import {
   appendFileSync,
-  chmodSync as chmodSync3,
+  chmodSync as chmodSync4,
   copyFileSync as copyFileSync2,
-  existsSync as existsSync5,
-  mkdirSync as mkdirSync5,
-  writeFileSync as writeFileSync4
+  existsSync as existsSync6,
+  mkdirSync as mkdirSync6,
+  writeFileSync as writeFileSync5
 } from "node:fs";
-import { dirname as dirname4, join as join6, resolve } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-var HERE = dirname4(fileURLToPath2(import.meta.url));
+import { dirname as dirname5, join as join8, resolve as resolve2 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+var HERE = dirname5(fileURLToPath3(import.meta.url));
 function bundledHelperPath2() {
-  return resolve(HERE, "..", "..", "bin", "spellguard-git-helper");
+  return resolve2(HERE, "..", "..", "bin", "spellguard-git-helper");
 }
 function ensureStableHelper(configDir) {
   const bundled = bundledHelperPath2();
   try {
-    const dest = join6(configDir, "bin", "spellguard-git-helper");
-    mkdirSync5(dirname4(dest), { recursive: true });
+    const dest = join8(configDir, "bin", "spellguard-git-helper");
+    mkdirSync6(dirname5(dest), { recursive: true });
     copyFileSync2(bundled, dest);
-    chmodSync3(dest, 493);
+    chmodSync4(dest, 493);
     return dest;
   } catch {
     return bundled;
@@ -7730,10 +9742,10 @@ function ensureStableHelper(configDir) {
 }
 
 // src/lib/git-root.ts
-import { execFileSync } from "node:child_process";
+import { execFileSync as execFileSync2 } from "node:child_process";
 function resolveGitRoot(cwd) {
   try {
-    return execFileSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+    return execFileSync2("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
     }).trim();
@@ -7804,11 +9816,488 @@ function parseShowDiff(output) {
   return result;
 }
 
+// src/lib/github-grant-generation.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
+import {
+  accessSync,
+  closeSync as closeSync2,
+  constants as fsConstants2,
+  fstatSync as fstatSync2,
+  lstatSync as lstatSync2,
+  openSync as openSync2,
+  readSync,
+  readlinkSync,
+  statSync as statSync3
+} from "node:fs";
+import {
+  lstat,
+  mkdir as mkdir2,
+  open,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile as writeFile2
+} from "node:fs/promises";
+import { basename as basename2, dirname as dirname6, join as join9 } from "node:path";
+function generationAgentId(state) {
+  if (UUID_PATTERN.test(state.agentId)) return state.agentId;
+  const legacyAgentId = state.grants[0]?.agent_id;
+  return typeof legacyAgentId === "string" && UUID_PATTERN.test(legacyAgentId) ? legacyAgentId : null;
+}
+function bundleAgentId(configDir, frame) {
+  const memberAgentId = frame.credentials[0]?.agent_id;
+  const localAgentId = readConfig2(join9(configDir, "config.json")).config?.agentId;
+  if (memberAgentId && localAgentId && memberAgentId !== localAgentId) {
+    throw new Error("GitHub grant bundle belongs to a different agent");
+  }
+  const agentId = memberAgentId ?? localAgentId;
+  if (!agentId || !UUID_PATTERN.test(agentId)) {
+    throw new Error("GitHub grant bundle has no authenticated agent identity");
+  }
+  if (frame.credentials.some((credential) => credential.agent_id !== agentId)) {
+    throw new Error("GitHub grant bundle contains mixed agent identities");
+  }
+  return agentId;
+}
+async function syncDirectory(path) {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+async function removeSupersededGenerations(root, generations, activeRevision, removeEveryInactiveGeneration = false) {
+  const rootStat = await lstat(generations);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    throw new Error("unsafe GitHub generations directory");
+  }
+  const currentTarget = readlinkSync(join9(root, "current"));
+  const currentMatch = CURRENT_TARGET_PATTERN.exec(currentTarget);
+  if (!currentMatch || currentMatch[1] !== activeRevision) {
+    throw new Error("GitHub generation changed before cleanup");
+  }
+  for (const entry of await readdir(generations, { withFileTypes: true })) {
+    const generationMatch = CURRENT_TARGET_PATTERN.exec(
+      `generations/${entry.name}`
+    );
+    const stagingMatch = STAGING_NAME_PATTERN.exec(entry.name);
+    const revision = generationMatch?.[1] ?? stagingMatch?.[1];
+    if (!revision || !removeEveryInactiveGeneration && BigInt(revision) > BigInt(activeRevision))
+      continue;
+    if (generationMatch && entry.name === basename2(currentTarget)) continue;
+    const candidate = join9(generations, entry.name);
+    if (dirname6(candidate) !== generations) {
+      throw new Error("unsafe GitHub generation cleanup target");
+    }
+    const stat = await lstat(candidate);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) continue;
+    await rm(candidate, { recursive: true });
+  }
+  await syncDirectory(generations);
+}
+async function currentState(root) {
+  try {
+    const raw = readPrivateConfigFile(join9(root, "current", "state.json"));
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+async function matchesActiveGeneration(root, current, frame) {
+  const grants = frame.credentials.map(
+    ({ scoped_token: _secret, ...grant }) => grant
+  );
+  if (JSON.stringify(current.grants) !== JSON.stringify(grants)) return false;
+  for (const grant of frame.credentials) {
+    const token = readPrivateConfigFile(
+      join9(root, "current", "tokens", grant.grant_id)
+    );
+    if (token !== `${grant.scoped_token}
+`) return false;
+  }
+  return true;
+}
+function grantSetGitAuthor(frame) {
+  const providerData = frame.credentials[0]?.provider_data;
+  if (!providerData) return null;
+  const { git_author_name: name, git_author_email: email } = providerData;
+  if (!name || !email) return null;
+  return { name, email };
+}
+function establishGitAuthorIdentity(configDir, author) {
+  if (!author) return;
+  const configPath = join9(configDir, "config.json");
+  const current = readConfig2(configPath);
+  if (!current.config) return;
+  if (current.config.gitAuthorName === author.name && current.config.gitAuthorEmail === author.email) {
+    return;
+  }
+  writeConfig2(
+    {
+      ...current.config,
+      gitAuthorName: author.name,
+      gitAuthorEmail: author.email
+    },
+    configPath
+  );
+}
+async function applyGithubGrantBundle(configDir, frame, testHooks = {}) {
+  const parsed = parseServerFrame(JSON.stringify(frame));
+  if (!parsed || parsed.type !== "github_grants_bundle") {
+    throw new Error("invalid GitHub grant bundle");
+  }
+  const root = join9(configDir, "github-grants");
+  const generations = join9(root, "generations");
+  await mkdir2(generations, { recursive: true, mode: 448 });
+  const gitAuthor = grantSetGitAuthor(frame);
+  const agentId = bundleAgentId(configDir, frame);
+  const current = await currentState(root);
+  const incoming = BigInt(frame.grant_set_revision);
+  let replacingAgent = false;
+  if (current) {
+    const activeAgentId = generationAgentId(current);
+    if (!activeAgentId && current.grantSetRevision !== "0") {
+      throw new Error("active GitHub grant generation has no agent identity");
+    }
+    const sameAgent = activeAgentId === agentId;
+    replacingAgent = activeAgentId !== null && !sameAgent;
+    const active = BigInt(current.grantSetRevision);
+    if (sameAgent && incoming < active)
+      throw new Error("stale GitHub grant set revision");
+    if (sameAgent && incoming === active) {
+      if (current.deliveryId === frame.delivery_id || await matchesActiveGeneration(root, current, frame)) {
+        establishGitAuthorIdentity(configDir, gitAuthor);
+        await removeSupersededGenerations(
+          root,
+          generations,
+          current.grantSetRevision
+        );
+        return;
+      }
+      throw new Error("conflicting GitHub grant set revision");
+    }
+  }
+  const generationName = `${frame.grant_set_revision}-${frame.delivery_id}`;
+  const staging = join9(
+    generations,
+    `.${generationName}.${randomUUID3()}.staging`
+  );
+  const destination = join9(generations, generationName);
+  await rm(destination, { recursive: true, force: true });
+  await mkdir2(join9(staging, "tokens"), { recursive: true, mode: 448 });
+  const state = {
+    protocolVersion: 5,
+    agentId,
+    deliveryId: frame.delivery_id,
+    grantSetRevision: frame.grant_set_revision,
+    grants: frame.credentials.map(
+      ({ scoped_token: _secret, ...grant }) => grant
+    ),
+    ...gitAuthor ? { gitAuthor } : {}
+  };
+  await writeFile2(join9(staging, "state.json"), JSON.stringify(state, null, 2), {
+    mode: 384,
+    flag: "wx"
+  });
+  const manifest = [];
+  for (const grant of frame.credentials) {
+    const tokenName = grant.grant_id;
+    const tokenPath = join9(staging, "tokens", tokenName);
+    await writeFile2(tokenPath, `${grant.scoped_token}
+`, {
+      mode: 384,
+      flag: "wx"
+    });
+    const repositories = grant.scope.mode === "selected" ? grant.scope.repository_names.join(",") : "";
+    manifest.push(
+      [
+        grant.github_org_login.toLowerCase(),
+        grant.grant_id,
+        `tokens/${tokenName}`,
+        grant.scope.mode,
+        repositories
+      ].join("	")
+    );
+  }
+  await writeFile2(join9(staging, "manifest.tsv"), `${manifest.join("\n")}
+`, {
+    mode: 384,
+    flag: "wx"
+  });
+  await syncDirectory(join9(staging, "tokens"));
+  await syncDirectory(staging);
+  await rename(staging, destination);
+  await syncDirectory(generations);
+  establishGitAuthorIdentity(configDir, gitAuthor);
+  await testHooks.beforeActivate?.();
+  const nextLink = join9(root, `.current.${randomUUID3()}`);
+  await symlink(join9("generations", basename2(destination)), nextLink);
+  await rename(nextLink, join9(root, "current"));
+  await syncDirectory(root);
+  await removeSupersededGenerations(
+    root,
+    generations,
+    frame.grant_set_revision,
+    replacingAgent
+  );
+}
+var UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+var CURRENT_TARGET_PATTERN = /^generations\/(\d+)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+var STAGING_NAME_PATTERN = /^\.(\d+)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.staging$/i;
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function protectedArtifactSize(path) {
+  const flags = fsConstants2.O_RDONLY | (process.platform === "win32" ? 0 : fsConstants2.O_NOFOLLOW);
+  try {
+    const fd = openSync2(path, flags);
+    try {
+      const stat = fstatSync2(fd);
+      if (!stat.isFile()) return null;
+      if (process.platform !== "win32" && (stat.mode & 63) !== 0)
+        return null;
+      return stat.size;
+    } finally {
+      closeSync2(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+function tokenArtifactIsUsable(path) {
+  const size = protectedArtifactSize(path);
+  return size !== null && size > 1;
+}
+function freezeGeneration(root, afterReadlink) {
+  const current = join9(root, "current");
+  try {
+    if (!lstatSync2(current).isSymbolicLink()) return { state: "unavailable" };
+  } catch (error) {
+    return error.code === "ENOENT" ? { state: "absent" } : { state: "unavailable" };
+  }
+  try {
+    const target = readlinkSync(current);
+    const match = CURRENT_TARGET_PATTERN.exec(target);
+    if (!match) return { state: "unavailable" };
+    const generations = join9(root, "generations");
+    const generation = join9(root, target);
+    const generationsStat = lstatSync2(generations);
+    const generationStat = lstatSync2(generation);
+    if (generationsStat.isSymbolicLink() || !generationsStat.isDirectory() || generationStat.isSymbolicLink() || !generationStat.isDirectory()) {
+      return { state: "unavailable" };
+    }
+    afterReadlink?.();
+    return {
+      state: "selected",
+      path: generation,
+      revision: match[1],
+      deliveryId: match[2]
+    };
+  } catch {
+    return { state: "unavailable" };
+  }
+}
+function selectFrozenGeneration(configDir, afterReadlink) {
+  const framework = freezeGeneration(
+    join9(configDir, "github-grants"),
+    afterReadlink
+  );
+  if (framework.state !== "absent") return framework;
+  return freezeGeneration(
+    join9(dirname6(configDir), "github-grants"),
+    afterReadlink
+  );
+}
+function parseGenerationHeader(state, manifest, frozen) {
+  if (!isRecord(state) || state.protocolVersion !== 5) return null;
+  if (state.deliveryId !== frozen.deliveryId) return null;
+  if (state.grantSetRevision !== frozen.revision) return null;
+  if (!Array.isArray(state.grants) || !manifest.endsWith("\n")) return null;
+  const body = manifest.slice(0, -1);
+  const lines = body === "" ? [] : body.split("\n");
+  if (lines.length !== state.grants.length) return null;
+  return { grants: state.grants, lines };
+}
+function managedGrant(raw) {
+  return {
+    grantId: raw.grantId,
+    agentId: raw.agentId,
+    owner: raw.owner,
+    mode: raw.mode,
+    repositories: raw.repositoryNames,
+    scopedTokenId: raw.scopedTokenId,
+    expiresAt: raw.expiresAt
+  };
+}
+function frameworkGrant(raw) {
+  if (raw.provider !== "github" || raw.status !== "valid") return null;
+  const scope = isRecord(raw.scope) ? raw.scope : {};
+  return {
+    grantId: raw.grant_id,
+    agentId: raw.agent_id,
+    owner: raw.github_org_login,
+    mode: scope.mode,
+    repositories: scope.repository_names,
+    scopedTokenId: raw.scoped_token_id,
+    expiresAt: raw.expires_at
+  };
+}
+function validNormalizedGrant(grant, allowExpired = false) {
+  if (!UUID_PATTERN.test(grant.grantId) || !UUID_PATTERN.test(grant.agentId)) {
+    return false;
+  }
+  if (!grant.owner || grant.owner.trim() !== grant.owner) return false;
+  if (!grant.scopedTokenId.trim() || !Number.isFinite(Date.parse(grant.expiresAt))) {
+    return false;
+  }
+  grant.owner = grant.owner.toLowerCase();
+  if (!allowExpired && Date.parse(grant.expiresAt) <= Date.now()) return false;
+  if (grant.mode === "all") {
+    if (grant.repositories !== void 0 && (!Array.isArray(grant.repositories) || grant.repositories.length > 0)) {
+      return false;
+    }
+    grant.repositories = [];
+    return true;
+  }
+  if (grant.mode !== "selected" || !Array.isArray(grant.repositories)) {
+    return false;
+  }
+  if (grant.repositories.length === 0) return false;
+  const repositories = /* @__PURE__ */ new Set();
+  for (const repo of grant.repositories) {
+    if (typeof repo !== "string" || repo !== repo.toLowerCase()) return false;
+    const [owner, name, ...extra] = repo.split("/");
+    if (owner !== grant.owner || !name || extra.length > 0) return false;
+    if (repositories.has(repo)) return false;
+    repositories.add(repo);
+  }
+  if (repositories.size !== grant.repositories.length) {
+    return false;
+  }
+  return true;
+}
+function normalizeGrant(raw, revision, allowExpired = false) {
+  if (!isRecord(raw)) return null;
+  const managed = typeof raw.grantId === "string";
+  if (!managed && raw.grant_set_revision !== revision) return null;
+  const grant = managed ? managedGrant(raw) : frameworkGrant(raw);
+  if (!grant || !validNormalizedGrant(grant, allowExpired)) return null;
+  return grant;
+}
+function expiryEntriesFromGeneration(frozen, state, manifest, agentId) {
+  const header = parseGenerationHeader(state, manifest, frozen);
+  if (!header) return { state: "unavailable" };
+  const seenGrants = /* @__PURE__ */ new Set();
+  const seenOwners = /* @__PURE__ */ new Set();
+  const seenTokens = /* @__PURE__ */ new Set();
+  const entries = [];
+  for (let index = 0; index < header.lines.length; index++) {
+    const fields = header.lines[index].split("	");
+    const grant = normalizeGrant(header.grants[index], frozen.revision, true);
+    if (!grant || grant.agentId !== agentId || seenOwners.has(grant.owner) || seenTokens.has(grant.scopedTokenId)) {
+      return { state: "unavailable" };
+    }
+    if (!matchManifestGrant(frozen.path, fields, grant, seenGrants)) {
+      return { state: "unavailable" };
+    }
+    seenOwners.add(grant.owner);
+    seenTokens.add(grant.scopedTokenId);
+    entries.push({
+      scopedTokenId: grant.scopedTokenId,
+      expiresAt: grant.expiresAt
+    });
+  }
+  return { state: "available", entries };
+}
+function primaryTokenFromGeneration(frozen, state, manifest, agentId) {
+  const header = parseGenerationHeader(state, manifest, frozen);
+  if (!header || !isRecord(state)) return { state: "unavailable" };
+  const persistedAgentId = state.agentId;
+  if (persistedAgentId !== void 0 && (typeof persistedAgentId !== "string" || persistedAgentId !== agentId)) {
+    return { state: "unavailable" };
+  }
+  if (header.lines.length === 0) {
+    return persistedAgentId === agentId ? { state: "available", token: null } : { state: "unavailable" };
+  }
+  const seenGrants = /* @__PURE__ */ new Set();
+  const seenOwners = /* @__PURE__ */ new Set();
+  const seenTokens = /* @__PURE__ */ new Set();
+  let primaryGrantId;
+  for (let index = 0; index < header.lines.length; index++) {
+    const fields = header.lines[index].split("	");
+    const grant = normalizeGrant(header.grants[index], frozen.revision);
+    if (!grant || grant.agentId !== agentId || seenOwners.has(grant.owner) || seenTokens.has(grant.scopedTokenId) || !matchManifestGrant(frozen.path, fields, grant, seenGrants)) {
+      return { state: "unavailable" };
+    }
+    seenOwners.add(grant.owner);
+    seenTokens.add(grant.scopedTokenId);
+    primaryGrantId ??= grant.grantId;
+  }
+  if (!primaryGrantId) return { state: "unavailable" };
+  try {
+    const raw = readPrivateConfigFile(
+      join9(frozen.path, "tokens", primaryGrantId)
+    );
+    if (!raw.endsWith("\n")) return { state: "unavailable" };
+    const token = raw.slice(0, -1);
+    if (!token || /[\r\n]/.test(token)) return { state: "unavailable" };
+    return { state: "available", token };
+  } catch {
+    return { state: "unavailable" };
+  }
+}
+function matchManifestGrant(generationPath, fields, grant, seen) {
+  if (fields.length !== 5) return null;
+  const [owner, grantId, tokenRelative, mode, repositories] = fields;
+  if (seen.has(grantId) || grantId !== grant.grantId) return null;
+  if (owner !== grant.owner || mode !== grant.mode) return null;
+  if (repositories !== grant.repositories.join(",")) return null;
+  if (tokenRelative !== `tokens/${grantId}`) return null;
+  if (!tokenArtifactIsUsable(join9(generationPath, tokenRelative))) return null;
+  seen.add(grantId);
+  return grant;
+}
+function readActiveGithubGrantExpiryEntries(configDir, agentId, options = {}) {
+  const selected = selectFrozenGeneration(
+    configDir,
+    options.afterCurrentReadlink
+  );
+  if (selected.state !== "selected") return selected;
+  try {
+    const state = JSON.parse(
+      readPrivateConfigFile(join9(selected.path, "state.json"))
+    );
+    const manifest = readPrivateConfigFile(join9(selected.path, "manifest.tsv"));
+    return expiryEntriesFromGeneration(selected, state, manifest, agentId);
+  } catch {
+    return { state: "unavailable" };
+  }
+}
+function readActiveGithubGrantPrimaryToken(configDir, agentId, options = {}) {
+  const selected = selectFrozenGeneration(
+    configDir,
+    options.afterCurrentReadlink
+  );
+  if (selected.state !== "selected") return selected;
+  try {
+    const state = JSON.parse(
+      readPrivateConfigFile(join9(selected.path, "state.json"))
+    );
+    const manifest = readPrivateConfigFile(join9(selected.path, "manifest.tsv"));
+    return primaryTokenFromGeneration(selected, state, manifest, agentId);
+  } catch {
+    return { state: "unavailable" };
+  }
+}
+
 // src/lib/log-all-ref-updates-probe.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 function checkLogAllRefUpdates(cwd) {
   try {
-    const out = execFileSync2(
+    const out = execFileSync3(
       "git",
       ["config", "--get", "core.logAllRefUpdates"],
       {
@@ -7830,13 +10319,13 @@ function checkLogAllRefUpdates(cwd) {
 import { execFile } from "node:child_process";
 import {
   appendFileSync as appendFileSync2,
-  chmodSync as chmodSync4,
-  existsSync as existsSync6,
-  mkdirSync as mkdirSync6,
-  writeFileSync as writeFileSync5
+  chmodSync as chmodSync5,
+  existsSync as existsSync7,
+  mkdirSync as mkdirSync7,
+  writeFileSync as writeFileSync6
 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join7 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { join as join10 } from "node:path";
 var ANSI_PATTERN = /\x1b\[[0-9;?]*[A-Za-z]/g;
 function stripAnsi(s) {
   return s.replace(ANSI_PATTERN, "");
@@ -7916,19 +10405,19 @@ async function makeNodePtySpawner() {
     };
   };
 }
-var LOGIN_MARKER_PATH = join7(homedir3(), ".codex-login-done");
+var LOGIN_MARKER_PATH = join10(homedir4(), ".codex-login-done");
 var LOGIN_MARKER_SENTINEL = "spellguard:authenticated-via-codex-device-auth\n";
 function defaultMarkAuthenticated(markerPath = LOGIN_MARKER_PATH) {
-  const dir = homedir3();
-  if (!existsSync6(dir)) mkdirSync6(dir, { recursive: true });
-  writeFileSync5(markerPath, LOGIN_MARKER_SENTINEL, {
+  const dir = homedir4();
+  if (!existsSync7(dir)) mkdirSync7(dir, { recursive: true });
+  writeFileSync6(markerPath, LOGIN_MARKER_SENTINEL, {
     encoding: "utf-8",
     mode: 384
   });
-  chmodSync4(markerPath, 384);
+  chmodSync5(markerPath, 384);
 }
 function defaultIsLoggedIn() {
-  return new Promise((resolve3) => {
+  return new Promise((resolve4) => {
     execFile(
       "codex",
       ["login", "status"],
@@ -7937,14 +10426,14 @@ function defaultIsLoggedIn() {
         const out = stripAnsi(`${String(stdout)}
 ${String(stderr)}`);
         if (/not logged in/i.test(out)) {
-          resolve3(false);
+          resolve4(false);
           return;
         }
         if (err) {
-          resolve3(false);
+          resolve4(false);
           return;
         }
-        resolve3(/logged in|authenticated|chatgpt|account/i.test(out));
+        resolve4(/logged in|authenticated|chatgpt|account/i.test(out));
       }
     );
   });
@@ -7958,9 +10447,9 @@ function debugCaptureRelayOutput(data) {
       /sk-[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{16,}/g,
       (m) => `${m.slice(0, 8)}<redacted:${m.length}>`
     );
-    const debugPath = join7(homedir3(), ".spellguard-relay-debug.log");
+    const debugPath = join10(homedir4(), ".spellguard-relay-debug.log");
     appendFileSync2(debugPath, redacted, { encoding: "utf-8", mode: 384 });
-    chmodSync4(debugPath, 384);
+    chmodSync5(debugPath, 384);
   } catch {
   }
 }
@@ -7969,7 +10458,7 @@ async function runLoginRelay(deps) {
   const timeoutMs = deps.timeoutMs ?? (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 15 * 60 * 1e3);
   const pollIntervalMs = deps.pollIntervalMs ?? AUTH_POLL_INTERVAL_MS;
   if (deps.signal?.aborted) return { ok: false };
-  return new Promise((resolve3) => {
+  return new Promise((resolve4) => {
     const pty = deps.spawnPty("codex", ["login", "--device-auth"]);
     const st = {
       urlFound: false,
@@ -7994,16 +10483,16 @@ async function runLoginRelay(deps) {
       if (!ok) {
         deps.sendUpdate({ state: "failed", message });
         pty.kill();
-        resolve3({ ok: false });
+        resolve4({ ok: false });
       } else {
         pty.kill();
-        resolve3({ ok: true });
+        resolve4({ ok: true });
       }
     }
     if (deps.signal) {
       if (deps.signal.aborted) {
         pty.kill();
-        resolve3({ ok: false });
+        resolve4({ ok: false });
         return;
       }
       deps.signal.addEventListener("abort", () => {
@@ -8011,7 +10500,7 @@ async function runLoginRelay(deps) {
           st.done = true;
           clearTimers();
           pty.kill();
-          resolve3({ ok: false });
+          resolve4({ ok: false });
         }
       });
     }
@@ -8078,8 +10567,11 @@ async function runLoginRelay(deps) {
   });
 }
 
+// src/lib/plugin-sync.ts
+var FRAMEWORK = "codex";
+
 // src/lib/ssh-remote-detect.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
+import { execFileSync as execFileSync4 } from "node:child_process";
 
 // src/lib/ssh-remote-parse.ts
 var SCP_RE = /^[\w.-]+@([\w.-]+):([^/]+)\/([^/]+?)(?:\.git)?$/;
@@ -8119,7 +10611,7 @@ function detectSshRemoteFromOutput(output) {
 }
 function detectSshRemote(cwd) {
   try {
-    const out = execFileSync3("git", ["remote", "-v"], {
+    const out = execFileSync4("git", ["remote", "-v"], {
       encoding: "utf-8",
       cwd
     });
@@ -8138,16 +10630,16 @@ function resolveSshRewriteRepo(cwd) {
 }
 
 // src/monitors/commit-watcher.ts
-import { execFileSync as execFileSync4 } from "node:child_process";
+import { execFileSync as execFileSync5 } from "node:child_process";
 import {
-  closeSync as closeSync2,
-  existsSync as existsSync7,
-  openSync as openSync2,
-  readSync,
-  statSync as statSync2,
+  closeSync as closeSync3,
+  existsSync as existsSync8,
+  openSync as openSync3,
+  readSync as readSync2,
+  statSync as statSync4,
   watch
 } from "node:fs";
-import { isAbsolute, resolve as resolve2 } from "node:path";
+import { isAbsolute, resolve as resolve3 } from "node:path";
 var GIT_EXEC_OPTS = {
   encoding: "utf8",
   stdio: ["ignore", "pipe", "ignore"]
@@ -8167,13 +10659,13 @@ function isValidBranchName(name) {
 }
 function resolveReflogPath(workingDir) {
   try {
-    const raw = execFileSync4(
+    const raw = execFileSync5(
       "git",
       ["-C", workingDir, "rev-parse", "--git-path", "logs/HEAD"],
       GIT_EXEC_OPTS
     ).trim();
     if (!raw) return null;
-    return isAbsolute(raw) ? raw : resolve2(workingDir, raw);
+    return isAbsolute(raw) ? raw : resolve3(workingDir, raw);
   } catch {
     return null;
   }
@@ -8181,7 +10673,7 @@ function resolveReflogPath(workingDir) {
 function readCommitMeta(workingDir, sha) {
   if (!VALID_SHA.test(sha)) return null;
   try {
-    const out = execFileSync4(
+    const out = execFileSync5(
       "git",
       [
         "-C",
@@ -8209,7 +10701,7 @@ function readCommitMeta(workingDir, sha) {
     const validParentShas = parentShas.filter((p) => VALID_SHA.test(p));
     let message = "";
     try {
-      message = execFileSync4(
+      message = execFileSync5(
         "git",
         ["-C", workingDir, "log", "-1", "--format=%B", sha],
         { ...GIT_EXEC_OPTS, maxBuffer: GIT_BODY_MAX_BUFFER }
@@ -8237,7 +10729,7 @@ function readCommitMeta(workingDir, sha) {
 }
 function enumerateBranchHeads(workingDir) {
   try {
-    const out = execFileSync4(
+    const out = execFileSync5(
       "git",
       [
         "-C",
@@ -8253,10 +10745,10 @@ function enumerateBranchHeads(workingDir) {
     for (const line of out.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      const sep = trimmed.lastIndexOf(" ");
-      if (sep < 0) continue;
-      const branch = trimmed.slice(0, sep);
-      const sha = trimmed.slice(sep + 1);
+      const sep2 = trimmed.lastIndexOf(" ");
+      if (sep2 < 0) continue;
+      const branch = trimmed.slice(0, sep2);
+      const sha = trimmed.slice(sep2 + 1);
       if (!isValidBranchName(branch)) continue;
       if (!VALID_SHA.test(sha)) continue;
       result.push({ branch, sha });
@@ -8281,7 +10773,7 @@ function seedSeenWithCurrentHeads(workingDir, seen) {
 }
 function resolveHeadBranch(workingDir) {
   try {
-    const name = execFileSync4(
+    const name = execFileSync5(
       "git",
       ["-C", workingDir, "rev-parse", "--abbrev-ref", "HEAD"],
       GIT_EXEC_OPTS
@@ -8295,7 +10787,7 @@ function resolveHeadBranch(workingDir) {
 function readNewReflogShas(reflogPath, lastOffset) {
   let currentSize;
   try {
-    currentSize = statSync2(reflogPath).size;
+    currentSize = statSync4(reflogPath).size;
   } catch {
     return { shas: [], newOffset: lastOffset };
   }
@@ -8307,14 +10799,14 @@ function readNewReflogShas(reflogPath, lastOffset) {
   const buf = Buffer.allocUnsafe(chunkLen);
   let fd;
   try {
-    fd = openSync2(reflogPath, "r");
+    fd = openSync3(reflogPath, "r");
   } catch {
     return { shas: [], newOffset: lastOffset };
   }
   let totalRead = 0;
   try {
     while (totalRead < chunkLen) {
-      const n = readSync(
+      const n = readSync2(
         fd,
         buf,
         totalRead,
@@ -8326,7 +10818,7 @@ function readNewReflogShas(reflogPath, lastOffset) {
     }
   } finally {
     try {
-      closeSync2(fd);
+      closeSync3(fd);
     } catch {
     }
   }
@@ -8348,7 +10840,7 @@ function readNewReflogShas(reflogPath, lastOffset) {
 }
 async function startCommitWatcher(input) {
   const logsHeadFileOrNull = resolveReflogPath(input.workingDir);
-  if (!logsHeadFileOrNull || !existsSync7(logsHeadFileOrNull)) {
+  if (!logsHeadFileOrNull || !existsSync8(logsHeadFileOrNull)) {
     throw new Error(
       `No git reflog at ${logsHeadFileOrNull ?? `${input.workingDir}/.git/logs/HEAD`}`
     );
@@ -8357,7 +10849,7 @@ async function startCommitWatcher(input) {
   const watchers = [];
   const seen = /* @__PURE__ */ new Set();
   seedSeenWithCurrentHeads(input.workingDir, seen);
-  let lastOffset = statSync2(logsHeadFile).size;
+  let lastOffset = statSync4(logsHeadFile).size;
   let processing = false;
   let pending = false;
   async function processReflogChunk() {
@@ -8415,22 +10907,24 @@ function wipeSupersededCredentials(args) {
   const message = supersededMessage(args.cause);
   const configPath = args.configPath ?? defaultConfigPath();
   (args.markConfigSupersededImpl ?? ((m) => markConfigSuperseded(m, configPath)))(message);
-  try {
-    (args.clearCodexCredentialHelperImpl ?? clearCodexCredentialHelper)({
-      codexHome: args.codexHome
-    });
-  } catch {
-  }
   if (args.ghConfigDir) {
     try {
       (args.clearGhSessionConfigImpl ?? clearGhSessionConfig)(args.ghConfigDir);
     } catch {
     }
   }
+  try {
+    (args.installCodexCredentialHelperImpl ?? installCodexCredentialHelper)({
+      ghConfigDir: args.ghConfigDir,
+      helperPath: args.helperPath,
+      codexHome: args.codexHome
+    });
+  } catch {
+  }
 }
 
 // bin/spellguard-credential-daemon.ts
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 var GIT_DIFF_MAX_BUFFER = 64 * 1024 * 1024;
 function parseArgs(argv) {
   const args = argv.slice(2);
@@ -8451,10 +10945,15 @@ function parseArgs(argv) {
   if (cwdIdx !== -1 && args[cwdIdx + 1]) {
     cwd = args[cwdIdx + 1];
   }
-  return { agentId, configDir, cwd };
+  const instanceIdIdx = args.indexOf("--instance-id");
+  const instanceId = instanceIdIdx !== -1 && args[instanceIdIdx + 1] ? args[instanceIdIdx + 1] : randomUUID4();
+  const scriptPath = process.argv[1] ?? fileURLToPath4(import.meta.url);
+  const artifactIdIdx = args.indexOf("--artifact-id");
+  const artifactId = artifactIdIdx !== -1 && args[artifactIdIdx + 1] ? args[artifactIdIdx + 1] : daemonArtifactId(scriptPath);
+  return { agentId, configDir, cwd, instanceId, artifactId, scriptPath };
 }
-function agentsDir(configDir) {
-  return join8(configDir, "agents");
+function agentsDir2(configDir) {
+  return join11(configDir, "agents");
 }
 function computeNeedsLoginRelay(opts) {
   return opts.relayEnabled && opts.autoStart && !opts.alreadyLoggedIn && !opts.loginDoneFileExists;
@@ -8491,15 +10990,15 @@ async function startLoginRelay(deps) {
   }
 }
 function pidFilePath(configDir, agentId) {
-  return join8(agentsDir(configDir), `${agentId}.pid`);
+  return join11(agentsDir2(configDir), `${agentId}.pid`);
 }
 function logFilePath(configDir, agentId) {
-  return join8(agentsDir(configDir), `${agentId}.log`);
+  return join11(agentsDir2(configDir), `${agentId}.log`);
 }
 function readPidFileSync(path) {
-  if (!existsSync8(path)) return null;
+  if (!existsSync9(path)) return null;
   try {
-    const raw = readFileSync3(path, "utf-8").trim();
+    const raw = readFileSync5(path, "utf-8").trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isFinite(pid) ? pid : null;
   } catch {
@@ -8530,7 +11029,7 @@ function log(msg) {
 function acquirePidSlot(pidPath, agentId, logFn = log) {
   let fd;
   try {
-    fd = openSync3(pidPath, "wx", 384);
+    fd = openSync4(pidPath, "wx", 384);
   } catch (err) {
     const code = err.code;
     if (code === "EEXIST") {
@@ -8539,11 +11038,11 @@ function acquirePidSlot(pidPath, agentId, logFn = log) {
         return false;
       }
       try {
-        unlinkSync(pidPath);
+        unlinkSync2(pidPath);
       } catch {
       }
       try {
-        fd = openSync3(pidPath, "wx", 384);
+        fd = openSync4(pidPath, "wx", 384);
       } catch {
         return false;
       }
@@ -8551,23 +11050,23 @@ function acquirePidSlot(pidPath, agentId, logFn = log) {
       throw err;
     }
   }
-  chmodSync5(pidPath, 384);
+  chmodSync6(pidPath, 384);
   const pidStr = String(process.pid);
   writeSync2(fd, pidStr, 0, "utf-8");
-  closeSync3(fd);
+  closeSync4(fd);
   logFn(`daemon started (pid=${process.pid}, agentId=${agentId})`);
   return true;
 }
 function exitFailure(pidPath, msg) {
   log(msg);
   try {
-    unlinkSync(pidPath);
+    unlinkSync2(pidPath);
   } catch {
   }
   process.exit(1);
 }
 function loadConfig(configPath, pidPath) {
-  const readResult = readConfig(configPath);
+  const readResult = readConfig2(configPath);
   if (!readResult.config) {
     exitFailure(
       pidPath,
@@ -8585,7 +11084,7 @@ function loadConfig(configPath, pidPath) {
 }
 function captureGitShowDiff(params) {
   const { sha, gitRoot, logFn } = params;
-  const execGitShow = params.execGitShow ?? ((s, root) => execFileSync5("git", ["show", s], {
+  const execGitShow = params.execGitShow ?? ((s, root) => execFileSync6("git", ["show", s], {
     cwd: root,
     encoding: "utf8",
     // Explicit 64 MB maxBuffer — identical to GIT_BODY_MAX_BUFFER
@@ -8603,7 +11102,19 @@ function captureGitShowDiff(params) {
     return null;
   }
 }
-function collectExpiryEntries(config) {
+function collectExpiryEntries(config, configDir) {
+  const activeV5 = readActiveGithubGrantExpiryEntries(
+    configDir,
+    config.agentId
+  );
+  if (activeV5.state === "unavailable") return [];
+  if (activeV5.state === "available") {
+    return [
+      ...new Map(
+        activeV5.entries.map((entry) => [entry.scopedTokenId, entry])
+      ).values()
+    ];
+  }
   const keyed = config.githubCredentials;
   if (keyed && Object.keys(keyed).length > 0) {
     const out = [];
@@ -8616,20 +11127,104 @@ function collectExpiryEntries(config) {
   const { expiresAt, scopedTokenId } = config;
   return expiresAt && scopedTokenId ? [{ scopedTokenId, expiresAt }] : [];
 }
-function checkExpiryAndRefresh(clientRef, cfgPath, inFlight, logFn = log, shutdownFn) {
-  const cur = readConfig(cfgPath);
+var GITHUB_REISSUE_BACKOFF_INITIAL_MS = 6e4;
+var GITHUB_REISSUE_BACKOFF_MAX_MS = 30 * 6e4;
+function makeGithubReissueRetryState() {
+  return {
+    inFlight: false,
+    nextAttemptAtMs: 0,
+    backoffMs: GITHUB_REISSUE_BACKOFF_INITIAL_MS
+  };
+}
+function resetGithubReissueRetryState(state) {
+  state.inFlight = false;
+  state.nextAttemptAtMs = 0;
+  state.backoffMs = GITHUB_REISSUE_BACKOFF_INITIAL_MS;
+}
+async function handleGithubGrantBundle(frame, configDir, state, deps) {
+  await applyGithubGrantBundle(configDir, frame);
+  const localConfig = deps.readConfigImpl();
+  const managed = (deps.isManagedBox ?? isManagedBox)();
+  if (localConfig.config && !managed) {
+    installCodexCredentialHelper({
+      gitAuthorName: localConfig.config.gitAuthorName,
+      gitAuthorEmail: localConfig.config.gitAuthorEmail,
+      ghConfigDir: deps.ghConfigDir,
+      helperPath: deps.helperPath,
+      sshRewriteRepo: deps.sshRewriteRepo
+    });
+    const primary = frame.credentials[0];
+    if (deps.ghConfigDir) {
+      if (primary) {
+        writeGhSessionConfig({
+          dir: deps.ghConfigDir,
+          token: primary.scoped_token
+        });
+      } else {
+        clearGhSessionConfig(deps.ghConfigDir);
+      }
+    }
+  }
+  if (!frame.credentials.some((credential) => credential.scoped_token)) {
+    return false;
+  }
+  const configPath = join11(configDir, "config.json");
+  const current = readConfig2(configPath);
+  if (current.config?.githubReissue?.pending) {
+    writeConfig2({ ...current.config, githubReissue: void 0 }, configPath);
+  }
+  resetGithubReissueRetryState(state);
+  return true;
+}
+function checkGithubReissue(clientRef, cfgPath, state, logFn = log) {
+  const cur = readConfig2(cfgPath);
+  if (!cur.config?.githubReissue?.pending || cur.config.revoked) {
+    resetGithubReissueRetryState(state);
+    return false;
+  }
+  const now = Date.now();
+  if (state.inFlight || now < state.nextAttemptAtMs) return false;
+  const retryDelay = state.backoffMs;
+  state.inFlight = true;
+  state.nextAttemptAtMs = now + retryDelay;
+  state.backoffMs = Math.min(retryDelay * 2, GITHUB_REISSUE_BACKOFF_MAX_MS);
+  logFn(
+    `requesting fresh GitHub credential issuance (next retry in ${Math.round(retryDelay / 1e3)}s)`
+  );
+  void clientRef.requestRefresh({ reason: "manual", provider: "github" }).catch((err) => {
+    if (err instanceof Error && err.message !== "client_closed") {
+      logFn(`GitHub credential issuance request failed: ${err.message}`);
+    }
+  }).finally(() => {
+    state.inFlight = false;
+  });
+  return true;
+}
+function checkExpiryAndRefresh(clientRef, cfgPath, inFlight, logFn = log, shutdownFn, githubReissueState = makeGithubReissueRetryState()) {
+  const cur = readConfig2(cfgPath);
   if (!cur.config) return false;
   if (cur.config.revoked) {
-    logFn("credential is revoked; daemon exiting (re-run /spellguard-setup)");
-    if (shutdownFn) {
-      shutdownFn();
-      return false;
+    if (!cur.config.agentId || !cur.config.agentSecret) {
+      logFn("credential is revoked and no agent identity remains; exiting");
+      if (shutdownFn) {
+        shutdownFn();
+        return false;
+      }
+      process.exit(0);
     }
-    process.exit(0);
+    logFn(
+      "credential is revoked; skipping refresh and staying connected for a replacement credential"
+    );
+    return false;
   }
-  const entries = collectExpiryEntries(cur.config);
+  const entries = collectExpiryEntries(cur.config, dirname7(cfgPath));
   const nearExpiryMs = 10 * 60 * 1e3;
-  let triggeredAny = false;
+  let triggeredAny = checkGithubReissue(
+    clientRef,
+    cfgPath,
+    githubReissueState,
+    logFn
+  );
   for (const entry of entries) {
     if (inFlight.has(entry.scopedTokenId)) continue;
     const msUntilExpiry = new Date(entry.expiresAt).getTime() - Date.now();
@@ -8650,44 +11245,80 @@ function checkExpiryAndRefresh(clientRef, cfgPath, inFlight, logFn = log, shutdo
   }
   return triggeredAny;
 }
+function buildSecretModeCredentials(cfg) {
+  return {
+    mode: "secret",
+    agentId: cfg.agentId,
+    agentSecret: cfg.agentSecret,
+    framework: FRAMEWORK
+  };
+}
+function credentialState(config, configDir) {
+  if (config.revoked) return "revoked";
+  const entries = collectExpiryEntries(config, configDir);
+  if (entries.length === 0) return "missing";
+  const now = Date.now();
+  const expiries = entries.map((entry) => Date.parse(entry.expiresAt));
+  if (expiries.some((expiry) => !Number.isFinite(expiry) || expiry <= now))
+    return "expired";
+  if (expiries.some((expiry) => expiry - now <= 10 * 6e4))
+    return "near_expiry";
+  return "valid";
+}
 async function main() {
-  const { agentId, configDir, cwd } = parseArgs(process.argv);
-  mkdirSync7(agentsDir(configDir), { recursive: true });
+  const { agentId, configDir, cwd, instanceId, artifactId, scriptPath } = parseArgs(process.argv);
+  mkdirSync8(agentsDir2(configDir), { recursive: true });
   const pidPath = pidFilePath(configDir, agentId);
   _logPath = logFilePath(configDir, agentId);
-  writeFileSync6(_logPath, "", { flag: "a", mode: 384 });
-  chmodSync5(_logPath, 384);
+  writeFileSync7(_logPath, "", { flag: "a", mode: 384 });
+  chmodSync6(_logPath, 384);
   if (!acquirePidSlot(pidPath, agentId)) {
     log("another daemon instance is already running; exiting");
     process.exit(0);
   }
-  const configPath = join8(configDir, "config.json");
+  const configPath = join11(configDir, "config.json");
   const config = loadConfig(configPath, pidPath);
+  const managedBox = isManagedBox();
+  const health = startDaemonHealthReporter({
+    agentId,
+    configDir,
+    scriptPath,
+    artifactId,
+    instanceId,
+    credentialState: credentialState(config, configDir)
+  });
   try {
-    writeGitTokensFile(config, configDir);
+    writeGitTokensFile(config, configDir, { onlyIfMissing: true });
   } catch (err) {
     log(`startup git-tokens regeneration failed: ${String(err)}`);
   }
   const ghConfigDir = ghConfigDirPath(configDir, agentId);
-  try {
-    if (config?.scopedToken) {
-      writeGhSessionConfig({ dir: ghConfigDir, token: config.scopedToken });
+  if (!managedBox) {
+    try {
+      const activeV5 = readActiveGithubGrantPrimaryToken(configDir, agentId);
+      const token = activeV5.state === "available" ? activeV5.token : activeV5.state === "absent" ? config.scopedToken : null;
+      if (token) {
+        writeGhSessionConfig({ dir: ghConfigDir, token });
+      } else {
+        clearGhSessionConfig(ghConfigDir);
+      }
+    } catch (err) {
+      log(`startup gh hosts.yml regeneration failed: ${String(err)}`);
     }
-  } catch (err) {
-    log(`startup gh hosts.yml regeneration failed: ${String(err)}`);
   }
   const envFilePath = process.env.CLAUDE_ENV_FILE ?? "";
   if (!envFilePath) {
     log("CLAUDE_ENV_FILE not set; credential env-file updates will be skipped");
   }
-  const readCfg = () => readConfig(configPath);
-  const writeCfg = (cfg) => writeConfig(cfg, configPath);
+  const readCfg = () => readConfig2(configPath);
+  const writeCfg = (cfg) => writeConfig2(cfg, configPath);
   let handshakeAuthRejections = 0;
   const sshRewriteRepo = cwd ? resolveSshRewriteRepo(cwd) : void 0;
   const handlerDeps = {
     envFilePath,
     writeConfigImpl: writeCfg,
     markConfigRevokedImpl: () => markConfigRevoked(configPath),
+    markConfigSuspendedImpl: () => markConfigSuspended(configPath),
     readConfigImpl: readCfg,
     ghConfigDir,
     helperPath: ensureStableHelper(configDir),
@@ -8702,11 +11333,12 @@ async function main() {
     if (cur.config) writeCfg({ ...cur.config, knownCredentials: known });
   };
   const expiryInFlight = /* @__PURE__ */ new Set();
+  const githubReissueState = makeGithubReissueRetryState();
   let shutdown = () => process.exit(0);
   const loginRelayEnv = process.env.SPELLGUARD_LOGIN_RELAY;
   const loginRelayEnabled = loginRelayEnv === "1" || loginRelayEnv === "wait";
   const loginRelayAutoStart = loginRelayEnv === "1";
-  const loginDoneFileExists = existsSync8(LOGIN_MARKER_PATH);
+  const loginDoneFileExists = existsSync9(LOGIN_MARKER_PATH);
   const alreadyLoggedIn = loginRelayEnabled && loginRelayAutoStart && !loginDoneFileExists ? await defaultIsLoggedIn() : false;
   const needsLoginRelay = computeNeedsLoginRelay({
     relayEnabled: loginRelayEnabled,
@@ -8723,28 +11355,53 @@ async function main() {
     // daemon refresh), so it advertises the github_multi_org capability. The
     // server relaxes Phase B's single-org-per-agent restriction only for
     // capable agents.
-    capabilities: ["github_multi_org"],
+    capabilities: ["github_multi_org", "github_grant_bundle_v1"],
     initialLastServerSeq: config.lastServerSeq,
     // Replay the cached projection so the first Resume after restart
     // matches the server's live row set and divergence detection stays quiet.
     initialKnownCredentials: config.knownCredentials,
-    credentials: () => ({
-      mode: "secret",
-      agentId: config.agentId,
-      agentSecret: config.agentSecret
-    }),
-    onCredentialDelivered: (frame) => handleCredentialUpdate(frame, handlerDeps),
-    onCredentialRotated: (frame) => handleCredentialUpdate(frame, handlerDeps),
-    onCredentialRevoked: (frame) => {
-      const anyRemaining = handleCredentialRevoked(frame, handlerDeps);
-      if (!anyRemaining) {
-        log("credential_revoked received (last entry); shutting down daemon");
-        shutdown();
-      } else {
-        log(
-          "credential_revoked received for one org; sibling credentials remain \u2014 daemon staying alive"
-        );
+    // R2-10: the accessor threads THIS daemon's own `framework` onto the
+    // secret-mode connect (see buildSecretModeCredentials) so per-framework
+    // login attribution works on a multi-framework box.
+    credentials: () => buildSecretModeCredentials(config),
+    onCredentialDelivered: (frame) => {
+      if (handleCredentialUpdate(frame, handlerDeps)) {
+        resetGithubReissueRetryState(githubReissueState);
+        const current = readCfg();
+        if (current.config)
+          health.setCredentialState(credentialState(current.config, configDir));
       }
+    },
+    onCredentialRotated: (frame) => {
+      if (handleCredentialUpdate(frame, handlerDeps)) {
+        resetGithubReissueRetryState(githubReissueState);
+        const current = readCfg();
+        if (current.config)
+          health.setCredentialState(credentialState(current.config, configDir));
+      }
+    },
+    onGithubGrantsBundle: async (frame) => {
+      await handleGithubGrantBundle(
+        frame,
+        configDir,
+        githubReissueState,
+        handlerDeps
+      );
+      const current = readCfg();
+      if (current.config)
+        health.setCredentialState(credentialState(current.config, configDir));
+    },
+    onCredentialRevoked: (frame) => {
+      const recoverable = handleCredentialRevoked(frame, handlerDeps);
+      const current = readCfg();
+      if (current.config)
+        health.setCredentialState(credentialState(current.config, configDir));
+      log(
+        recoverable ? "credential_revoked handled; daemon staying alive for sibling or replacement credentials" : "credential_revoked arrived without readable local config; daemon remains connected"
+      );
+    },
+    onCredentialRevokeSettled: () => {
+      checkGithubReissue(client, configPath, githubReissueState, log);
     },
     // Persist config_updated descriptors to the local config-store.
     onConfigUpdated: (frame) => handleConfigUpdate(frame, handlerDeps),
@@ -8760,9 +11417,11 @@ async function main() {
     // re-run, per the needsLoginRelay gate). No sentinel → no-op (a real login
     // still pending must not be reported authorized).
     onConnect: () => {
-      if (!existsSync8(LOGIN_MARKER_PATH)) return;
+      health.setTransport("connected");
+      checkGithubReissue(client, configPath, githubReissueState, log);
+      if (!existsSync9(LOGIN_MARKER_PATH)) return;
       setTimeout(() => {
-        if (existsSync8(LOGIN_MARKER_PATH)) {
+        if (existsSync9(LOGIN_MARKER_PATH)) {
           client.sendLoginRelayUpdate({ state: "authorized" });
         }
       }, 2500);
@@ -8789,6 +11448,15 @@ async function main() {
     // SessionStart re-surfaces it (the wipe runs in the background daemon with
     // no interactive session open). Then shut the daemon down cleanly — the
     // client has already closed the socket.
+    // #1348: the agent is quarantined. Drop what this daemon placed and keep
+    // running: the client keeps the identity and reconnects on its suspended
+    // backoff, and the reconnect a release lets through resumes normally.
+    onSuspended: ({ reason, retryInMs }) => {
+      log(
+        `agent suspended (reason=${reason}); credentials dropped, retrying in ${Math.round(retryInMs / 1e3)}s`
+      );
+      handleSuspended(handlerDeps);
+    },
     onCredentialSuperseded: (cause) => {
       log(`credential superseded (cause=${cause}); wiping local credentials`);
       try {
@@ -8796,7 +11464,8 @@ async function main() {
           cause,
           configPath,
           envFilePath,
-          ghConfigDir
+          ghConfigDir,
+          helperPath: handlerDeps.helperPath
         });
       } catch (err) {
         log(`self-wipe failed: ${err?.message ?? String(err)}`);
@@ -8834,6 +11503,7 @@ async function main() {
       });
     },
     onError: (err) => {
+      health.setTransport("error", err.message);
       log(`error: ${err.message}`);
       if (isHandshakeAuthRejection(err)) {
         handshakeAuthRejections++;
@@ -8849,10 +11519,20 @@ async function main() {
       }
     }
   });
-  const expiryInterval = setInterval(
-    () => checkExpiryAndRefresh(client, configPath, expiryInFlight, log, shutdown),
-    6e4
-  );
+  const expiryInterval = setInterval(() => {
+    const current = readCfg();
+    if (current.config) {
+      health.setCredentialState(credentialState(current.config, configDir));
+    }
+    checkExpiryAndRefresh(
+      client,
+      configPath,
+      expiryInFlight,
+      log,
+      shutdown,
+      githubReissueState
+    );
+  }, 6e4);
   let commitWatcherStop;
   if (cwd) {
     commitWatcherStop = await maybeStartCommitWatcher({
@@ -8877,8 +11557,9 @@ async function main() {
       });
     }
     client.close();
+    health.close();
     try {
-      unlinkSync(pidPath);
+      unlinkSync2(pidPath);
     } catch {
     }
     process.exit(0);
@@ -8886,6 +11567,7 @@ async function main() {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   client.start();
+  health.markReady();
   if (needsLoginRelay) {
     log(
       "starting Codex device-auth login relay (SPELLGUARD_LOGIN_RELAY=1, not logged in, no sentinel)"
@@ -8908,7 +11590,14 @@ async function main() {
   } else if (loginRelayEnabled) {
     log("login relay skipped \u2014 Codex already logged in (sentinel or status)");
   }
-  checkExpiryAndRefresh(client, configPath, expiryInFlight, log, shutdown);
+  checkExpiryAndRefresh(
+    client,
+    configPath,
+    expiryInFlight,
+    log,
+    shutdown,
+    githubReissueState
+  );
 }
 async function maybeStartCommitWatcher(args) {
   if (process.env.SPELLGUARD_COMMIT_OBSERVATIONS === "0") return void 0;
@@ -8930,13 +11619,13 @@ async function maybeStartCommitWatcher(args) {
       "commit watcher depends on `core.logAllRefUpdates=true` (currently disabled in this repo). Commit observations may be lost until the config is restored: `git config core.logAllRefUpdates true`."
     );
   }
-  const sessionId = randomUUID();
+  const sessionId = randomUUID4();
   try {
     const stop = await startCommitWatcher({
       workingDir: gitRoot,
       onCommit: async (event) => {
         const store = openEditStore({
-          rootDir: join8(homedir4(), ".spellguard")
+          rootDir: join11(homedir5(), ".spellguard")
         });
         try {
           await emitCommitObservation({
@@ -8966,7 +11655,7 @@ async function maybeStartCommitWatcher(args) {
     return void 0;
   }
 }
-var _thisFile = fileURLToPath3(import.meta.url);
+var _thisFile = fileURLToPath4(import.meta.url);
 var _entryPoint = process.argv[1] ?? "";
 var _isEntryPoint = _entryPoint !== "" && (_thisFile === _entryPoint || _thisFile.endsWith(_entryPoint.replace(/\\/g, "/")));
 if (_isEntryPoint) {
@@ -8979,249 +11668,33 @@ if (_isEntryPoint) {
   });
 }
 export {
+  GITHUB_REISSUE_BACKOFF_INITIAL_MS,
+  GITHUB_REISSUE_BACKOFF_MAX_MS,
   GIT_DIFF_MAX_BUFFER,
   acquirePidSlot,
+  buildSecretModeCredentials,
   captureGitShowDiff,
   checkExpiryAndRefresh,
+  checkGithubReissue,
   computeNeedsLoginRelay,
+  credentialState,
+  handleGithubGrantBundle,
   logFilePath,
+  makeGithubReissueRetryState,
   pidFilePath,
+  resetGithubReissueRetryState,
   startLoginRelay
 };
 /*! Bundled license information:
 
 smol-toml/dist/error.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
-smol-toml/dist/util.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
-smol-toml/dist/date.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/primitive.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
+smol-toml/dist/date.js:
 smol-toml/dist/extract.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
+smol-toml/dist/util.js:
 smol-toml/dist/struct.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/parse.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/stringify.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-
 smol-toml/dist/index.js:
   (*!
    * Copyright (c) Squirrel Chat et al., All rights reserved.

@@ -15,6 +15,7 @@
 
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { OpenRouterProvider } from '@openrouter/ai-sdk-provider';
+import { stepCountIs } from 'ai';
 import { generateText, tool } from 'ai';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -90,7 +91,7 @@ function createExternalDataTools() {
     getWeather: tool({
       description:
         'Get current weather information including temperature, conditions, humidity, and wind.',
-      parameters: z.object({
+      inputSchema: z.object({
         location: z
           .string()
           .optional()
@@ -119,7 +120,7 @@ function createExternalDataTools() {
     getStockPrice: tool({
       description:
         'Get current stock price for a specific symbol. Available symbols: AAPL, GOOGL, MSFT, AMZN, NVDA.',
-      parameters: z.object({
+      inputSchema: z.object({
         symbol: z
           .string()
           .describe('Stock ticker symbol (e.g., AAPL, GOOGL, MSFT)'),
@@ -147,7 +148,7 @@ function createExternalDataTools() {
 
     listStocks: tool({
       description: 'List all available stock prices with their current values.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         return {
           stocks: EXTERNAL_DATA.stockPrices.map((s) => ({
@@ -163,7 +164,7 @@ function createExternalDataTools() {
     getSystemStats: tool({
       description:
         'Get public system statistics including uptime, query counts, and performance metrics.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const stats = EXTERNAL_DATA.publicStats;
         return {
@@ -178,7 +179,7 @@ function createExternalDataTools() {
 
     listCapabilities: tool({
       description: 'List all data and capabilities that Agent C can provide.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         return {
           capabilities: [
@@ -337,7 +338,7 @@ app.post('/a2a', async (c) => {
         system: AGENT_C_SYSTEM_PROMPT,
         prompt: messageText,
         tools,
-        maxSteps: 5,
+        stopWhen: stepCountIs(5),
       });
 
       responseText = result.text;

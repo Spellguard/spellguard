@@ -83,7 +83,6 @@ export {
   encryptForVerifier,
   decryptFromVerifier,
   hashPayload,
-  verifyArchiveIntegrity,
 } from '@spellguard/amp';
 
 // ═══════════════════════════════════════════════════════════════════

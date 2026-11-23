@@ -1,13 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ProxyConnectResponse } from '../types';
+import { VERSION } from '../version';
+
+interface ConnectArgs {
+  platform: string;
+  upstreamType: string;
+  upstreamUrl?: string;
+  workspace?: string;
+}
+
+/** Refresh at 50 minutes, 5/6 of the token's one-hour life. */
+const REFRESH_AFTER_MS = 50 * 60 * 1000;
+const RETRY_AFTER_MS = 60 * 1000;
 
 export class AuthClient {
   private token: string | null = null;
-  private tokenExpiresAt: string | null = null;
   private connectionId: string | null = null;
   private verifierUrl: string | null = null;
+  private canonicalAgentId: string | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastConnect: ConnectArgs | null = null;
+  private reconnecting: Promise<void> | null = null;
+  private tokenIssuedAt = 0;
 
   constructor(
     private managementUrl: string,
@@ -16,8 +31,8 @@ export class AuthClient {
   ) {}
 
   /**
-   * Connect to the management server, authenticate, and get a management token.
-   * Also registers the platform connection.
+   * Authenticate with the agent secret, register the platform connection, and
+   * collect the management token the Verifier checks.
    */
   async connect(
     platform: string,
@@ -25,41 +40,89 @@ export class AuthClient {
     upstreamUrl?: string,
     workspace?: string,
   ): Promise<ProxyConnectResponse> {
-    const res = await fetch(
-      `${this.managementUrl}/proxy/${this.agentId}/proxy-connect`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Spellguard-Agent-Secret': this.agentSecret,
-          'X-Spellguard-Proxy-Version': '0.1.0', // TODO: read from package.json
+    const args = { platform, upstreamType, upstreamUrl, workspace };
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.managementUrl}/proxy/${encodeURIComponent(this.agentId)}/proxy-connect`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Spellguard-Agent-Secret': this.agentSecret,
+            'X-Spellguard-Proxy-Version': VERSION,
+          },
+          body: JSON.stringify(args),
         },
-        body: JSON.stringify({
-          platform,
-          upstreamType,
-          upstreamUrl,
-          workspace,
-        }),
-      },
-    );
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Could not reach Spellguard at ${this.managementUrl} (${message}). Check SPELLGUARD_BASE_URL.`,
+      );
+    }
 
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      const hint =
+        res.status === 401
+          ? ' Check SPELLGUARD_AGENT_ID and SPELLGUARD_AGENT_SECRET.'
+          : res.status === 404 || res.status === 405
+            ? ' Check SPELLGUARD_BASE_URL: it should be your Spellguard console address.'
+            : '';
       throw new Error(
-        `Proxy-connect failed (${res.status}): ${(body as any)?.error?.message || res.statusText}`,
+        `Spellguard refused the connection (${res.status}: ${body?.error?.message || res.statusText}).${hint}`,
       );
     }
 
     const data = (await res.json()) as ProxyConnectResponse;
+    if (
+      typeof data?.managementToken !== 'string' ||
+      typeof data.verifierUrl !== 'string' ||
+      typeof data.connectionId !== 'string'
+    ) {
+      throw new Error('Spellguard answered proxy-connect without a token');
+    }
     this.token = data.managementToken;
-    this.tokenExpiresAt = data.tokenExpiresAt;
+    this.tokenIssuedAt = Date.now();
     this.connectionId = data.connectionId;
-    this.verifierUrl = data.verifierUrl;
-
-    // Set refresh timer at 50 minutes (5/6 of 1hr TTL)
-    this.scheduleRefresh();
-
+    this.verifierUrl = data.verifierUrl.replace(/\/+$/, '');
+    // The token names the agent's canonical ID; the Verifier compares every
+    // request's agentId with it. The configured value may be the UUID.
+    this.canonicalAgentId =
+      typeof data.agentId === 'string' && data.agentId
+        ? data.agentId
+        : this.agentId;
+    this.lastConnect = args;
+    this.scheduleRefresh(REFRESH_AFTER_MS);
     return data;
+  }
+
+  /**
+   * Connect again with the agent secret, after a token expired or a refresh
+   * failed. Concurrent callers share one attempt.
+   */
+  async reconnect(): Promise<void> {
+    if (!this.lastConnect)
+      throw new Error('Not connected — call connect() first');
+    if (!this.reconnecting) {
+      const args = this.lastConnect;
+      this.reconnecting = this.connect(
+        args.platform,
+        args.upstreamType,
+        args.upstreamUrl,
+        args.workspace,
+      )
+        .then(() => {
+          console.error('[mcp-guard] Reconnected to Spellguard');
+        })
+        .finally(() => {
+          this.reconnecting = null;
+        });
+    }
+    return this.reconnecting;
   }
 
   getToken(): string {
@@ -79,6 +142,16 @@ export class AuthClient {
     return this.connectionId;
   }
 
+  /** How long ago the current token was issued, in milliseconds. */
+  tokenAgeMs(): number {
+    return this.tokenIssuedAt ? Date.now() - this.tokenIssuedAt : 0;
+  }
+
+  /** The agent ID to send the Verifier: the one the token names. */
+  getAgentId(): string {
+    return this.canonicalAgentId ?? this.agentId;
+  }
+
   async close(): Promise<void> {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
@@ -87,60 +160,57 @@ export class AuthClient {
     this.token = null;
     this.connectionId = null;
     this.verifierUrl = null;
+    this.lastConnect = null;
   }
 
-  private scheduleRefresh(): void {
+  private scheduleRefresh(ms: number): void {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    // Refresh at 50 minutes (5/6 of TTL)
-    const refreshMs = 50 * 60 * 1000;
-    this.refreshTimer = setTimeout(() => this.refresh(), refreshMs);
-    // Prevent timer from keeping the process alive
-    if (this.refreshTimer.unref) this.refreshTimer.unref();
+    this.refreshTimer = setTimeout(() => {
+      this.refresh().catch(() => {});
+    }, ms);
+    // Never keep the process alive just to refresh.
+    this.refreshTimer.unref?.();
   }
 
   private async refresh(): Promise<void> {
     try {
       const res = await fetch(
-        `${this.managementUrl}/proxy/${this.agentId}/proxy-connect/refresh`,
+        `${this.managementUrl}/proxy/${encodeURIComponent(this.agentId)}/proxy-connect/refresh`,
         {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${this.token}`,
-            'X-Spellguard-Proxy-Version': '0.1.0',
+            'X-Spellguard-Proxy-Version': VERSION,
           },
         },
       );
-
-      if (!res.ok) throw new Error(`Refresh failed: ${res.status}`);
-
-      const data = (await res.json()) as {
-        managementToken: string;
-        tokenExpiresAt: string;
-      };
+      if (!res.ok) throw new Error(`refresh answered ${res.status}`);
+      const data = (await res.json()) as { managementToken?: unknown };
+      if (typeof data.managementToken !== 'string') {
+        throw new Error('refresh answered without a token');
+      }
       this.token = data.managementToken;
-      this.tokenExpiresAt = data.tokenExpiresAt;
-      this.scheduleRefresh();
+      this.tokenIssuedAt = Date.now();
+      this.scheduleRefresh(REFRESH_AFTER_MS);
     } catch (err) {
-      // Retry after 60 seconds
-      console.error('[mcp-guard] Token refresh failed, retrying in 60s:', err);
-      this.refreshTimer = setTimeout(() => this.retryAuth(), 60 * 1000);
-      if (this.refreshTimer.unref) this.refreshTimer.unref();
-    }
-  }
-
-  /**
-   * Fallback re-auth when refresh fails. Attempts another refresh since we
-   * don't retain the original platform info needed to re-call proxy-connect.
-   *
-   * Known limitation: if the token has fully expired, this will also fail.
-   * A full reconnect requires the caller to invoke connect() again with the
-   * original platform arguments.
-   */
-  private async retryAuth(): Promise<void> {
-    try {
-      await this.refresh();
-    } catch {
-      console.error('[mcp-guard] Re-auth failed. Token may be expired.');
+      // An expired token can't be refreshed (the machine slept, say), so
+      // connect again with the secret instead of retrying the refresh forever.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[mcp-guard] Token refresh failed (${message}); reconnecting`,
+      );
+      try {
+        await this.reconnect();
+      } catch (reconnectErr) {
+        const detail =
+          reconnectErr instanceof Error
+            ? reconnectErr.message
+            : String(reconnectErr);
+        console.error(
+          `[mcp-guard] Reconnect failed (${detail}); retrying in 60s`,
+        );
+        if (this.lastConnect) this.scheduleRefresh(RETRY_AFTER_MS);
+      }
     }
   }
 }

@@ -39,8 +39,8 @@ the claim CLI, built on `@spellguard/agent-control`):
 openclaw-spellguard-setup --base-url https://console.example.com
 ```
 
-In the managed-provisioning flow the cloud-init / Railway bootstrap runs this
-same CLI automatically with `SPELLGUARD_BOOTSTRAP_NONCE` set, which dispatches
+In the managed-provisioning flow the EC2 user-data bootstrap runs
+this same CLI automatically with `SPELLGUARD_BOOTSTRAP_NONCE` set, which dispatches
 it into managed-bootstrap mode (no browser step). Interactively, the CLI
 prints a `/setup?bootstrap=…` URL. Open it in a browser, sign in,
 fill the agent-name form, and approve the GitHub authorization. The CLI

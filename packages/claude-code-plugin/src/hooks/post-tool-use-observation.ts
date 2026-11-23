@@ -58,6 +58,8 @@ export interface PostToolUseInput {
   remoteUrl?: string;
   agentId: string;
   scopedTokenId: string;
+  /** False when config is identity-only, locally revoked, or V5 is unusable. */
+  localCredentialAvailable?: boolean;
   clientSessionId: string;
   endpoint: string;
   agentSecret: string;
@@ -153,6 +155,7 @@ export async function runPostToolUse(
   await captureBashEditsForCommand(input, cmd, isCommit);
 
   if (!isCommit) return { decision: 'skip' };
+  if (input.localCredentialAvailable === false) return { decision: 'skip' };
 
   const exec =
     input.execImpl ??

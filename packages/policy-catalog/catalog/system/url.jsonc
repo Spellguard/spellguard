@@ -6,7 +6,7 @@
     {
       "slug": "url-baseline",
       "name": "URL Safety Enforcement",
-      "description": "Controls what URLs agents can send by checking against suspicious patterns (IP URLs, bad TLDs), URL shorteners, explicit domain blocklists, and bare domain references",
+      "description": "Checks explicit URLs for insecure schemes, suspicious domains and configured blocklists",
       "type": "url",
       "level": "system",
       "severity": "medium",
@@ -17,7 +17,7 @@
         "blockShorteners": false,
         "blockedDomains": [],
         "requireHttps": true,
-        "detectBareDomains": true,
+        "detectBareDomains": false,
         "label": "url-violation"
       },
       "defaultBinding": {

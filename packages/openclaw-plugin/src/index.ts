@@ -7,7 +7,12 @@ import type {
 } from 'openclaw/plugin-sdk';
 import { createAgentTool } from './adapter';
 import { buildAgentCard, loadConfig } from './config';
-import { createCredentialService, decideCredentialSource } from './credentials';
+import {
+  type CredentialSource,
+  createCredentialService,
+  decideCredentialSource,
+} from './credentials';
+import { buildLegacyRelayClient } from './credentials/legacy-relay-client';
 import { discordAdapter } from './hooks/adapters/discord';
 import { registerAdapter } from './hooks/adapters/dispatcher';
 import { msteamsAdapter } from './hooks/adapters/msteams';
@@ -22,9 +27,7 @@ import { registerNormalizer } from './hooks/normalizers/registry';
 import { createOutboundGuard } from './hooks/outbound-guard';
 import { createToolGuard } from './hooks/tool-guard';
 import { syncFrameworkIdentity } from './plugin-sync';
-// Note: platform-relay-client uses direct token-based auth (HTTP Events pipeline)
-// and is separate from the adapter pattern used by before_dispatch / before_tool_call.
-import { createPlatformRelayClient } from './services/platform-relay-client';
+import type { RelayForwardOptions } from './services/relay-dispatch';
 import { createTools } from './tools';
 import { startWebhookServer } from './webhook';
 
@@ -85,6 +88,39 @@ function detectTeamsConfig(api: OpenClawPluginApi): {
 }
 
 /**
+ * Merge the per-platform relay-forward parameters into ONE options object for
+ * the single agent-control socket (it multiplexes Slack + Teams relay frames).
+ * Returns null when no http-mode Slack/Teams channel is configured alongside a
+ * `managementUrl` — in which case relay dispatch is never wired.
+ */
+function computeRelayForwardOptions(args: {
+  managementUrl: string | undefined;
+  httpSlack: { signingSecret: string; botToken: string } | null;
+  teams: { port: number; path: string } | null;
+  gatewayPort: number;
+  openclawConfig: Record<string, unknown>;
+}): RelayForwardOptions | null {
+  const { managementUrl, httpSlack, teams, gatewayPort, openclawConfig } = args;
+  if (!managementUrl || (!httpSlack && !teams)) return null;
+  return {
+    ...(httpSlack
+      ? {
+          slackSigningSecret: httpSlack.signingSecret,
+          slackBotToken: httpSlack.botToken,
+          gatewayPort,
+        }
+      : {}),
+    ...(teams
+      ? {
+          teamsPort: teams.port,
+          teamsPath: teams.path,
+          openclawConfig,
+        }
+      : {}),
+  };
+}
+
+/**
  * Register the legacy `spellguard-plugin-sync` service if a static
  * `agentSecret` is present in the OpenClaw config. Returns `true` when it
  * registered, so callers can suppress the credential service's own
@@ -125,6 +161,42 @@ function registerLegacyPluginSync(
   return false;
 }
 
+/**
+ * Legacy/none deployments with an http-mode Slack/Teams config: the box has a
+ * static `agentSecret` but no on-disk credential store, so the credential
+ * service (which owns the agent-control socket — and, since Refactor B, the
+ * relay wiring) never starts. Before Refactor B a standalone relay client
+ * carried inbound Slack/Teams events for legacy mode; that transport is gone, so
+ * open a RELAY-ONLY agent-control client (secret-mode auth via the existing
+ * agentSecret) that consumes relay frames without touching legacy credential
+ * handling. `buildLegacyRelayClient` returns null in socket mode (the credential
+ * service already owns the socket) and when `agentUuid` is absent (pre-UUID
+ * legacy config — disclosed residual: no relay). See
+ * `docs/reference/managed-agent-channels.md`.
+ */
+function registerLegacyRelayService(
+  api: OpenClawPluginApi,
+  source: CredentialSource,
+  config: ReturnType<typeof loadConfig>,
+  relayForwardOptions: RelayForwardOptions | null,
+): void {
+  const legacyRelayClient = buildLegacyRelayClient({
+    source,
+    config,
+    relayForwardOptions,
+  });
+  if (!legacyRelayClient) return;
+  api.registerService({
+    id: 'spellguard-legacy-relay',
+    start() {
+      legacyRelayClient.start();
+    },
+    stop() {
+      legacyRelayClient.close();
+    },
+  });
+}
+
 export function register(api: OpenClawPluginApi): void {
   const config = loadConfig(api.pluginConfig ?? {});
   const agentCard = buildAgentCard(config);
@@ -148,6 +220,24 @@ export function register(api: OpenClawPluginApi): void {
   // authoritative source here.
   const legacyPluginSyncRegistered = registerLegacyPluginSync(api, config);
 
+  // Consolidated agent socket — detect relay-eligible platform configs. Inbound
+  // Slack/Teams relay frames ride the single agent-control socket (wired into
+  // the credential service below); there is no separate relay WebSocket.
+  const httpSlack = detectSlackHttpMode(api);
+  const teams = detectTeamsConfig(api);
+  const gatewayPort = api.config?.gateway?.port ?? 4000;
+
+  // Merged relay-forward options — the single agent-control socket carries BOTH
+  // Slack and Teams relay frames, so ONE dispatcher needs both parameter sets.
+  // Populated only for platforms actually configured alongside a managementUrl.
+  const relayForwardOptions = computeRelayForwardOptions({
+    managementUrl: config.managementUrl,
+    httpSlack,
+    teams,
+    gatewayPort,
+    openclawConfig: api.config as Record<string, unknown>,
+  });
+
   // === Credential socket (Stream B) ===
   // Auto-detect whether the operator has run `openclaw spellguard setup` (new
   // path) versus the legacy agentSecret-based config. Prefer the socket if
@@ -157,14 +247,6 @@ export function register(api: OpenClawPluginApi): void {
   const credentialDecision = decideCredentialSource({
     hasLegacyConfig: !!(config.agentSecret && config.managementUrl),
   });
-  // Feature #10: the credential service owns the agent-control socket and
-  // therefore the `channel_ready` emit path. Hoist the reference out of the
-  // socket-source branch so the platform-relay clients below can call
-  // `signalChannelReady` from their `onRelayReady` callbacks. It is `null`
-  // when no credential socket is registered (legacy/none), in which case the
-  // relay callbacks no-op.
-  let credentialService: ReturnType<typeof createCredentialService> | null =
-    null;
   if (credentialDecision.source === 'socket') {
     // CR-015: when the legacy `agentSecret`-driven `spellguard-plugin-sync`
     // service above is *also* registered (deprecation-window case), suppress
@@ -172,22 +254,38 @@ export function register(api: OpenClawPluginApi): void {
     // two POSTs per startup. Outside that window (socket-only — the
     // future-state), the credential service is the only path that writes
     // `agents.framework='openclaw'`.
-    credentialService = createCredentialService({
+    const credentialService = createCredentialService({
       reconcileFrameworkOnStart: !legacyPluginSyncRegistered,
+      // Consolidated agent socket — wire inbound Slack/Teams relay frames that
+      // ride the agent-control socket into the local Slack/Teams bot
+      // (fire-and-forget). Present only when an http-mode Slack or Teams config
+      // is configured (`relayForwardOptions` non-null). The credential service
+      // also owns the `channel_ready` emit path; on socket (re)connect it fires
+      // the http-mode readiness signal that the separate relay WS used to carry.
+      ...(relayForwardOptions
+        ? { relayDispatch: { options: relayForwardOptions } }
+        : {}),
     });
-    const credentialServiceForRegistration = credentialService;
     api.registerService({
       id: 'spellguard-credential-channel',
       async start() {
-        await credentialServiceForRegistration.start();
+        await credentialService.start();
       },
       stop() {
-        credentialServiceForRegistration.stop();
+        credentialService.stop();
       },
     });
   }
-  // legacy/none: the existing webhook + plugin-sync paths above already
-  // cover the "old-style" flow; no extra wiring needed during the transition.
+
+  // Legacy/none deployments with an http-mode Slack/Teams config: restore
+  // inbound relay via a relay-only agent-control client (see
+  // registerLegacyRelayService). No-op in socket mode.
+  registerLegacyRelayService(
+    api,
+    credentialDecision.source,
+    config,
+    relayForwardOptions,
+  );
 
   // Manage webhook server lifecycle via service registration
   let serverClose: (() => void) | undefined;
@@ -204,70 +302,6 @@ export function register(api: OpenClawPluginApi): void {
       reset();
     },
   });
-
-  // Auto-detect Slack HTTP Events mode from OpenClaw config and register
-  // the relay client (connects to management server Durable Object via WS).
-  const httpSlack = detectSlackHttpMode(api);
-  if (httpSlack && config.managementUrl) {
-    const gatewayPort = api.config?.gateway?.port ?? 4000;
-    const relayClient = createPlatformRelayClient(config, {
-      slackSigningSecret: httpSlack.signingSecret,
-      slackBotToken: httpSlack.botToken,
-      gatewayPort,
-      // Feature #10: when the Slack HTTP-mode relay socket is up, signal
-      // channel-ready (guarded inside signalChannelReady on the Slack botToken
-      // being persisted on disk and not revoked).
-      onRelayReady: (platform) =>
-        credentialService?.signalChannelReady({
-          reason: 'relay_connected',
-          platform,
-        }),
-    });
-
-    api.registerService({
-      id: 'spellguard-platform-relay',
-      async start() {
-        await relayClient.connect();
-      },
-      stop() {
-        relayClient.stop();
-      },
-    });
-  }
-
-  // Auto-detect Teams config from OpenClaw config and register a second
-  // platform relay client scoped to Teams inbound activities. For agents
-  // that configure both Slack HTTP Events AND Teams, we currently open
-  // two independent WebSockets to the same per-agent Durable Object — a
-  // known non-ideal that will be consolidated in a follow-up once the
-  // relay client supports multiplexed-platform mode.
-  const teams = detectTeamsConfig(api);
-  if (teams && config.managementUrl) {
-    const teamsRelay = createPlatformRelayClient(config, {
-      teamsPort: teams.port,
-      teamsPath: teams.path,
-      openclawConfig: api.config as Record<string, unknown>,
-      // Feature #10: when the Teams relay socket is up, signal channel-ready
-      // (guarded inside signalChannelReady; Teams readiness still requires a
-      // persisted Slack botToken per the B3 guard — Teams-only deployments
-      // will no-op until that guard is generalized, which is out of scope
-      // for this phase).
-      onRelayReady: (platform) =>
-        credentialService?.signalChannelReady({
-          reason: 'relay_connected',
-          platform,
-        }),
-    });
-    api.registerService({
-      id: 'spellguard-teams-relay',
-      async start() {
-        await teamsRelay.connect();
-      },
-      stop() {
-        teamsRelay.stop();
-      },
-    });
-  }
 
   // Register security hooks for Verifier-based policy evaluation
   const hookConfig = {

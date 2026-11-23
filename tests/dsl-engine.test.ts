@@ -303,6 +303,19 @@ deny[msg] {
     expect(() => engine.evaluate(ctx)).not.toThrow();
   });
 
+  it('reports evaluation errors with the default fail-closed behavior', () => {
+    const source = `
+deny[msg] {
+  contains(input.message
+  msg := "error"
+}
+`;
+    const detections = engine.evaluate(makeCtx(source));
+    expect(detections).toHaveLength(1);
+    expect(detections[0].type).toBe('dsl');
+    expect(detections[0].message).toMatch(/Policy evaluation error/);
+  });
+
   it('returns no detections on malformed source with failBehavior=allow', () => {
     // A condition with unclosed paren will throw during evaluation
     const source = `
@@ -327,7 +340,7 @@ deny[msg] {
     expect(engine.evaluate(ctxAllow)).toHaveLength(0);
   });
 
-  it('emits a detection on evaluation error with failBehavior=block', () => {
+  it('still emits a detection on evaluation error with failBehavior=block', () => {
     // A condition with unclosed paren will throw during evaluation
     const source = `
 deny[msg] {

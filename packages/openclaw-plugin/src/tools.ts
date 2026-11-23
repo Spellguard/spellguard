@@ -189,7 +189,7 @@ export function createTools(config: SpellguardConfig): ToolBundle[] {
                   source: 'socket',
                   scopedTokenId: cred.scopedTokenId,
                   expiresAt: cred.expiresAt,
-                  repos: cred.repos,
+                  scope: cred.scope,
                   author,
                 }
               : { source: 'none' };

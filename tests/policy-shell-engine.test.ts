@@ -121,6 +121,30 @@ describe('Policy Shell Policy Engines', () => {
       expect(results[0].decision).toBe('deny');
       expect(results[0].detections.length).toBeGreaterThan(0);
     });
+
+    it('should permit Markdown backticks passed to a non-shell tool', async () => {
+      const binding = makeEngineBinding('argument-injection', {});
+
+      const results = await evaluatePolicies(
+        [binding],
+        'Current: `gpt-5.6-luna` and `last_run_at: null`.',
+        { toolName: 'write_file' },
+      );
+      expect(results[0].decision).toBe('permit');
+      expect(results[0].detections).toHaveLength(0);
+    });
+
+    it('should still deny backtick expansion passed to a shell tool', async () => {
+      const binding = makeEngineBinding('argument-injection', {});
+
+      const results = await evaluatePolicies(
+        [binding],
+        'echo `cat /etc/passwd`',
+        { toolName: 'terminal' },
+      );
+      expect(results[0].decision).toBe('deny');
+      expect(results[0].detections.length).toBeGreaterThan(0);
+    });
   });
 
   // ─── sandbox-escape ──────────────────────────────────────────

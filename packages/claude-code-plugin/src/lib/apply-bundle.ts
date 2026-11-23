@@ -25,7 +25,9 @@
 import type {
   CredentialDeliveredFrame,
   GithubCredentialDescriptor,
+  GithubCredentialScope,
 } from '@spellguard/agent-control';
+import { isGithubCredentialScope } from '@spellguard/agent-control';
 import {
   defaultConfigDir,
   defaultConfigPath,
@@ -47,7 +49,13 @@ export interface BundleGithubCredential {
   expires_at: string;
   github_org_login?: string;
   installation_id?: number;
-  scope_summary: { repos: string[] };
+  /**
+   * What the credential grants. REQUIRED and discriminated: the bundle is a
+   * delivery, and a box must never place a credential whose grant it cannot
+   * read. See {@link GithubCredentialScope} — the shape this replaced could not
+   * tell "the whole organization" from "no repositories".
+   */
+  scope_summary: GithubCredentialScope;
   /** Flat author identity — nested into `provider_data` below. */
   git_author_name: string;
   git_author_email: string;
@@ -127,13 +135,14 @@ export function parseBundle(raw: string): CredentialBundle {
       isNonEmptyString(cr.expires_at),
       `bundle.credentials[${i}].expires_at must be a string`,
     );
-    const scope = cr.scope_summary as { repos?: unknown } | undefined;
+    // FAIL CLOSED on an unreadable scope. This is the consuming app's own
+    // boundary, so it validates the discriminator rather than trusting the
+    // sender: `all` must carry no repo list, `selected` must carry a NON-EMPTY
+    // one, and anything else — including the legacy `{ repos: [] }` that meant
+    // both — is rejected instead of being guessed at.
     require_(
-      scope != null &&
-        typeof scope === 'object' &&
-        Array.isArray(scope.repos) &&
-        scope.repos.every((r) => typeof r === 'string'),
-      `bundle.credentials[${i}].scope_summary.repos must be a string[]`,
+      isGithubCredentialScope(cr.scope_summary),
+      `bundle.credentials[${i}].scope_summary must be {mode:'all'} or {mode:'selected',repos:[…]} with at least one repository`,
     );
     require_(
       isNonEmptyString(cr.git_author_name),
@@ -216,7 +225,10 @@ export function applyCredentialBundle(
       agentId: bundle.agent_id,
       agentSecret: bundle.agent_secret,
       expiresAt: new Date(Date.now() + ONE_YEAR_MS).toISOString(),
-      scopeSummary: { repos: [] },
+      // No GitHub credential on this identity-only path, so there is no scope to
+      // record. This used to write `{ repos: [] }` — the same bytes a real
+      // organization-wide grant produced, which is how "everything" and
+      // "nothing" became indistinguishable in the first place. Omit instead.
       spellguardBaseUrl: bundle.spellguard_base_url,
       knownCredentials: bundle.credentials.map((c) => ({
         provider: 'github',
